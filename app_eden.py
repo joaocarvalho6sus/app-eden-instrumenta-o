@@ -35,9 +35,16 @@
  COMO CORRER
  -----------
    1) Instalar Python (marcar "Add Python to PATH").
-   2) pip install streamlit pandas numpy plotly scipy openpyxl
+   2) pip install streamlit pandas numpy plotly scipy openpyxl ezdxf
    3) Por este ficheiro e o Excel na mesma pasta.
    4) streamlit run app_eden.py
+
+ SEPARADOR DA PLANTA (DXF)
+ -------------------------
+ O separador "Planta (DXF)" le um desenho DXF (exportado do AutoCAD/Civil 3D)
+ e desenha as suas linhas com os alvos por cima. Para a planta encaixar nos
+ alvos, o DXF tem de estar no MESMO referencial de coordenadas da obra
+ (M/P ~5000). Se nao estiver, ha um ajuste manual de posicao no separador.
 =============================================================================
 """
 
@@ -55,6 +62,14 @@ try:
     TEM_SCIPY = True
 except Exception:
     TEM_SCIPY = False
+
+# ezdxf le os desenhos DXF; se faltar, o separador da planta avisa e
+# a restante app funciona na mesma.
+try:
+    import ezdxf
+    TEM_EZDXF = True
+except Exception:
+    TEM_EZDXF = False
 
 
 # =========================================================================
@@ -149,6 +164,87 @@ def calcular_velocidade(datas, valores, limiar_vel, fator_acel):
         acel = pd.notna(v) and pd.notna(va) and va > 0 and v >= fator_acel * va
         df.loc[i, "precursor"] = bool(acima or acel)
     return df
+
+
+# =========================================================================
+# LEITURA DE DESENHOS DXF
+# =========================================================================
+@st.cache_data(show_spinner="A ler o desenho DXF...")
+def dxf_listar_layers(conteudo_bytes):
+    """Devolve a lista de nomes de layers de um DXF (recebido como bytes)."""
+    import io
+    from ezdxf.recover import read as recover_read
+    doc, _ = recover_read(io.BytesIO(conteudo_bytes))
+    return [l.dxf.name for l in doc.layers]
+
+
+@st.cache_data(show_spinner="A extrair geometria do DXF...")
+def dxf_extrair_segmentos(conteudo_bytes, layers_incluir=None):
+    """
+    Le um DXF e devolve uma lista de polilinhas para desenhar:
+        [(xs, ys, layer), ...]
+    Le os tipos mais comuns em plantas: LINE, LWPOLYLINE, POLYLINE, ARC, CIRCLE.
+    (ARC e CIRCLE sao essenciais: as estacas da cortina de contencao aparecem
+    desenhadas como pequenos arcos/circulos.)
+    Se 'layers_incluir' for dado, so devolve entidades dessas layers.
+    """
+    import io
+    import numpy as np
+    from ezdxf.recover import read as recover_read
+    doc, _ = recover_read(io.BytesIO(conteudo_bytes))
+    msp = doc.modelspace()
+
+    segmentos = []
+    for e in msp:
+        t = e.dxftype()
+        lay = e.dxf.layer
+        if layers_incluir and lay not in layers_incluir:
+            continue
+        try:
+            if t == "LINE":
+                segmentos.append(([e.dxf.start[0], e.dxf.end[0]],
+                                  [e.dxf.start[1], e.dxf.end[1]], lay))
+            elif t == "LWPOLYLINE":
+                pts = e.get_points()
+                xs = [p[0] for p in pts]
+                ys = [p[1] for p in pts]
+                if e.closed and len(xs) > 2:
+                    xs = xs + [xs[0]]
+                    ys = ys + [ys[0]]
+                segmentos.append((xs, ys, lay))
+            elif t == "POLYLINE":
+                xs = [v.dxf.location[0] for v in e.vertices]
+                ys = [v.dxf.location[1] for v in e.vertices]
+                if xs:
+                    segmentos.append((xs, ys, lay))
+            elif t == "ARC":
+                a0 = np.radians(e.dxf.start_angle)
+                a1 = np.radians(e.dxf.end_angle)
+                if a1 < a0:
+                    a1 += 2 * np.pi
+                ang = np.linspace(a0, a1, 16)
+                cx, cy, r = e.dxf.center[0], e.dxf.center[1], e.dxf.radius
+                segmentos.append((list(cx + r * np.cos(ang)),
+                                  list(cy + r * np.sin(ang)), lay))
+            elif t == "CIRCLE":
+                ang = np.linspace(0, 2 * np.pi, 20)
+                cx, cy, r = e.dxf.center[0], e.dxf.center[1], e.dxf.radius
+                segmentos.append((list(cx + r * np.cos(ang)),
+                                  list(cy + r * np.sin(ang)), lay))
+        except Exception:
+            pass
+    return segmentos
+
+
+def dxf_gama_coordenadas(segmentos):
+    """Devolve (xmin, xmax, ymin, ymax) do conjunto de segmentos, ou None."""
+    xs, ys = [], []
+    for sx, sy, _ in segmentos:
+        xs.extend(sx)
+        ys.extend(sy)
+    if not xs:
+        return None
+    return min(xs), max(xs), min(ys), max(ys)
 
 
 # =========================================================================
@@ -473,6 +569,108 @@ def separador_piezometros(dados):
 
 
 # =========================================================================
+# SEPARADOR 6 — PLANTA / DXF
+# =========================================================================
+# Layers estruturais tipicas (nomenclatura AIA/ISO) que costumam conter o
+# contorno do recinto e a estrutura; usadas para pre-selecao inteligente.
+LAYERS_ESTRUTURAIS_SUGERIDAS = [
+    "S-BEAM", "S-COLS", "S-GRID", "A-FLOR", "S-WALL", "S-PILE",
+]
+
+
+def separador_planta(dados):
+    st.subheader("Planta do projeto (DXF)")
+
+    if not TEM_EZDXF:
+        st.error("Falta a biblioteca 'ezdxf'. Acrescenta 'ezdxf' ao "
+                 "requirements.txt (e 'pip install ezdxf' se correres "
+                 "localmente) para ativar a leitura de desenhos.")
+        return
+
+    st.caption("Carrega uma planta em DXF (por exemplo a planta de escavacao "
+               "e contencao de um piso). A app desenha as linhas do projeto. "
+               "Nota: as plantas estao no referencial local do projeto e os "
+               "alvos topograficos noutro referencial, por isso a planta e "
+               "mostrada por si, como figura de contexto — nao sobreposta aos "
+               "alvos. E a leitura honesta enquanto nao houver pontos de "
+               "referencia comuns para alinhar os dois sistemas.")
+
+    dxf = st.file_uploader("Ficheiro DXF", type=["dxf"])
+    if dxf is None:
+        st.info("Carrega um DXF para ver a planta. Sugestao: a planta de "
+                "escavacao do piso -1, -2 ou -3 mostra bem o contorno do "
+                "recinto de contencao.")
+        return
+
+    conteudo = dxf.getvalue()
+
+    try:
+        layers = dxf_listar_layers(conteudo)
+    except Exception as e:
+        st.error(f"Nao consegui ler as layers do DXF. Detalhe: {e}")
+        return
+
+    # pre-selecao: layers cujo nome comeca por um dos prefixos estruturais
+    sugeridas = [l for l in layers
+                 if any(l.upper().startswith(p) for p in LAYERS_ESTRUTURAIS_SUGERIDAS)]
+
+    st.write(f"O desenho tem **{len(layers)} layers**. Estao pre-selecionadas "
+             f"as estruturais (contorno, estacas, grelha). Ajusta se quiseres:")
+    layers_sel = st.multiselect("Layers a desenhar", sorted(layers),
+                                default=sorted(sugeridas) if sugeridas else [])
+
+    if not layers_sel:
+        st.warning("Escolhe pelo menos uma layer para desenhar.")
+        return
+
+    try:
+        segmentos = dxf_extrair_segmentos(conteudo, set(layers_sel))
+    except Exception as e:
+        st.error(f"Nao consegui extrair a geometria. Detalhe: {e}")
+        return
+
+    if not segmentos:
+        st.warning("Nao encontrei geometria nas layers escolhidas. Tenta outras.")
+        return
+
+    # desenhar a planta
+    fig = go.Figure()
+    # agrupar por layer para dar cor distinta e legenda util
+    cores = {}
+    paleta = ["#333333", "#1f77b4", "#d62728", "#2ca02c", "#9467bd",
+              "#8c564b", "#e377c2", "#ff7f0e"]
+    for i, lay in enumerate(sorted(set(s[2] for s in segmentos))):
+        cores[lay] = paleta[i % len(paleta)]
+
+    mostrados = set()
+    for xs, ys, lay in segmentos:
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys, mode="lines",
+            line=dict(color=cores[lay], width=1),
+            name=lay,
+            legendgroup=lay,
+            showlegend=(lay not in mostrados),
+            hoverinfo="skip",
+        ))
+        mostrados.add(lay)
+
+    fig.update_layout(
+        height=700,
+        xaxis_title="X local (m)", yaxis_title="Y local (m)",
+        yaxis=dict(scaleanchor="x", scaleratio=1),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        margin=dict(l=0, r=0, t=30, b=0),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.metric("Elementos desenhados", len(segmentos))
+    st.caption("Para a tese: esta planta serve de figura de contexto da obra "
+               "(implantacao da contencao periferica e da malha estrutural). "
+               "A analise de deslocamentos vive nos separadores dos alvos e "
+               "inclinometros.")
+
+
+# =========================================================================
 # PRINCIPAL
 # =========================================================================
 def main():
@@ -511,9 +709,12 @@ def main():
                "inclinometricos assume a base fixa; a superficie 3D e interpolada "
                "entre alvos medidos.")
 
-    t3d, tinc, talv, tcc, tpz = st.tabs(
+    if not TEM_EZDXF:
+        st.sidebar.info("Instala 'ezdxf' para ativar a leitura de plantas DXF.")
+
+    t3d, tinc, talv, tcc, tpz, tplan = st.tabs(
         ["Visao geral 3D", "Inclinometros", "Alvos (2D)",
-         "Celulas de carga", "Piezometros"])
+         "Celulas de carga", "Piezometros", "Planta (DXF)"])
     with t3d:
         separador_3d(dados)
     with tinc:
@@ -524,6 +725,8 @@ def main():
         separador_celulas(dados)
     with tpz:
         separador_piezometros(dados)
+    with tplan:
+        separador_planta(dados)
 
 
 if __name__ == "__main__":
