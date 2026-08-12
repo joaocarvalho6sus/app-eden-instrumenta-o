@@ -49,6 +49,7 @@
 """
 
 from pathlib import Path
+import base64
 
 import numpy as np
 import pandas as pd
@@ -1139,21 +1140,63 @@ def separador_obra(dados):
 # =========================================================================
 # SEPARADOR 0 — PAGINA INICIAL (HOME)
 # =========================================================================
+def _imagem_base64(caminho):
+    """Le uma imagem e devolve-a como data URI base64, ou None se nao existir."""
+    try:
+        p = Path(caminho)
+        if not p.exists():
+            return None
+        dados = base64.b64encode(p.read_bytes()).decode("utf-8")
+        return f"data:image/png;base64,{dados}"
+    except Exception:
+        return None
+
+
 def separador_home(dados):
-    # ---- cabecalho / marca ----------------------------------------------
-    st.markdown(
-        "<div style='padding: 8px 0 0 0;'>"
-        "<span style='font-size:2.6em; font-weight:700; color:#1f3a5f;'>IMS</span>"
-        "<span style='font-size:1.2em; color:#5a6b7b;'>&nbsp;&nbsp;Instrumentation "
-        "Monitoring System</span></div>",
-        unsafe_allow_html=True)
-    st.markdown(
-        "<div style='color:#5a6b7b; font-size:1.05em; margin-bottom:4px;'>"
-        "Plataforma de analise e visualizacao de instrumentacao geotecnica — "
-        "perfis, deslocamentos, velocidades, sinais precursores, geologia e "
-        "sequencia de obra, num so lugar.</div>",
-        unsafe_allow_html=True)
-    st.divider()
+    # ---- BANNER no topo: imagem da obra (se existir) ou gradiente --------
+    # procura a imagem em assets/eden_bim.png ao lado do script
+    img_uri = _imagem_base64(Path(__file__).parent / "assets" / "eden_bim.png") \
+        if "__file__" in globals() else _imagem_base64("assets/eden_bim.png")
+    if img_uri is None:
+        img_uri = _imagem_base64("assets/eden_bim.png")  # fallback (cwd)
+
+    if img_uri:
+        # banner com a imagem, escurecida a esquerda para o texto ler bem
+        banner = (
+            f"<div style='position:relative; border-radius:12px; overflow:hidden; "
+            f"height:230px; margin-bottom:16px; "
+            f"background-image:linear-gradient(90deg, rgba(15,32,55,0.92) 0%, "
+            f"rgba(15,32,55,0.55) 45%, rgba(15,32,55,0.15) 100%), url({img_uri}); "
+            f"background-size:cover; background-position:center;'>"
+            f"<div style='position:absolute; top:50%; left:32px; "
+            f"transform:translateY(-50%); color:white;'>"
+            f"<div style='font-size:3em; font-weight:800; letter-spacing:2px; "
+            f"line-height:1;'>IMS</div>"
+            f"<div style='font-size:1.15em; opacity:0.92; margin-top:6px;'>"
+            f"Instrumentation Monitoring System</div>"
+            f"<div style='font-size:0.95em; opacity:0.8; margin-top:10px; "
+            f"max-width:520px;'>Analise e visualizacao de instrumentacao "
+            f"geotecnica — deslocamentos, velocidades, precursores, geologia "
+            f"e sequencia de obra.</div>"
+            f"</div></div>"
+        )
+        st.markdown(banner, unsafe_allow_html=True)
+    else:
+        # sem imagem: banner de gradiente elegante
+        banner = (
+            "<div style='border-radius:12px; height:180px; margin-bottom:16px; "
+            "background:linear-gradient(120deg, #0f2037 0%, #1f3a5f 55%, "
+            "#2e5c8a 100%); display:flex; align-items:center; padding-left:32px;'>"
+            "<div style='color:white;'>"
+            "<div style='font-size:3em; font-weight:800; letter-spacing:2px; "
+            "line-height:1;'>IMS</div>"
+            "<div style='font-size:1.15em; opacity:0.92; margin-top:6px;'>"
+            "Instrumentation Monitoring System</div>"
+            "<div style='font-size:0.95em; opacity:0.8; margin-top:10px;'>"
+            "Analise e visualizacao de instrumentacao geotecnica.</div>"
+            "</div></div>"
+        )
+        st.markdown(banner, unsafe_allow_html=True)
 
     # ---- identificacao da obra + numeros-chave --------------------------
     col_id, col_num = st.columns([1.3, 2])
