@@ -250,125 +250,174 @@ def dxf_gama_coordenadas(segmentos):
 # =========================================================================
 # SEPARADOR 1 — VISAO GERAL 3D (ALVOS TOPOGRAFICOS)
 # =========================================================================
+def classificar_grupo(nome_edificio):
+    """Devolve ('contencao', alcado) ou ('edificio', nome) para dar cor/forma."""
+    import re
+    if isinstance(nome_edificio, str) and "Alçado" in nome_edificio:
+        m = re.search(r"Alçado (\w+)", nome_edificio)
+        return ("contencao", m.group(1) if m else "?")
+    return ("edificio", nome_edificio)
+
+
+def contorno_recinto(campanha):
+    """
+    Constroi o contorno do recinto ligando os centroides dos alcados da
+    contencao, ordenados pelo angulo em torno do centro (forma um anel
+    fechado sem cruzamentos). Devolve (Ms, Ps, Zs) ja fechado, ou None.
+    Tudo no sistema dos alvos — nao precisa de DXF nem de alinhamento.
+    """
+    import numpy as np
+    cont = campanha[campanha[COLS["edificio"]].astype(str).str.contains("Alçado", na=False)].copy()
+    if cont.empty:
+        return None
+    cont["alcado"] = cont[COLS["edificio"]].apply(lambda s: classificar_grupo(s)[1])
+    cent = cont.groupby("alcado").agg(
+        M=(COLS["M0"], "mean"), P=(COLS["P0"], "mean"), Z=(COLS["Z0"], "mean")
+    ).reset_index()
+    if len(cent) < 3:
+        return None
+    cx, cy = cent["M"].mean(), cent["P"].mean()
+    cent["ang"] = np.arctan2(cent["P"] - cy, cent["M"] - cx)
+    cent = cent.sort_values("ang")
+    Ms = list(cent["M"]) + [cent["M"].iloc[0]]
+    Ps = list(cent["P"]) + [cent["P"].iloc[0]]
+    Zs = list(cent["Z"]) + [cent["Z"].iloc[0]]
+    return Ms, Ps, Zs
+
+
+# cores fixas por edificio vizinho (as restantes recebem cor automatica)
+CORES_EDIFICIO = {
+    "Edifício Santa Casa da Misericórdia": "#d62728",
+    "Restaurante Cimas": "#2ca02c",
+    "Clínica Abreu Loureiro": "#1f77b4",
+}
+
+
 def separador_3d(dados):
     alvos = dados["alvos"]
     ok = validar_colunas(
         alvos,
-        [COLS["data"], COLS["alvo"], COLS["M0"], COLS["P0"], COLS["Z0"],
-         COLS["dM"], COLS["dP"], COLS["dZ"], COLS["desl_h"]],
+        [COLS["data"], COLS["alvo"], COLS["edificio"], COLS["M0"], COLS["P0"],
+         COLS["Z0"], COLS["dM"], COLS["dP"], COLS["dZ"], COLS["desl_h"]],
         "Alvos topograficos",
     )
     if not ok:
         return
 
-    st.subheader("Movimento dos alvos topograficos no espaco")
-    st.caption("Cada ponto e um alvo nas suas coordenadas reais (M, P, Z). "
-               "A seta mostra a direcao e magnitude do deslocamento acumulado, "
-               "amplificada para ser visivel. A cor indica o deslocamento "
-               "horizontal (mm).")
+    st.subheader("Movimento dos alvos no espaco, com a geometria da obra")
+    st.caption("O contorno castanho e o recinto de escavacao, reconstruido "
+               "ligando os alcados da contencao (AB, BF, CD...). Os alvos dos "
+               "edificios vizinhos aparecem agrupados e identificados por cor. "
+               "As setas mostram a direcao e magnitude do deslocamento "
+               "acumulado (amplificado). Tudo no sistema de coordenadas dos "
+               "alvos — sem necessidade de DXF.")
 
     datas = sorted(alvos[COLS["data"]].dropna().unique())
     col_a, col_b, col_c = st.columns([2, 1, 1])
     with col_a:
         data_sel = st.select_slider(
-            "Campanha", options=datas,
-            value=datas[-1],
-            format_func=lambda d: pd.to_datetime(d).strftime("%d/%m/%Y"),
-        )
+            "Campanha", options=datas, value=datas[-1],
+            format_func=lambda d: pd.to_datetime(d).strftime("%d/%m/%Y"))
     with col_b:
         fator = st.slider("Amplificacao do deslocamento", 50, 2000, 500, 50,
-                          help="Fator visual: os deslocamentos reais sao "
-                               "milimetricos e as coordenadas sao em metros, "
-                               "por isso ha que amplificar para se verem.")
+                          help="Os deslocamentos sao milimetricos e as "
+                               "coordenadas em metros; amplifica-se para ver.")
     with col_c:
-        mostrar_sup = st.checkbox("Superficie interpolada", value=False,
-                                  disabled=not TEM_SCIPY,
-                                  help="Interpolacao entre alvos (apoio visual). "
-                                       "Requer scipy." if TEM_SCIPY else
-                                       "Instala scipy para ativar.")
+        mostrar_contorno = st.checkbox("Contorno do recinto", value=True)
+        mostrar_paredes = st.checkbox("Paredes dos alcados", value=False,
+                                      help="Desenha planos verticais nos "
+                                           "alcados da contencao, para dar "
+                                           "volume ao recinto.")
 
     campanha = alvos[alvos[COLS["data"]] == data_sel].copy()
-    # em metros; deslocamentos em mm -> converter para m e amplificar
-    x0 = campanha[COLS["M0"]].to_numpy()
-    y0 = campanha[COLS["P0"]].to_numpy()
-    z0 = campanha[COLS["Z0"]].to_numpy()
-    dx = campanha[COLS["dM"]].to_numpy() / 1000.0 * fator
-    dy = campanha[COLS["dP"]].to_numpy() / 1000.0 * fator
-    dz = campanha[COLS["dZ"]].to_numpy() / 1000.0 * fator
-    desl_h = campanha[COLS["desl_h"]].to_numpy()
-    nomes = campanha[COLS["alvo"]].astype(str).to_numpy()
 
     fig = go.Figure()
 
-    # posicao inicial (cinza, referencia)
-    fig.add_trace(go.Scatter3d(
-        x=x0, y=y0, z=z0, mode="markers",
-        marker=dict(size=3, color="lightgray"),
-        name="Posicao inicial", hoverinfo="skip",
-    ))
-
-    # posicao deslocada (cor por deslocamento horizontal)
-    fig.add_trace(go.Scatter3d(
-        x=x0 + dx, y=y0 + dy, z=z0 + dz, mode="markers+text",
-        marker=dict(size=5, color=desl_h, colorscale="YlOrRd",
-                    colorbar=dict(title="Desl. h (mm)"), cmin=0),
-        text=nomes, textposition="top center", textfont=dict(size=8),
-        name="Posicao atual (ampl.)",
-        customdata=desl_h,
-        hovertemplate="Alvo %{text}<br>Desl. h: %{customdata:.1f} mm<extra></extra>",
-    ))
-
-    # setas de deslocamento (linhas do ponto inicial ao deslocado)
-    for i in range(len(x0)):
+    # ---- contorno do recinto (a partir dos alcados) ----------------------
+    cont = contorno_recinto(campanha)
+    if mostrar_contorno and cont is not None:
+        Ms, Ps, Zs = cont
         fig.add_trace(go.Scatter3d(
-            x=[x0[i], x0[i] + dx[i]], y=[y0[i], y0[i] + dy[i]],
-            z=[z0[i], z0[i] + dz[i]],
-            mode="lines", line=dict(color="crimson", width=3),
-            showlegend=False, hoverinfo="skip",
+            x=Ms, y=Ps, z=Zs, mode="lines",
+            line=dict(color="saddlebrown", width=6),
+            name="Contorno do recinto", hoverinfo="skip",
         ))
+        # paredes verticais opcionais (da cota do contorno para baixo)
+        if mostrar_paredes:
+            base_z = min(Zs) - 8  # profundidade visual da escavacao
+            for i in range(len(Ms) - 1):
+                fig.add_trace(go.Scatter3d(
+                    x=[Ms[i], Ms[i+1], Ms[i+1], Ms[i], Ms[i]],
+                    y=[Ps[i], Ps[i+1], Ps[i+1], Ps[i], Ps[i]],
+                    z=[Zs[i], Zs[i+1], base_z, base_z, Zs[i]],
+                    mode="lines", line=dict(color="peru", width=2),
+                    surfaceaxis=2, surfacecolor="rgba(210,180,140,0.25)",
+                    showlegend=False, hoverinfo="skip",
+                ))
 
-    # superficie interpolada opcional (apoio visual)
-    # Nota: os alvos distribuem-se ao longo do perimetro (quase em linha),
-    # nao numa area preenchida. A interpolacao 'cubic' deixaria quase tudo
-    # a NaN (fora da envolvente). Usa-se 'linear' e completa-se os buracos
-    # com 'nearest', para a superficie cobrir a zona sem inventar picos.
-    if mostrar_sup and TEM_SCIPY and len(x0) >= 4:
-        gx = np.linspace(x0.min(), x0.max(), 50)
-        gy = np.linspace(y0.min(), y0.max(), 50)
-        GX, GY = np.meshgrid(gx, gy)
-        GZ = griddata((x0, y0), desl_h, (GX, GY), method="linear")
-        # preencher NaN com o vizinho mais proximo
-        buracos = np.isnan(GZ)
-        if buracos.any():
-            GZ_near = griddata((x0, y0), desl_h, (GX, GY), method="nearest")
-            GZ[buracos] = GZ_near[buracos]
-        fig.add_trace(go.Surface(
-            x=GX, y=GY, z=np.full_like(GZ, z0.min() - 2),
-            surfacecolor=GZ, colorscale="YlOrRd", showscale=False,
-            opacity=0.5, name="Superficie (interp.)", hoverinfo="skip",
+    # ---- alvos por grupo (cor por edificio; contencao a laranja) ---------
+    grupos = campanha.groupby(campanha[COLS["edificio"]].apply(
+        lambda s: classificar_grupo(s)[0] if classificar_grupo(s)[0] == "edificio"
+        else "Contencao periferica"))
+
+    # primeiro a contencao (laranja), depois cada edificio com a sua cor
+    for chave, grp in campanha.groupby(COLS["edificio"]):
+        tipo, etiqueta = classificar_grupo(chave)
+        x0 = grp[COLS["M0"]].to_numpy()
+        y0 = grp[COLS["P0"]].to_numpy()
+        z0 = grp[COLS["Z0"]].to_numpy()
+        dx = grp[COLS["dM"]].to_numpy() / 1000.0 * fator
+        dy = grp[COLS["dP"]].to_numpy() / 1000.0 * fator
+        dz = grp[COLS["dZ"]].to_numpy() / 1000.0 * fator
+        dh = grp[COLS["desl_h"]].to_numpy()
+        nomes = grp[COLS["alvo"]].astype(str).to_numpy()
+
+        if tipo == "edificio":
+            cor = CORES_EDIFICIO.get(chave, None)
+            nome_leg = chave
+        else:
+            cor = "#ff7f0e"
+            nome_leg = f"Contencao — Alcado {etiqueta}"
+
+        # marcadores na posicao deslocada, coloridos pelo grupo
+        fig.add_trace(go.Scatter3d(
+            x=x0 + dx, y=y0 + dy, z=z0 + dz, mode="markers+text",
+            marker=dict(size=5, color=cor) if cor else dict(size=5),
+            text=nomes, textposition="top center", textfont=dict(size=8),
+            name=nome_leg,
+            customdata=dh,
+            hovertemplate="Alvo %{text}<br>Desl. h: %{customdata:.1f} mm"
+                          "<extra>" + nome_leg + "</extra>",
         ))
+        # setas de deslocamento
+        for i in range(len(x0)):
+            fig.add_trace(go.Scatter3d(
+                x=[x0[i], x0[i] + dx[i]], y=[y0[i], y0[i] + dy[i]],
+                z=[z0[i], z0[i] + dz[i]],
+                mode="lines", line=dict(color="crimson", width=3),
+                showlegend=False, hoverinfo="skip",
+            ))
 
     fig.update_layout(
-        height=680,
-        scene=dict(
-            xaxis_title="M (m)", yaxis_title="P (m)", zaxis_title="Z (m)",
-            aspectmode="data",
-        ),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        height=720,
+        scene=dict(xaxis_title="M (m)", yaxis_title="P (m)", zaxis_title="Z (m)",
+                   aspectmode="data"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=9)),
         margin=dict(l=0, r=0, t=30, b=0),
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # metricas da campanha
+    # metricas
+    desl_h_all = campanha[COLS["desl_h"]].to_numpy()
+    nomes_all = campanha[COLS["alvo"]].astype(str).to_numpy()
+    edif_all = campanha[COLS["edificio"]].to_numpy()
     c1, c2, c3 = st.columns(3)
     c1.metric("Alvos na campanha", len(campanha))
-    c2.metric("Desl. horizontal max. (mm)", f"{np.nanmax(desl_h):.1f}")
-    idx = int(np.nanargmax(desl_h))
-    c3.metric("Alvo mais afetado", nomes[idx])
-
-    st.info("Leitura: se a superficie ou as setas concentram magnitude junto a "
-            "um edificio vizinho, e ai que a escavacao induz mais movimento. "
-            "Confirma sempre pelos pontos medidos, nao pela interpolacao.")
+    c2.metric("Desl. horizontal max. (mm)", f"{np.nanmax(desl_h_all):.1f}")
+    idx = int(np.nanargmax(desl_h_all))
+    c3.metric("Mais afetado", f"{nomes_all[idx]}")
+    st.caption(f"O alvo mais afetado ({nomes_all[idx]}, "
+               f"{np.nanmax(desl_h_all):.1f} mm) pertence a: {edif_all[idx]}.")
 
 
 # =========================================================================
