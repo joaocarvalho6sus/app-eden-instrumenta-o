@@ -261,27 +261,31 @@ def classificar_grupo(nome_edificio):
 
 def contorno_recinto(campanha):
     """
-    Constroi o contorno do recinto ligando os centroides dos alcados da
-    contencao, ordenados pelo angulo em torno do centro (forma um anel
-    fechado sem cruzamentos). Devolve (Ms, Ps, Zs) ja fechado, ou None.
+    Constroi o contorno do recinto como a ENVOLVENTE CONVEXA (convex hull)
+    dos alvos da contencao periferica. Ao contrario de ligar centroides, o
+    convex hull envolve sempre os pontos por fora — nunca passa por dentro
+    da nuvem, evitando a falsa impressao de alvos 'interiores'.
+    Devolve (Ms, Ps, Zs) ja fechado, ou None se nao houver pontos/scipy.
     Tudo no sistema dos alvos — nao precisa de DXF nem de alinhamento.
     """
     import numpy as np
     cont = campanha[campanha[COLS["edificio"]].astype(str).str.contains("Alçado", na=False)].copy()
-    if cont.empty:
+    if len(cont) < 3:
         return None
-    cont["alcado"] = cont[COLS["edificio"]].apply(lambda s: classificar_grupo(s)[1])
-    cent = cont.groupby("alcado").agg(
-        M=(COLS["M0"], "mean"), P=(COLS["P0"], "mean"), Z=(COLS["Z0"], "mean")
-    ).reset_index()
-    if len(cent) < 3:
-        return None
-    cx, cy = cent["M"].mean(), cent["P"].mean()
-    cent["ang"] = np.arctan2(cent["P"] - cy, cent["M"] - cx)
-    cent = cent.sort_values("ang")
-    Ms = list(cent["M"]) + [cent["M"].iloc[0]]
-    Ps = list(cent["P"]) + [cent["P"].iloc[0]]
-    Zs = list(cent["Z"]) + [cent["Z"].iloc[0]]
+    pts = cont[[COLS["M0"], COLS["P0"]]].to_numpy()
+    z_med = float(cont[COLS["Z0"]].mean())
+    try:
+        from scipy.spatial import ConvexHull
+        hull = ConvexHull(pts)
+        poly = pts[hull.vertices]
+    except Exception:
+        # sem scipy: cai para ordenacao angular (menos bom, mas funcional)
+        cx, cy = pts[:, 0].mean(), pts[:, 1].mean()
+        ang = np.arctan2(pts[:, 1] - cy, pts[:, 0] - cx)
+        poly = pts[np.argsort(ang)]
+    Ms = list(poly[:, 0]) + [poly[0, 0]]
+    Ps = list(poly[:, 1]) + [poly[0, 1]]
+    Zs = [z_med] * len(Ms)
     return Ms, Ps, Zs
 
 
@@ -305,12 +309,14 @@ def separador_3d(dados):
         return
 
     st.subheader("Movimento dos alvos no espaco, com a geometria da obra")
-    st.caption("O contorno castanho e o recinto de escavacao, reconstruido "
-               "ligando os alcados da contencao (AB, BF, CD...). Os alvos dos "
-               "edificios vizinhos aparecem agrupados e identificados por cor. "
-               "As setas mostram a direcao e magnitude do deslocamento "
-               "acumulado (amplificado). Tudo no sistema de coordenadas dos "
-               "alvos — sem necessidade de DXF.")
+    st.caption("O contorno castanho e a envolvente dos alvos da contencao "
+               "(convex hull), que aproxima o limite do recinto de escavacao. "
+               "Os alvos dos edificios vizinhos aparecem agrupados e "
+               "identificados por cor. As setas mostram a direcao e magnitude "
+               "do deslocamento acumulado (amplificado). Todos os alvos sao de "
+               "periferia — na cortina de contencao ou nas fachadas vizinhas; "
+               "nao ha instrumentos dentro da escavacao. Tudo no sistema de "
+               "coordenadas dos alvos, sem necessidade de DXF.")
 
     datas = sorted(alvos[COLS["data"]].dropna().unique())
     col_a, col_b, col_c = st.columns([2, 1, 1])
@@ -340,7 +346,7 @@ def separador_3d(dados):
         fig.add_trace(go.Scatter3d(
             x=Ms, y=Ps, z=Zs, mode="lines",
             line=dict(color="saddlebrown", width=6),
-            name="Contorno do recinto", hoverinfo="skip",
+            name="Contorno do recinto (envolvente)", hoverinfo="skip",
         ))
         # paredes verticais opcionais (da cota do contorno para baixo)
         if mostrar_paredes:
