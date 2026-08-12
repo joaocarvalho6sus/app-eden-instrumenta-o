@@ -223,7 +223,8 @@ def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True):
                 fig.add_vline(x=t0, line=dict(color=cor, width=1.5, dash="dot"))
 
 
-st.set_page_config(page_title="The Eden — Instrumentacao", layout="wide")
+st.set_page_config(page_title="IMS — Instrumentation Monitoring System",
+                   layout="wide")
 
 
 # =========================================================================
@@ -1136,6 +1137,98 @@ def separador_obra(dados):
 
 
 # =========================================================================
+# SEPARADOR 0 — PAGINA INICIAL (HOME)
+# =========================================================================
+def separador_home(dados):
+    # ---- cabecalho / marca ----------------------------------------------
+    st.markdown(
+        "<div style='padding: 8px 0 0 0;'>"
+        "<span style='font-size:2.6em; font-weight:700; color:#1f3a5f;'>IMS</span>"
+        "<span style='font-size:1.2em; color:#5a6b7b;'>&nbsp;&nbsp;Instrumentation "
+        "Monitoring System</span></div>",
+        unsafe_allow_html=True)
+    st.markdown(
+        "<div style='color:#5a6b7b; font-size:1.05em; margin-bottom:4px;'>"
+        "Plataforma de analise e visualizacao de instrumentacao geotecnica — "
+        "perfis, deslocamentos, velocidades, sinais precursores, geologia e "
+        "sequencia de obra, num so lugar.</div>",
+        unsafe_allow_html=True)
+    st.divider()
+
+    # ---- identificacao da obra + numeros-chave --------------------------
+    col_id, col_num = st.columns([1.3, 2])
+    with col_id:
+        st.markdown("#### Obra")
+        st.markdown(
+            "**Hotel Eden, Estoril**  \n"
+            "Reformulacao — escavacao e contencao periferica  \n"
+            "Monte Estoril, Cascais  \n"
+            "_Back-analysis de instrumentacao_")
+
+    with col_num:
+        st.markdown("#### Instrumentacao monitorizada")
+        # calcular numeros reais a partir dos dados
+        n_inc = dados["perfis"][COLS["inclinometro"]].nunique() if not dados["perfis"].empty else 0
+        n_alvos = dados["alvos"][COLS["alvo"]].nunique() if not dados["alvos"].empty else 0
+        n_camp = dados["alvos"][COLS["data"]].nunique() if not dados["alvos"].empty else 0
+        n_cel = dados["celulas"][COLS["celula"]].nunique() if not dados["celulas"].empty else 0
+        n_pz = dados["piezo"][COLS["piezometro"]].nunique() if not dados["piezo"].empty else 0
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Inclinometros", n_inc)
+        c2.metric("Alvos topogr.", n_alvos)
+        c3.metric("Campanhas", n_camp)
+        c4.metric("Celulas carga", n_cel)
+        c5.metric("Piezometros", n_pz)
+
+    st.divider()
+
+    # ---- cartoes das areas de analise -----------------------------------
+    st.markdown("#### O que podes explorar")
+    st.caption("Usa os separadores no topo para navegar. Aqui fica o mapa geral "
+               "de cada area.")
+
+    cartoes = [
+        ("Visao geral 3D", "Alvos no espaco com a geometria da obra: contorno do "
+         "recinto, edificios vizinhos e vetores de deslocamento amplificados."),
+        ("Inclinometros", "Perfil deformado em profundidade, evolucao no tempo, "
+         "velocidade e detecao de sinais precursores. Sobreposicao da geologia."),
+        ("Alvos (2D)", "Series temporais de deslocamento horizontal e "
+         "assentamento vertical, por edificio e por alvo."),
+        ("Celulas de carga", "Carga nas ancoragens vs. blocagem, com limiares "
+         "de alerta (15%) e alarme (25%)."),
+        ("Piezometros", "Evolucao da cota da agua subterranea, para relacionar "
+         "com a escavacao e a pluviosidade."),
+        ("Geologia", "Colunas litologicas das sondagens, ensaios SPT em "
+         "profundidade e zonamento geotecnico (ZG1-ZG6)."),
+        ("Obra", "Cronograma do plano de trabalhos, com a janela de "
+         "instrumentacao assinalada. Sobrepoe-se aos graficos temporais."),
+        ("Planta (DXF)", "Leitura de plantas de escavacao em DXF, com opcao de "
+         "alinhamento aos alvos por pontos de referencia."),
+    ]
+    # desenhar em grelha de 2 colunas
+    for i in range(0, len(cartoes), 2):
+        cols = st.columns(2)
+        for j, col in enumerate(cols):
+            if i + j < len(cartoes):
+                titulo, desc = cartoes[i + j]
+                with col:
+                    st.markdown(
+                        f"<div style='border:1px solid #e0e4e8; border-radius:8px; "
+                        f"padding:14px 16px; margin-bottom:10px; background:#fafbfc;'>"
+                        f"<div style='font-weight:600; color:#1f3a5f; "
+                        f"font-size:1.05em; margin-bottom:4px;'>{titulo}</div>"
+                        f"<div style='color:#5a6b7b; font-size:0.92em;'>{desc}</div>"
+                        f"</div>",
+                        unsafe_allow_html=True)
+
+    st.divider()
+    st.caption("Nota metodologica: a integracao dos perfis inclinometricos "
+               "assume a base fixa. Datas da sequencia de obra sao as previstas "
+               "no plano de trabalhos. Superficie 3D e interpolada entre alvos "
+               "medidos — apoio visual, nao modelo do macico.")
+
+
+# =========================================================================
 # PRINCIPAL
 # =========================================================================
 def main():
@@ -1178,17 +1271,14 @@ def main():
     if not TEM_SCIPY:
         st.sidebar.info("Instala 'scipy' para ativar a superficie 3D interpolada.")
 
-    st.title("The Eden, Estoril — Analise de Instrumentacao")
-    st.caption("Back-analysis da contencao periferica. A integracao dos perfis "
-               "inclinometricos assume a base fixa; a superficie 3D e interpolada "
-               "entre alvos medidos.")
-
     if not TEM_EZDXF:
         st.sidebar.info("Instala 'ezdxf' para ativar a leitura de plantas DXF.")
 
-    t3d, tinc, talv, tcc, tpz, tgeo, tobra, tplan = st.tabs(
-        ["Visao geral 3D", "Inclinometros", "Alvos (2D)",
+    thome, t3d, tinc, talv, tcc, tpz, tgeo, tobra, tplan = st.tabs(
+        ["Inicio", "Visao geral 3D", "Inclinometros", "Alvos (2D)",
          "Celulas de carga", "Piezometros", "Geologia", "Obra", "Planta (DXF)"])
+    with thome:
+        separador_home(dados)
     with t3d:
         separador_3d(dados)
     with tinc:
