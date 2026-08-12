@@ -578,6 +578,38 @@ LAYERS_ESTRUTURAIS_SUGERIDAS = [
 ]
 
 
+def transformacao_semelhanca(p1_src, p1_dst, p2_src, p2_dst):
+    """
+    Transformacao de semelhanca 2D (translacao + rotacao + escala uniforme)
+    que leva pontos do sistema do DESENHO (src) para o sistema dos ALVOS (dst),
+    a partir de 2 pares de pontos correspondentes.
+
+    Dois pontos chegam para fixar as 4 incognitas (2 translacao, 1 rotacao,
+    1 escala). Devolve (aplicar, escala, angulo_graus), onde aplicar(x, y)
+    converte uma coordenada do desenho para o sistema dos alvos.
+    """
+    import numpy as np
+    x1, y1 = p1_src; X1, Y1 = p1_dst
+    x2, y2 = p2_src; X2, Y2 = p2_dst
+    dxs, dys = x2 - x1, y2 - y1        # vetor no sistema do desenho
+    dXs, dYs = X2 - X1, Y2 - Y1        # vetor no sistema dos alvos
+    Ls = np.hypot(dxs, dys)
+    Ld = np.hypot(dXs, dYs)
+    if Ls == 0:
+        raise ValueError("Os dois pontos do desenho coincidem.")
+    escala = Ld / Ls
+    theta = np.arctan2(dYs, dXs) - np.arctan2(dys, dxs)
+    c, s = np.cos(theta), np.sin(theta)
+
+    def aplicar(x, y):
+        xr, yr = np.asarray(x) - x1, np.asarray(y) - y1
+        X = X1 + escala * (c * xr - s * yr)
+        Y = Y1 + escala * (s * xr + c * yr)
+        return X, Y
+
+    return aplicar, escala, np.degrees(theta)
+
+
 def separador_planta(dados):
     st.subheader("Planta do projeto (DXF)")
 
@@ -588,12 +620,10 @@ def separador_planta(dados):
         return
 
     st.caption("Carrega uma planta em DXF (por exemplo a planta de escavacao "
-               "e contencao de um piso). A app desenha as linhas do projeto. "
-               "Nota: as plantas estao no referencial local do projeto e os "
-               "alvos topograficos noutro referencial, por isso a planta e "
-               "mostrada por si, como figura de contexto — nao sobreposta aos "
-               "alvos. E a leitura honesta enquanto nao houver pontos de "
-               "referencia comuns para alinhar os dois sistemas.")
+               "e contencao de um piso). Podes ve-la sozinha, ou ALINHA-LA com "
+               "os alvos topograficos indicando 2 pontos de referencia — a app "
+               "calcula a transformacao e sobrepoe os alvos coloridos pelo "
+               "deslocamento.")
 
     dxf = st.file_uploader("Ficheiro DXF", type=["dxf"])
     if dxf is None:
@@ -610,7 +640,6 @@ def separador_planta(dados):
         st.error(f"Nao consegui ler as layers do DXF. Detalhe: {e}")
         return
 
-    # pre-selecao: layers cujo nome comeca por um dos prefixos estruturais
     sugeridas = [l for l in layers
                  if any(l.upper().startswith(p) for p in LAYERS_ESTRUTURAIS_SUGERIDAS)]
 
@@ -618,7 +647,6 @@ def separador_planta(dados):
              f"as estruturais (contorno, estacas, grelha). Ajusta se quiseres:")
     layers_sel = st.multiselect("Layers a desenhar", sorted(layers),
                                 default=sorted(sugeridas) if sugeridas else [])
-
     if not layers_sel:
         st.warning("Escolhe pelo menos uma layer para desenhar.")
         return
@@ -628,14 +656,77 @@ def separador_planta(dados):
     except Exception as e:
         st.error(f"Nao consegui extrair a geometria. Detalhe: {e}")
         return
-
     if not segmentos:
         st.warning("Nao encontrei geometria nas layers escolhidas. Tenta outras.")
         return
 
-    # desenhar a planta
+    # ---------------------------------------------------------------------
+    # ALINHAMENTO OPCIONAL COM OS ALVOS
+    # ---------------------------------------------------------------------
+    alvos = dados["alvos"]
+    tem_alvos = (not alvos.empty and COLS["M0"] in alvos.columns
+                 and COLS["alvo"] in alvos.columns)
+
+    alinhar = False
+    aplicar = None
+    if tem_alvos:
+        alinhar = st.checkbox(
+            "Alinhar a planta com os alvos (sobreposicao)", value=False,
+            help="Precisas de indicar, para 2 alvos, onde eles estao no "
+                 "desenho. A coordenada no sistema dos alvos ja vem do Excel.")
+
+    if alinhar:
+        # coordenadas dos alvos (sistema dos alvos) — uma linha por alvo (usar campanha mais recente)
+        ult = alvos[alvos[COLS["data"]] == alvos[COLS["data"]].max()]
+        lista_alvos = sorted(ult[COLS["alvo"]].astype(str).unique())
+
+        st.markdown("**Ponto de referencia 1**")
+        c1, c2, c3 = st.columns(3)
+        a1 = c1.selectbox("Alvo 1", lista_alvos, key="a1")
+        x1d = c2.number_input("X no desenho", value=0.0, key="x1d", format="%.2f")
+        y1d = c3.number_input("Y no desenho", value=0.0, key="y1d", format="%.2f")
+
+        st.markdown("**Ponto de referencia 2** (escolhe um bem afastado do 1)")
+        d1, d2, d3 = st.columns(3)
+        a2 = d1.selectbox("Alvo 2", lista_alvos,
+                          index=min(len(lista_alvos) - 1, 1), key="a2")
+        x2d = d2.number_input("X no desenho", value=0.0, key="x2d", format="%.2f")
+        y2d = d3.number_input("Y no desenho", value=0.0, key="y2d", format="%.2f")
+
+        st.caption("Como obter o X,Y no desenho: abre o DXF no AutoCAD ou num "
+                   "visualizador, aponta o cursor ao sitio onde o alvo esta, e "
+                   "le as coordenadas. Quanto mais afastados os 2 alvos, melhor.")
+
+        def coord_alvo(nome):
+            linha = ult[ult[COLS["alvo"]].astype(str) == nome]
+            return float(linha[COLS["M0"]].iloc[0]), float(linha[COLS["P0"]].iloc[0])
+
+        if a1 == a2:
+            st.warning("Escolhe dois alvos diferentes.")
+        elif (x1d, y1d) == (0.0, 0.0) or (x2d, y2d) == (0.0, 0.0):
+            st.info("Preenche as coordenadas dos 2 pontos no desenho para "
+                    "calcular o alinhamento.")
+        else:
+            try:
+                P1 = coord_alvo(a1)
+                P2 = coord_alvo(a2)
+                aplicar, escala, ang = transformacao_semelhanca(
+                    (x1d, y1d), P1, (x2d, y2d), P2)
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Escala desenho->alvos", f"{escala:.4f}")
+                m2.metric("Rotacao", f"{ang:.1f}°")
+                m3.metric("Estado", "Alinhado")
+                if not (0.5 < escala < 2.0):
+                    st.warning("A escala calculada e invulgar. Confirma as "
+                               "coordenadas dos pontos no desenho — pode haver "
+                               "troca de X/Y ou de ponto.")
+            except Exception as e:
+                st.error(f"Nao consegui calcular o alinhamento: {e}")
+
+    # ---------------------------------------------------------------------
+    # DESENHAR
+    # ---------------------------------------------------------------------
     fig = go.Figure()
-    # agrupar por layer para dar cor distinta e legenda util
     cores = {}
     paleta = ["#333333", "#1f77b4", "#d62728", "#2ca02c", "#9467bd",
               "#8c564b", "#e377c2", "#ff7f0e"]
@@ -644,30 +735,48 @@ def separador_planta(dados):
 
     mostrados = set()
     for xs, ys, lay in segmentos:
+        if aplicar is not None:
+            X, Y = aplicar(xs, ys)
+            xs, ys = list(X), list(Y)
         fig.add_trace(go.Scatter(
             x=xs, y=ys, mode="lines",
             line=dict(color=cores[lay], width=1),
-            name=lay,
-            legendgroup=lay,
-            showlegend=(lay not in mostrados),
-            hoverinfo="skip",
+            name=lay, legendgroup=lay,
+            showlegend=(lay not in mostrados), hoverinfo="skip",
         ))
         mostrados.add(lay)
 
+    # sobrepor alvos se estiver alinhado
+    if aplicar is not None and tem_alvos:
+        ult = alvos[alvos[COLS["data"]] == alvos[COLS["data"]].max()]
+        fig.add_trace(go.Scatter(
+            x=ult[COLS["M0"]], y=ult[COLS["P0"]],
+            mode="markers+text",
+            marker=dict(size=10, color=ult[COLS["desl_h"]], colorscale="YlOrRd",
+                        colorbar=dict(title="Desl. h (mm)"), cmin=0,
+                        line=dict(width=1, color="black")),
+            text=ult[COLS["alvo"]].astype(str), textposition="top center",
+            textfont=dict(size=8), name="Alvos",
+            customdata=ult[COLS["desl_h"]],
+            hovertemplate="Alvo %{text}<br>Desl. h: %{customdata:.1f} mm<extra></extra>",
+        ))
+
+    eixo = "sistema dos alvos (M, P)" if aplicar is not None else "X, Y local do desenho"
     fig.update_layout(
-        height=700,
-        xaxis_title="X local (m)", yaxis_title="Y local (m)",
+        height=700, xaxis_title=eixo, yaxis_title=eixo,
         yaxis=dict(scaleanchor="x", scaleratio=1),
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
         margin=dict(l=0, r=0, t=30, b=0),
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    st.metric("Elementos desenhados", len(segmentos))
-    st.caption("Para a tese: esta planta serve de figura de contexto da obra "
-               "(implantacao da contencao periferica e da malha estrutural). "
-               "A analise de deslocamentos vive nos separadores dos alvos e "
-               "inclinometros.")
+    if aplicar is not None:
+        st.success("Planta alinhada com os alvos. Verifica visualmente se o "
+                   "contorno bate certo com a nuvem de alvos; se nao, ajusta os "
+                   "pontos de referencia.")
+    else:
+        st.caption("Planta em coordenadas locais do desenho. Ativa o "
+                   "alinhamento acima para a sobrepor aos alvos.")
 
 
 # =========================================================================
