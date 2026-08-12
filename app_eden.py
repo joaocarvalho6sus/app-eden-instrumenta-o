@@ -114,6 +114,62 @@ CC_ALARME = 0.25
 LIMIAR_VEL_DEFEITO = 0.5
 FATOR_ACEL_DEFEITO = 1.8
 
+# =========================================================================
+# DADOS GEOLOGICOS  (Relatorio Geologico-Geotecnico ENGGEO, processo 220216)
+# Transcritos dos Quadros II, III, V, VI, VII e dos logs de sondagem.
+# Ficam embutidos porque vêm do relatorio e nao mudam. Nenhum valor inventado.
+# =========================================================================
+GEO_SONDAGENS = {
+    "SC6/Pz": {"cota_terreno": 23.3, "profundidade": 21.05, "nf_prof": 7.17},
+    "SC7":    {"cota_terreno": 26.0, "profundidade": 19.89, "nf_prof": None},
+    "SC8/Pz": {"cota_terreno": 28.8, "profundidade": 21.00, "nf_prof": 9.47},
+    "SC9/Pz": {"cota_terreno": 27.5, "profundidade": 21.41, "nf_prof": 11.18},
+}
+
+# camadas (topo, base, unidade) em profundidade (m)
+GEO_LITOLOGIA = {
+    "SC6/Pz": [(0.0, 0.5, "Aterro"), (0.5, 21.05, "Gres (C1As)")],
+    "SC7":    [(0.0, 0.5, "Aterro"), (0.5, 19.89, "Gres (C1As)")],
+    "SC8/Pz": [(0.0, 0.5, "Aterro"), (0.5, 19.5, "Gres (C1As)"),
+               (19.5, 21.0, "Calcario (C1A)")],
+    "SC9/Pz": [(0.0, 0.5, "Aterro"), (0.5, 21.41, "Gres (C1As)")],
+}
+
+# cor de cada unidade litologica (para a coluna)
+GEO_CORES_LITO = {
+    "Aterro": "#d9822b",
+    "Gres (C1As)": "#a9c47f",
+    "Calcario (C1A)": "#6b8e4e",
+}
+
+# ensaios SPT: (profundidade_m, N). N=60 indica nega.
+GEO_SPT = {
+    "SC6/Pz": [(1.5,60),(3.0,60),(4.5,46),(6.0,60),(7.5,60),(9.0,38),(10.5,25),
+               (12.0,56),(13.5,35),(15.0,25),(16.5,22),(18.0,60),(19.5,60)],
+    "SC7":    [(1.5,32),(3.0,36),(4.5,60),(6.0,60),(7.5,60),(9.0,60),(10.5,60),
+               (12.0,60),(13.5,60),(15.0,60),(16.5,60),(18.0,60)],
+    "SC8/Pz": [(1.5,11),(3.0,52),(4.5,60),(6.0,19),(7.5,24),(9.0,36),(10.5,32),
+               (12.0,47),(13.5,60),(15.0,60),(16.5,60),(18.0,22),(19.5,60)],
+    "SC9/Pz": [(1.5,60),(3.0,60),(4.5,60),(6.0,60),(7.5,60),(9.0,60),(10.5,40),
+               (12.0,60),(13.5,60),(15.0,35),(16.5,37),(18.0,60),(19.5,60)],
+}
+
+# zonamento geotecnico (Quadros V, VI, VII)
+GEO_ZONAMENTO = [
+    {"Zona":"ZG6","Descricao":"Aterro heterogeneo de origem nao selectiva",
+     "gama (kN/m3)":"17-18","c' (kPa)":"<5","fi' (graus)":"<26","E'":"<5 MPa"},
+    {"Zona":"ZG5","Descricao":"Gres pouco consolidado, SPT 11-30, RQD 0%",
+     "gama (kN/m3)":"19-20","c' (kPa)":"5-15","fi' (graus)":"28-33","E'":"8-30 MPa"},
+    {"Zona":"ZG4","Descricao":"Gres pouco consolidado, SPT 31-56, RQD 0%",
+     "gama (kN/m3)":"20-21","c' (kPa)":"5-30","fi' (graus)":"30-36","E'":"25-50 MPa"},
+    {"Zona":"ZG3","Descricao":"Gres/calcario irreg. consolidado, SPT>=60, RQD 0-25%",
+     "gama (kN/m3)":"22-24","c' (kPa)":"0.04-0.40 MPa","fi' (graus)":"29-32","E'":"0.07-0.22 GPa"},
+    {"Zona":"ZG2","Descricao":"Gres irreg. consolidado a consolidado, SPT>=60, RQD 45-75%",
+     "gama (kN/m3)":"24-25","c' (kPa)":"1.26-3.14 MPa","fi' (graus)":"32-36","E'":"0.80-2.81 GPa"},
+    {"Zona":"ZG1","Descricao":"Gres consolidado, SPT>=60, RQD 76-100%",
+     "gama (kN/m3)":"25-26","c' (kPa)":"2.70-8.69 MPa","fi' (graus)":"38-42","E'":"7.94-14.13 GPa"},
+]
+
 st.set_page_config(page_title="The Eden — Instrumentacao", layout="wide")
 
 
@@ -457,7 +513,41 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
         sel = st.multiselect("Leituras", datas_inc,
                              default=[datas_inc[i] for i in idx],
                              format_func=lambda d: pd.to_datetime(d).strftime("%d/%m/%Y"))
+
+        # opcao de sobrepor a geologia de uma sondagem (peca-chave do back-analysis)
+        geo_on = st.checkbox("Sobrepor geologia (sondagem)", value=False,
+                             help="Mostra a coluna litologica e o nivel "
+                                  "freatico de uma sondagem ao lado do perfil, "
+                                  "para relacionar a deformacao com o terreno.")
+        sond_sel = None
+        if geo_on:
+            sond_sel = st.selectbox("Sondagem de referencia",
+                                    list(GEO_LITOLOGIA.keys()))
+
         fig = go.Figure()
+
+        # se geologia ligada, desenhar faixas litologicas de fundo (a toda a largura)
+        if geo_on and sond_sel:
+            # usar profundidade do perfil para a extensao horizontal das faixas
+            xmax = float(p_inc[COLS["desl_total"]].abs().max()) * 1.1 + 1
+            for topo, base, unidade in GEO_LITOLOGIA[sond_sel]:
+                cor = GEO_CORES_LITO.get(unidade, "#cccccc")
+                fig.add_shape(type="rect", x0=-xmax, x1=xmax, y0=topo, y1=base,
+                              fillcolor=cor, opacity=0.25,
+                              line=dict(width=0), layer="below")
+            # nivel freatico
+            nf = GEO_SONDAGENS[sond_sel]["nf_prof"]
+            if nf is not None:
+                fig.add_hline(y=nf, line=dict(color="blue", width=2, dash="dash"),
+                              annotation_text=f"NF ({sond_sel})",
+                              annotation_position="right")
+            # entradas de legenda para as unidades
+            for unidade, cor in GEO_CORES_LITO.items():
+                if any(u == unidade for _, _, u in GEO_LITOLOGIA[sond_sel]):
+                    fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers",
+                                             marker=dict(size=10, color=cor, symbol="square"),
+                                             name=unidade))
+
         for d in sel:
             s = p_inc[p_inc[COLS["data"]] == d].sort_values(COLS["profundidade"])
             fig.add_trace(go.Scatter(x=s[COLS["desl_total"]], y=s[COLS["profundidade"]],
@@ -465,8 +555,13 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
                                      name=pd.to_datetime(d).strftime("%d/%m/%Y")))
         fig.update_yaxes(autorange="reversed", title="Profundidade (m)")
         fig.update_xaxes(title="Deslocamento acumulado (mm)")
-        fig.update_layout(height=560, legend_title="Leitura")
+        fig.update_layout(height=560, legend_title="Leitura / geologia")
         st.plotly_chart(fig, use_container_width=True)
+        if geo_on and sond_sel:
+            st.caption(f"Geologia da sondagem {sond_sel} sobreposta. Repara se "
+                       f"a maior curvatura do perfil coincide com uma mudanca "
+                       f"de camada ou com o nivel freatico — e a leitura central "
+                       f"do back-analysis.")
 
     with col2:
         st.subheader("Evolucao do deslocamento")
@@ -835,6 +930,92 @@ def separador_planta(dados):
 
 
 # =========================================================================
+# SEPARADOR 7 — GEOLOGIA
+# =========================================================================
+def desenhar_coluna_litologica(fig, sondagem, x_centro=0, largura=0.8,
+                               em_cota=False, cota_terreno=0):
+    """Desenha a coluna litologica de uma sondagem como retangulos coloridos.
+    Se em_cota=True, converte profundidade em cota (cota_terreno - prof)."""
+    for topo, base, unidade in GEO_LITOLOGIA[sondagem]:
+        y0 = cota_terreno - topo if em_cota else topo
+        y1 = cota_terreno - base if em_cota else base
+        cor = GEO_CORES_LITO.get(unidade, "#cccccc")
+        fig.add_shape(type="rect",
+                      x0=x_centro - largura/2, x1=x_centro + largura/2,
+                      y0=y0, y1=y1, fillcolor=cor, opacity=0.7,
+                      line=dict(color="black", width=0.5), layer="below")
+
+
+def separador_geologia(dados):
+    st.subheader("Geologia do terreno (Relatorio ENGGEO, proc. 220216)")
+    st.caption("Dados do relatorio geologico-geotecnico: colunas litologicas "
+               "das sondagens, ensaios SPT em profundidade e zonamento "
+               "geotecnico. O terreno e, sob 0,5 m de aterro, essencialmente "
+               "grés dos 'Grés Superiores' (C1As), com calcario (C1A) apenas "
+               "no fundo do SC8. A deformacao nao se explica por uma camada "
+               "mole — nao existe — mas pelo grau de consolidacao do grés.")
+
+    sub1, sub2, sub3 = st.tabs(["Sondagens (litologia)", "Ensaios SPT",
+                                "Zonamento geotecnico"])
+
+    # ---- litologia lado a lado -------------------------------------------
+    with sub1:
+        st.caption("Colunas litologicas das quatro sondagens, em profundidade. "
+                   "A linha azul marca o nivel freatico.")
+        fig = go.Figure()
+        sonds = list(GEO_LITOLOGIA.keys())
+        for i, s in enumerate(sonds):
+            desenhar_coluna_litologica(fig, s, x_centro=i, largura=0.7)
+            # nivel freatico
+            nf = GEO_SONDAGENS[s]["nf_prof"]
+            if nf is not None:
+                fig.add_shape(type="line", x0=i-0.35, x1=i+0.35, y0=nf, y1=nf,
+                              line=dict(color="blue", width=2, dash="dash"))
+        # legenda manual das unidades
+        for unidade, cor in GEO_CORES_LITO.items():
+            fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers",
+                                     marker=dict(size=12, color=cor, symbol="square"),
+                                     name=unidade))
+        fig.add_trace(go.Scatter(x=[None], y=[None], mode="lines",
+                                 line=dict(color="blue", dash="dash"),
+                                 name="Nivel freatico"))
+        fig.update_yaxes(autorange="reversed", title="Profundidade (m)")
+        fig.update_xaxes(tickmode="array", tickvals=list(range(len(sonds))),
+                         ticktext=sonds, range=[-0.6, len(sonds)-0.4])
+        fig.update_layout(height=600, legend_title="Unidade")
+        st.plotly_chart(fig, use_container_width=True)
+
+    # ---- SPT --------------------------------------------------------------
+    with sub2:
+        st.caption("Ensaios SPT (N = numero de pancadas) em profundidade. "
+                   "N=60 corresponde a nega. Valores altos = terreno mais "
+                   "resistente. A variacao dentro do grés reflete o grau de "
+                   "consolidacao (zonas ZG5 a ZG1).")
+        fig2 = go.Figure()
+        for s, ensaios in GEO_SPT.items():
+            profs = [e[0] for e in ensaios]
+            ns = [e[1] for e in ensaios]
+            fig2.add_trace(go.Scatter(x=ns, y=profs, mode="lines+markers", name=s))
+        fig2.update_yaxes(autorange="reversed", title="Profundidade (m)")
+        fig2.update_xaxes(title="N (pancadas)", range=[0, 65])
+        fig2.add_vline(x=60, line_dash="dot", line_color="gray",
+                       annotation_text="Nega (60)")
+        fig2.update_layout(height=600, legend_title="Sondagem")
+        st.plotly_chart(fig2, use_container_width=True)
+
+    # ---- zonamento --------------------------------------------------------
+    with sub3:
+        st.caption("Zonamento geotecnico e parametros propostos (Quadros V-VII "
+                   "do relatorio). Estes sao os parametros que alimentam a "
+                   "modelacao numerica da contencao.")
+        st.dataframe(pd.DataFrame(GEO_ZONAMENTO), use_container_width=True,
+                     hide_index=True)
+        st.caption("gama: peso volumico | c': coesao | fi': angulo de atrito | "
+                   "E': modulo de deformabilidade. Zonas ZG3-ZG1 (rocha) com c' "
+                   "e E' em MPa/GPa; ZG6-ZG4 (solo/grés brando) em kPa/MPa.")
+
+
+# =========================================================================
 # PRINCIPAL
 # =========================================================================
 def main():
@@ -876,9 +1057,9 @@ def main():
     if not TEM_EZDXF:
         st.sidebar.info("Instala 'ezdxf' para ativar a leitura de plantas DXF.")
 
-    t3d, tinc, talv, tcc, tpz, tplan = st.tabs(
+    t3d, tinc, talv, tcc, tpz, tgeo, tplan = st.tabs(
         ["Visao geral 3D", "Inclinometros", "Alvos (2D)",
-         "Celulas de carga", "Piezometros", "Planta (DXF)"])
+         "Celulas de carga", "Piezometros", "Geologia", "Planta (DXF)"])
     with t3d:
         separador_3d(dados)
     with tinc:
@@ -889,6 +1070,8 @@ def main():
         separador_celulas(dados)
     with tpz:
         separador_piezometros(dados)
+    with tgeo:
+        separador_geologia(dados)
     with tplan:
         separador_planta(dados)
 
