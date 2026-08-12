@@ -170,6 +170,59 @@ GEO_ZONAMENTO = [
      "gama (kN/m3)":"25-26","c' (kPa)":"2.70-8.69 MPa","fi' (graus)":"38-42","E'":"7.94-14.13 GPa"},
 ]
 
+# =========================================================================
+# CRONOGRAMA DA OBRA  (Plano de Trabalhos Alves Ribeiro/HCI, 05/05/2025)
+# Datas PREVISTAS transcritas do PDF do plano. Sao o planeado, nao o real.
+# =========================================================================
+# (nome, inicio ISO, conclusao ISO)
+FASES_OBRA = [
+    ("Contencao periferica",                 "2025-05-13", "2026-02-03"),
+    ("Estacas Poente e Norte",               "2025-05-13", "2025-06-23"),
+    ("Estacas Central e Nascente",           "2025-06-24", "2025-08-18"),
+    ("Escavacao + bandas de laje + ancoragens", "2025-07-08", "2026-03-02"),
+    ("Fundacao e laje de fundo",             "2026-01-20", "2026-03-16"),
+    ("Microestacas",                         "2026-02-03", "2026-03-02"),
+    ("Piso -3", "2026-02-24", "2026-04-06"),
+    ("Piso -2", "2026-03-17", "2026-04-27"),
+    ("Piso -1", "2026-03-31", "2026-05-11"),
+]
+
+CORES_FASES = ["#8dd3c7", "#ffffb3", "#bebada", "#fb8072", "#80b1d3",
+               "#fdb462", "#b3de69", "#fccde5", "#d9d9d9"]
+
+
+def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True):
+    """
+    Sobrepoe as fases da obra a um grafico com o tempo no eixo X.
+    So desenha as fases que se sobrepoem a janela [dt_min, dt_max] dos dados,
+    para nao encher o grafico com fases de 2026 quando os dados sao de 2025.
+    """
+    dt_min = pd.to_datetime(dt_min)
+    dt_max = pd.to_datetime(dt_max)
+    # margem para as fases que comecam pouco antes/depois
+    margem = pd.Timedelta(days=20)
+
+    for i, (nome, ini, fim) in enumerate(FASES_OBRA):
+        t0 = pd.to_datetime(ini)
+        t1 = pd.to_datetime(fim)
+        # sobrepoe a janela dos dados?
+        if t1 < dt_min - margem or t0 > dt_max + margem:
+            continue
+        cor = CORES_FASES[i % len(CORES_FASES)]
+        # recortar a faixa a janela visivel
+        vt0 = max(t0, dt_min - margem)
+        vt1 = min(t1, dt_max + margem)
+        if faixas:
+            fig.add_vrect(x0=vt0, x1=vt1, fillcolor=cor, opacity=0.18,
+                          line_width=0, layer="below",
+                          annotation_text=nome, annotation_position="top left",
+                          annotation=dict(font_size=9, textangle=0))
+        if marcos:
+            # linha no inicio da fase, se cair na janela
+            if dt_min - margem <= t0 <= dt_max + margem:
+                fig.add_vline(x=t0, line=dict(color=cor, width=1.5, dash="dot"))
+
+
 st.set_page_config(page_title="The Eden — Instrumentacao", layout="wide")
 
 
@@ -579,10 +632,17 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
                                   mode="lines+markers", name="Maximo global"))
         fig2.add_trace(go.Scatter(x=s_fix[COLS["data"]], y=s_fix[COLS["desl_total"]],
                                   mode="lines+markers", name=f"A {prof_fixa:.1f} m"))
+        if st.session_state.get("mostrar_obra") and len(s_max):
+            adicionar_fases_obra(fig2, s_max[COLS["data"]].min(),
+                                 s_max[COLS["data"]].max())
         fig2.update_xaxes(title="Data")
         fig2.update_yaxes(title="Deslocamento (mm)")
         fig2.update_layout(height=560, legend_title="Serie")
         st.plotly_chart(fig2, use_container_width=True)
+        if st.session_state.get("mostrar_obra"):
+            st.caption("Faixas coloridas = fases do plano de trabalhos "
+                       "(previstas). Repara se a aceleracao do deslocamento "
+                       "coincide com o avanco de uma fase de escavacao.")
 
     st.divider()
     st.subheader("Velocidade e sinais precursores")
@@ -640,6 +700,8 @@ def separador_alvos_2d(dados):
             s = sub[sub[COLS["alvo"]] == a].sort_values(COLS["data"])
             fig.add_trace(go.Scatter(x=s[COLS["data"]], y=s[COLS["desl_h"]],
                                      mode="lines+markers", name=a))
+        if st.session_state.get("mostrar_obra") and len(sub):
+            adicionar_fases_obra(fig, sub[COLS["data"]].min(), sub[COLS["data"]].max())
         fig.update_xaxes(title="Data")
         fig.update_yaxes(title="Desl. horizontal (mm)")
         fig.update_layout(height=460)
@@ -651,6 +713,8 @@ def separador_alvos_2d(dados):
             s = sub[sub[COLS["alvo"]] == a].sort_values(COLS["data"])
             fig2.add_trace(go.Scatter(x=s[COLS["data"]], y=s[COLS["dZ"]],
                                       mode="lines+markers", name=a))
+        if st.session_state.get("mostrar_obra") and len(sub):
+            adicionar_fases_obra(fig2, sub[COLS["data"]].min(), sub[COLS["data"]].max())
         fig2.update_xaxes(title="Data")
         fig2.update_yaxes(title="ΔZ (mm)")
         fig2.update_layout(height=460)
@@ -711,11 +775,18 @@ def separador_piezometros(dados):
     sub = pz[pz[COLS["piezometro"]] == p].sort_values(COLS["data"])
     fig = go.Figure(go.Scatter(x=sub[COLS["data"]], y=sub[COLS["cota_agua"]],
                                mode="lines+markers", name="Cota da agua"))
+    if st.session_state.get("mostrar_obra") and len(sub):
+        adicionar_fases_obra(fig, sub[COLS["data"]].min(), sub[COLS["data"]].max())
     fig.update_xaxes(title="Data"); fig.update_yaxes(title="Cota da agua (m)")
     fig.update_layout(height=460)
     st.plotly_chart(fig, use_container_width=True)
-    st.caption("Sugestao: sobrepor a precipitacao diaria para avaliar a "
-               "resposta do nivel freatico a pluviosidade.")
+    if st.session_state.get("mostrar_obra"):
+        st.caption("Faixas = fases da obra (previstas). A descida do nivel de "
+                   "agua durante a escavacao e coerente com rebaixamento "
+                   "induzido pela propria escavacao.")
+    else:
+        st.caption("Sugestao: sobrepor a precipitacao diaria para avaliar a "
+                   "resposta do nivel freatico a pluviosidade.")
 
 
 # =========================================================================
@@ -1016,6 +1087,55 @@ def separador_geologia(dados):
 
 
 # =========================================================================
+# SEPARADOR 8 — CRONOGRAMA DA OBRA
+# =========================================================================
+def separador_obra(dados):
+    st.subheader("Cronograma da obra (Plano de Trabalhos)")
+    st.caption("Plano de trabalhos da empreitada (Alves Ribeiro / HCI, "
+               "05/05/2025). Sao datas PREVISTAS — o planeado, que pode diferir "
+               "do executado. A janela de instrumentacao (out-dez 2025) esta "
+               "assinalada para veres que fases estavam ativas durante a "
+               "monitorizacao.")
+
+    # Gantt simples com barras horizontais
+    fig = go.Figure()
+    for i, (nome, ini, fim) in enumerate(FASES_OBRA):
+        t0 = pd.to_datetime(ini)
+        t1 = pd.to_datetime(fim)
+        cor = CORES_FASES[i % len(CORES_FASES)]
+        fig.add_trace(go.Scatter(
+            x=[t0, t1], y=[nome, nome], mode="lines",
+            line=dict(color=cor, width=16),
+            hovertemplate=f"{nome}<br>{ini} a {fim}<extra></extra>",
+            showlegend=False,
+        ))
+
+    # faixa da janela de instrumentacao
+    alvos = dados.get("alvos")
+    if alvos is not None and not alvos.empty and COLS["data"] in alvos.columns:
+        d0 = alvos[COLS["data"]].min()
+        d1 = alvos[COLS["data"]].max()
+        fig.add_vrect(x0=d0, x1=d1, fillcolor="crimson", opacity=0.12,
+                      line_width=0,
+                      annotation_text="Instrumentacao (dados)",
+                      annotation_position="top left")
+
+    fig.update_xaxes(title="Data")
+    fig.update_layout(height=460, margin=dict(l=0, r=0, t=30, b=0))
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.caption("Nota para a tese: apresentar estas datas como PLANEADAS. Se "
+               "tiveres os autos de obra (datas reais de execucao), o cruzamento "
+               "com a instrumentacao passa a ser rigoroso; sem eles, e uma "
+               "aproximacao defensavel desde que assinalada como tal.")
+
+    # tabela do plano
+    tabela = pd.DataFrame(
+        [{"Fase": n, "Inicio": i, "Conclusao": f} for n, i, f in FASES_OBRA])
+    st.dataframe(tabela, use_container_width=True, hide_index=True)
+
+
+# =========================================================================
 # PRINCIPAL
 # =========================================================================
 def main():
@@ -1046,6 +1166,15 @@ def main():
                                    LIMIAR_VEL_DEFEITO, 0.05)
     fator_acel = st.sidebar.slider("Fator de aceleracao (x)", 1.2, 3.0,
                                    FATOR_ACEL_DEFEITO, 0.1)
+
+    st.sidebar.divider()
+    st.sidebar.subheader("Sequencia da obra")
+    mostrar_obra = st.sidebar.checkbox(
+        "Sobrepor fases da obra aos graficos temporais", value=True,
+        help="Mostra, nos graficos com data no eixo, as fases do plano de "
+             "trabalhos (Alves Ribeiro). Datas PREVISTAS — nao as reais.")
+    st.session_state["mostrar_obra"] = mostrar_obra
+
     if not TEM_SCIPY:
         st.sidebar.info("Instala 'scipy' para ativar a superficie 3D interpolada.")
 
@@ -1057,9 +1186,9 @@ def main():
     if not TEM_EZDXF:
         st.sidebar.info("Instala 'ezdxf' para ativar a leitura de plantas DXF.")
 
-    t3d, tinc, talv, tcc, tpz, tgeo, tplan = st.tabs(
+    t3d, tinc, talv, tcc, tpz, tgeo, tobra, tplan = st.tabs(
         ["Visao geral 3D", "Inclinometros", "Alvos (2D)",
-         "Celulas de carga", "Piezometros", "Geologia", "Planta (DXF)"])
+         "Celulas de carga", "Piezometros", "Geologia", "Obra", "Planta (DXF)"])
     with t3d:
         separador_3d(dados)
     with tinc:
@@ -1072,6 +1201,8 @@ def main():
         separador_piezometros(dados)
     with tgeo:
         separador_geologia(dados)
+    with tobra:
+        separador_obra(dados)
     with tplan:
         separador_planta(dados)
 
