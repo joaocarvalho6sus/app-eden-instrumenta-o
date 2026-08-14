@@ -1272,73 +1272,174 @@ def desenhar_coluna_litologica(fig, sondagem, x_centro=0, largura=0.8,
                       line=dict(color="black", width=0.5), layer="below")
 
 
+def _zona_por_N(n):
+    """
+    Ponte de LEITURA N -> zona geotecnica, segundo os intervalos do proprio
+    relatorio (Quadros V-VII): ZG5 (SPT 11-30), ZG4 (31-56), ZG3/ZG2/ZG1 (>=60,
+    distinguidas pelo RQD que NAO temos por ponto). Serve so para colorir o
+    ponto SPT e dar leitura rapida; NAO define fronteiras de camada.
+    """
+    if n < 11:
+        return "ZG6/ZG5"
+    if n <= 30:
+        return "ZG5"
+    if n <= 56:
+        return "ZG4"
+    return "ZG3–ZG1 (nega)"
+
+
+ZONA_CORES = {
+    "ZG6/ZG5": "#d9822b",
+    "ZG5": "#c9a227",
+    "ZG4": "#7fa650",
+    "ZG3–ZG1 (nega)": "#3f6f3f",
+}
+
+
 def separador_geologia(dados):
     st.subheader("Geologia do terreno (Relatorio ENGGEO, proc. 220216)")
-    st.caption("Dados do relatorio geologico-geotecnico: colunas litologicas "
-               "das sondagens, ensaios SPT em profundidade e zonamento "
-               "geotecnico. O terreno e, sob 0,5 m de aterro, essencialmente "
-               "grés dos 'Grés Superiores' (C1As), com calcario (C1A) apenas "
-               "no fundo do SC8. A deformacao nao se explica por uma camada "
-               "mole — nao existe — mas pelo grau de consolidacao do grés.")
+    st.caption("Leitura integrada por sondagem: a coluna litologica, os ensaios "
+               "SPT e o zonamento geotecnico partilham o eixo de profundidade, "
+               "para se lerem em conjunto. Sob ~0,5 m de aterro, o terreno e "
+               "essencialmente grés dos 'Grés Superiores' (C1As), com calcario "
+               "(C1A) apenas no fundo do SC8. A deformacao nao se explica por "
+               "uma camada mole — nao existe — mas pelo grau de consolidacao do "
+               "grés, que cresce com a profundidade (o SPT sobe de ~11-30 para "
+               "nega).")
 
-    sub1, sub2, sub3 = st.tabs(["Sondagens (litologia)", "Ensaios SPT",
-                                "Zonamento geotecnico"])
+    sonds = list(GEO_LITOLOGIA.keys())
 
-    # ---- litologia lado a lado -------------------------------------------
-    with sub1:
-        st.caption("Colunas litologicas das quatro sondagens, em profundidade. "
-                   "A linha azul marca o nivel freatico.")
-        fig = go.Figure()
-        sonds = list(GEO_LITOLOGIA.keys())
-        for i, s in enumerate(sonds):
-            desenhar_coluna_litologica(fig, s, x_centro=i, largura=0.7)
-            # nivel freatico
-            nf = GEO_SONDAGENS[s]["nf_prof"]
-            if nf is not None:
-                fig.add_shape(type="line", x0=i-0.35, x1=i+0.35, y0=nf, y1=nf,
-                              line=dict(color="blue", width=2, dash="dash"))
-        # legenda manual das unidades
-        for unidade, cor in GEO_CORES_LITO.items():
+    col_sel, col_info = st.columns([1, 2])
+    with col_sel:
+        modo = st.radio("Vista", ["Uma sondagem (detalhe)", "As quatro (comparar)"])
+        if modo == "Uma sondagem (detalhe)":
+            sond = st.selectbox("Sondagem", sonds)
+        else:
+            sond = None
+    with col_info:
+        st.caption("A coluna colorida a esquerda de cada sondagem e a litologia; "
+                   "os pontos e a linha sao o SPT (N pancadas), no mesmo eixo de "
+                   "profundidade. A cor do ponto SPT indica a zona geotecnica "
+                   "provavel pelo valor de N (ver tabela em baixo). A linha azul "
+                   "tracejada e o nivel freatico.")
+
+    alvo_sonds = [sond] if sond else sonds
+    n_col = len(alvo_sonds)
+
+    fig = go.Figure()
+    LARG_LITO = 0.12
+    SPT_MAX = 65.0
+
+    for i, s in enumerate(alvo_sonds):
+        x_base = i
+        x0_lito = x_base - 0.45
+        x1_lito = x_base - 0.45 + LARG_LITO
+
+        # coluna litologica
+        for topo, base, unidade in GEO_LITOLOGIA[s]:
+            cor = GEO_CORES_LITO.get(unidade, "#cccccc")
+            fig.add_shape(type="rect", x0=x0_lito, x1=x1_lito, y0=topo, y1=base,
+                          fillcolor=cor, opacity=0.85,
+                          line=dict(color="black", width=0.4), layer="below")
+
+        # SPT reescalado a direita da coluna litologica
+        x_spt0 = x1_lito + 0.03
+        x_spt1 = x_base + 0.45
+
+        def _xN(n, a=x_spt0, b=x_spt1):
+            return a + (n / SPT_MAX) * (b - a)
+
+        ensaios = GEO_SPT[s]
+        profs = [e[0] for e in ensaios]
+        ns = [e[1] for e in ensaios]
+        xs = [_xN(n) for n in ns]
+        zonas = [_zona_por_N(n) for n in ns]
+        cores_pt = [ZONA_CORES[z] for z in zonas]
+
+        fig.add_trace(go.Scatter(
+            x=xs, y=profs, mode="lines",
+            line=dict(color="rgba(90,90,90,0.55)", width=1.5),
+            showlegend=False, hoverinfo="skip"))
+        fig.add_trace(go.Scatter(
+            x=xs, y=profs, mode="markers",
+            marker=dict(size=7, color=cores_pt,
+                        line=dict(color="black", width=0.4)),
+            customdata=list(zip(ns, zonas)),
+            hovertemplate=(f"{s}<br>Prof: %{{y:.1f}} m<br>"
+                           "N: %{customdata[0]}<br>Zona: %{customdata[1]}"
+                           "<extra></extra>"),
+            showlegend=False))
+
+        # nega (N=60)
+        fig.add_shape(type="line", x0=_xN(60), x1=_xN(60),
+                      y0=0, y1=GEO_LITOLOGIA[s][-1][1],
+                      line=dict(color="gray", width=1, dash="dot"), layer="below")
+
+        # nivel freatico
+        nf = GEO_SONDAGENS[s]["nf_prof"]
+        if nf is not None:
+            fig.add_shape(type="line", x0=x0_lito, x1=x_spt1, y0=nf, y1=nf,
+                          line=dict(color="blue", width=2, dash="dash"))
+
+        fig.add_annotation(x=x_base, y=1.0, yref="paper", showarrow=False,
+                           text=f"<b>{s}</b>", font=dict(size=12))
+        for nval in (0, 30, 60):
+            fig.add_annotation(x=_xN(nval), y=-0.6, showarrow=False,
+                               text=str(nval), font=dict(size=8, color="gray"))
+
+    # legendas fantasma
+    for unidade, cor in GEO_CORES_LITO.items():
+        if any(any(u == unidade for _, _, u in GEO_LITOLOGIA[s]) for s in alvo_sonds):
             fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers",
                                      marker=dict(size=12, color=cor, symbol="square"),
-                                     name=unidade))
-        fig.add_trace(go.Scatter(x=[None], y=[None], mode="lines",
-                                 line=dict(color="blue", dash="dash"),
-                                 name="Nivel freatico"))
-        fig.update_yaxes(autorange="reversed", title="Profundidade (m)")
-        fig.update_xaxes(tickmode="array", tickvals=list(range(len(sonds))),
-                         ticktext=sonds, range=[-0.6, len(sonds)-0.4])
-        fig.update_layout(height=600, legend_title="Unidade")
-        st.plotly_chart(fig, use_container_width=True)
+                                     name=f"Litologia: {unidade}"))
+    for zona, cor in ZONA_CORES.items():
+        fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers",
+                                 marker=dict(size=10, color=cor),
+                                 name=f"SPT→{zona}"))
+    fig.add_trace(go.Scatter(x=[None], y=[None], mode="lines",
+                             line=dict(color="blue", dash="dash"),
+                             name="Nivel freatico"))
+    fig.add_trace(go.Scatter(x=[None], y=[None], mode="lines",
+                             line=dict(color="gray", dash="dot"),
+                             name="Nega (N=60)"))
 
-    # ---- SPT --------------------------------------------------------------
-    with sub2:
-        st.caption("Ensaios SPT (N = numero de pancadas) em profundidade. "
-                   "N=60 corresponde a nega. Valores altos = terreno mais "
-                   "resistente. A variacao dentro do grés reflete o grau de "
-                   "consolidacao (zonas ZG5 a ZG1).")
-        fig2 = go.Figure()
-        for s, ensaios in GEO_SPT.items():
-            profs = [e[0] for e in ensaios]
-            ns = [e[1] for e in ensaios]
-            fig2.add_trace(go.Scatter(x=ns, y=profs, mode="lines+markers", name=s))
-        fig2.update_yaxes(autorange="reversed", title="Profundidade (m)")
-        fig2.update_xaxes(title="N (pancadas)", range=[0, 65])
-        fig2.add_vline(x=60, line_dash="dot", line_color="gray",
-                       annotation_text="Nega (60)")
-        fig2.update_layout(height=600, legend_title="Sondagem")
-        st.plotly_chart(fig2, use_container_width=True)
+    fig.update_yaxes(autorange="reversed", title="Profundidade (m)")
+    fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False,
+                     range=[-0.6, n_col - 0.4])
+    fig.update_layout(height=640, legend_title="Legenda",
+                      margin=dict(l=0, r=0, t=30, b=10),
+                      legend=dict(font=dict(size=10)))
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption("Como ler: para cada sondagem, a barra colorida a esquerda e a "
+               "litologia; a curva a direita e o SPT (escala 0–60, com a linha "
+               "pontilhada na nega). Onde o SPT sobe, o grés esta mais "
+               "consolidado — e e ai que a rigidez do macico aumenta. "
+               "Profundidades de cada zona ZG NAO estao definidas no relatorio "
+               "por ponto; a cor do SPT e a zona PROVAVEL pelo valor de N.")
 
-    # ---- zonamento --------------------------------------------------------
-    with sub3:
-        st.caption("Zonamento geotecnico e parametros propostos (Quadros V-VII "
-                   "do relatorio). Estes sao os parametros que alimentam a "
-                   "modelacao numerica da contencao.")
-        st.dataframe(pd.DataFrame(GEO_ZONAMENTO), use_container_width=True,
-                     hide_index=True)
-        st.caption("gama: peso volumico | c': coesao | fi': angulo de atrito | "
-                   "E': modulo de deformabilidade. Zonas ZG3-ZG1 (rocha) com c' "
-                   "e E' em MPa/GPa; ZG6-ZG4 (solo/grés brando) em kPa/MPa.")
+    st.divider()
+
+    st.markdown("#### Zonamento geotecnico e parametros de projeto")
+    st.caption("Parametros propostos (Quadros V-VII do relatorio) que alimentam "
+               "a modelacao numerica da contencao. A coluna 'SPT tipico' e a "
+               "ponte para o perfil acima: e por ela que se le em que zona esta "
+               "cada troco de terreno.")
+
+    faixa_spt = {
+        "ZG6": "aterro", "ZG5": "11–30", "ZG4": "31–56",
+        "ZG3": "≥60 (RQD 0–25%)", "ZG2": "≥60 (RQD 45–75%)",
+        "ZG1": "≥60 (RQD 76–100%)",
+    }
+    zt = pd.DataFrame(GEO_ZONAMENTO)
+    zt.insert(2, "SPT tipico (N)", zt["Zona"].map(faixa_spt))
+    st.dataframe(zt, use_container_width=True, hide_index=True)
+    st.caption("gama: peso volumico | c': coesao | fi': angulo de atrito | "
+               "E': modulo de deformabilidade. Zonas ZG3-ZG1 (rocha) com c' e E' "
+               "em MPa/GPa; ZG6-ZG4 (solo/grés brando) em kPa/MPa. Nota: as tres "
+               "zonas de nega (ZG3-ZG1) distinguem-se pelo RQD, que o SPT sozinho "
+               "nao mede — por isso o perfil agrupa-as como 'nega'.")
+
 
 
 # =========================================================================
