@@ -299,6 +299,34 @@ GEO_ZONAMENTO = [
 ]
 
 # =========================================================================
+# COTAS DE PROJETO — ESCAVACAO E CONTENCAO (projeto JETsj, PRO/2023/368,
+# EDN-JET-...-0001 rev.D). Cotas absolutas em metros, referidas aos toscos.
+# Transcritas dos cortes (desenhos 0021-0024) e confirmadas por repeticao
+# em varios cortes. As cotas dos pisos sao consistentes ao longo da obra;
+# o coroamento da cortina varia por alcado (dominantes 20,85 e 24,65).
+# =========================================================================
+COTAS_PISOS = [
+    ("Piso 2 (coroamento zona alta)", 24.65),
+    ("Piso 1",  20.85),
+    ("Piso -1", 15.90),
+    ("Piso -2", 12.45),
+    ("Piso -3",  9.00),
+    ("Piso -4",  5.55),
+]
+COTA_FUNDO_ESCAVACAO = 4.55          # cota final de escavacao (dominante nos cortes)
+COTA_COROAMENTO_PADRAO = 20.85       # coroamento da cortina (alcados correntes)
+COTA_COROAMENTO_ALTA = 24.65         # coroamento na zona alta (piso 2)
+COTA_MURO_SCML = 22.50               # muro tradicional na fronteira com a Santa Casa
+
+# Nivel freatico de REPOUSO medido nos piezometros das sondagens
+# (ENGGEO, Quadro III, leitura de 24/11/2022). Cota da agua, em metros.
+NF_REPOUSO = [
+    ("SC6/Pz", 16.1),
+    ("SC8/Pz", 19.3),
+    ("SC9/Pz", 16.3),
+]
+
+# =========================================================================
 # CRONOGRAMA DA OBRA  (Plano de Trabalhos Alves Ribeiro/HCI, 05/05/2025)
 # Datas PREVISTAS transcritas do PDF do plano. Sao o planeado, nao o real.
 # =========================================================================
@@ -1025,23 +1053,75 @@ def separador_piezometros(dados):
                            "Piezometros"):
         return
     pz = pz.sort_values(COLS["data"])
-    st.subheader("Piezometros — cota da agua")
-    p = st.selectbox("Piezometro", sorted(pz[COLS["piezometro"]].dropna().unique()))
+    st.subheader("Piezometros — cota da agua vs. escavacao")
+    st.caption("O eixo vertical e a COTA (m), partilhada com as cotas de "
+               "projeto da escavacao/contencao e com o nivel freatico de "
+               "repouso. Assim ve-se a que profundidade anda a agua face a "
+               "cada piso e ao fundo de escavacao.")
+
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        p = st.selectbox("Piezometro",
+                         sorted(pz[COLS["piezometro"]].dropna().unique()))
+    with c2:
+        mostrar_pisos = st.checkbox("Cotas dos pisos e fundo de escavacao",
+                                    value=True)
+        mostrar_nf = st.checkbox("Nivel freatico de repouso (2022)", value=True)
+
     sub = pz[pz[COLS["piezometro"]] == p].sort_values(COLS["data"])
-    fig = go.Figure(go.Scatter(x=sub[COLS["data"]], y=sub[COLS["cota_agua"]],
-                               mode="lines+markers", name="Cota da agua"))
+    fig = go.Figure()
+
+    # cotas de projeto como linhas horizontais (referencia geometrica)
+    if mostrar_pisos:
+        for nome, cota in COTAS_PISOS:
+            fig.add_hline(y=cota, line=dict(color="rgba(120,120,120,0.5)",
+                          width=1, dash="dot"),
+                          annotation_text=f"{nome} ({cota:.2f})",
+                          annotation_position="right",
+                          annotation_font_size=9)
+        fig.add_hline(y=COTA_FUNDO_ESCAVACAO,
+                      line=dict(color="#b45309", width=2),
+                      annotation_text=f"Fundo de escavacao ({COTA_FUNDO_ESCAVACAO:.2f})",
+                      annotation_position="right", annotation_font_size=10)
+
+    # nivel freatico de repouso (faixa entre min e max das sondagens)
+    if mostrar_nf:
+        nfs = [c for _, c in NF_REPOUSO]
+        fig.add_hrect(y0=min(nfs), y1=max(nfs),
+                      fillcolor="rgba(37,99,235,0.10)", line_width=0,
+                      annotation_text="NF de repouso (2022)",
+                      annotation_position="top left", annotation_font_size=9)
+
+    # a serie do piezometro por cima
+    fig.add_trace(go.Scatter(x=sub[COLS["data"]], y=sub[COLS["cota_agua"]],
+                             mode="lines+markers", name="Cota da agua (PZ)",
+                             line=dict(color="#2563eb", width=2)))
     if st.session_state.get("mostrar_obra") and len(sub):
         adicionar_fases_obra(fig, sub[COLS["data"]].min(), sub[COLS["data"]].max())
-    fig.update_xaxes(title="Data"); fig.update_yaxes(title="Cota da agua (m)")
-    fig.update_layout(height=460)
+    fig.update_xaxes(title="Data")
+    fig.update_yaxes(title="Cota (m)")
+    fig.update_layout(height=520, margin=dict(r=140))
     st.plotly_chart(fig, use_container_width=True)
-    if st.session_state.get("mostrar_obra"):
-        st.caption("Faixas = fases da obra (previstas). A descida do nivel de "
-                   "agua durante a escavacao e coerente com rebaixamento "
-                   "induzido pela propria escavacao.")
-    else:
-        st.caption("Sugestao: sobrepor a precipitacao diaria para avaliar a "
-                   "resposta do nivel freatico a pluviosidade.")
+
+    # leitura cruzada quantitativa
+    if len(sub):
+        c_ini = sub[COLS["cota_agua"]].iloc[0]
+        c_fim = sub[COLS["cota_agua"]].iloc[-1]
+        desc = c_ini - c_fim
+        nf_med = sum(c for _, c in NF_REPOUSO) / len(NF_REPOUSO)
+        st.markdown(
+            f"**Leitura:** a agua no {p} desceu de **{c_ini:.2f}** para "
+            f"**{c_fim:.2f} m** ({desc:+.2f} m) no periodo monitorizado. "
+            f"O fundo de escavacao (**{COTA_FUNDO_ESCAVACAO:.2f} m**) fica "
+            f"{c_fim - COTA_FUNDO_ESCAVACAO:.1f} m abaixo da agua atual e "
+            f"~{nf_med - COTA_FUNDO_ESCAVACAO:.0f} m abaixo do nivel freatico "
+            f"de repouso de 2022 (~{nf_med:.0f} m). A descida acompanha o "
+            f"avanco da escavacao — coerente com rebaixamento induzido.")
+    st.caption("Cotas de projeto: escavacao e contencao periferica (JETsj, "
+               "PRO/2023/368). NF de repouso: piezometros das sondagens "
+               "(ENGGEO, Quadro III, 24/11/2022). Possivel melhoria: sobrepor "
+               "precipitacao diaria para separar a resposta a pluviosidade do "
+               "efeito da escavacao.")
 
 
 # =========================================================================
