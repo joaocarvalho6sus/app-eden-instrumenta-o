@@ -327,6 +327,32 @@ NF_REPOUSO = [
 ]
 
 # =========================================================================
+# INCLINOMETROS — metadados e associacao a sondagem
+# -------------------------------------------------------------------------
+# Profundidade e azimute do eixo A+ vem da folha Instrumentos do Excel.
+# A sondagem "mais proxima" NAO consta dos dados (os inclinometros nao tem
+# coordenadas no Excel); foi inferida por SOBREPOSICAO das duas plantas —
+# a da prospecao (relatorio ENGGEO) e a dos inclinometros (relatorio de
+# instrumentacao). E uma associacao SUGERIDA por proximidade, A CONFIRMAR
+# com a equipa de instrumentacao. O nivel de confianca reflete a clareza
+# da correspondencia visual entre as plantas.
+INC_META = {
+    "I1": {"sondagem": "SC8/Pz", "confianca": "media-alta",
+           "azimute": 330, "posicao": "canto SO (poente)"},
+    "I2": {"sondagem": "SC9/Pz", "confianca": "alta",
+           "azimute": 225, "posicao": "topo N (bolbo curvo)"},
+    "I3": {"sondagem": "SC6/Pz", "confianca": "media",
+           "azimute": 335, "posicao": "SE/nascente"},
+}
+
+
+def _rumo_cardeal(az):
+    """Converte azimute (graus) em rumo cardeal aproximado, para leitura."""
+    dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+            "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO"]
+    return dirs[int((az % 360) / 22.5 + 0.5) % 16]
+
+# =========================================================================
 # CRONOGRAMA DA OBRA  (Plano de Trabalhos Alves Ribeiro/HCI, 05/05/2025)
 # Datas PREVISTAS transcritas do PDF do plano. Sao o planeado, nao o real.
 # =========================================================================
@@ -812,20 +838,39 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
                              format_func=lambda d: pd.to_datetime(d).strftime("%d/%m/%Y"))
 
         # opcao de sobrepor a geologia de uma sondagem (peca-chave do back-analysis)
-        geo_on = st.checkbox("Sobrepor geologia (sondagem)", value=False,
-                             help="Mostra a coluna litologica e o nivel "
-                                  "freatico de uma sondagem ao lado do perfil, "
-                                  "para relacionar a deformacao com o terreno.")
+        geo_on = st.checkbox("Sobrepor geologia + SPT da sondagem", value=False,
+                             help="Mostra a litologia, o nivel freatico e o "
+                                  "perfil SPT de uma sondagem no mesmo eixo de "
+                                  "profundidade, para relacionar a deformacao "
+                                  "com a resistencia do terreno.")
         sond_sel = None
         if geo_on:
-            sond_sel = st.selectbox("Sondagem de referencia",
-                                    list(GEO_LITOLOGIA.keys()))
+            # sugestao por proximidade (inferida das plantas)
+            meta = INC_META.get(inc)
+            sonds = list(GEO_LITOLOGIA.keys())
+            default_idx = 0
+            if meta and meta["sondagem"] in sonds:
+                default_idx = sonds.index(meta["sondagem"])
+            sond_sel = st.selectbox(
+                "Sondagem de referencia", sonds, index=default_idx)
+            if meta:
+                rumo = _rumo_cardeal(meta["azimute"])
+                sugerida = meta["sondagem"]
+                nota = (f"Sugerida por proximidade: **{sugerida}** "
+                        f"(confianca {meta['confianca']}; {inc} fica em "
+                        f"{meta['posicao']}). Eixo A+ orientado a "
+                        f"{meta['azimute']}° ({rumo}). ")
+                if sond_sel != sugerida:
+                    nota += f"Estas a ver **{sond_sel}**, diferente da sugerida."
+                st.caption(nota)
+                st.caption("Associacao inclinometro-sondagem inferida da "
+                           "sobreposicao das plantas — a confirmar com a "
+                           "instrumentacao.")
 
         fig = go.Figure()
 
-        # se geologia ligada, desenhar faixas litologicas de fundo (a toda a largura)
+        # se geologia ligada, desenhar faixas litologicas de fundo + SPT
         if geo_on and sond_sel:
-            # usar profundidade do perfil para a extensao horizontal das faixas
             xmax = float(p_inc[COLS["desl_total"]].abs().max()) * 1.1 + 1
             for topo, base, unidade in GEO_LITOLOGIA[sond_sel]:
                 cor = GEO_CORES_LITO.get(unidade, "#cccccc")
@@ -838,6 +883,23 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
                 fig.add_hline(y=nf, line=dict(color="blue", width=2, dash="dash"),
                               annotation_text=f"NF ({sond_sel})",
                               annotation_position="right")
+            # base da sondagem (abaixo disto nao ha dado geologico)
+            base_sond = GEO_LITOLOGIA[sond_sel][-1][1]
+            prof_inc_max = float(p_inc[COLS["profundidade"]].max())
+            if prof_inc_max > base_sond + 0.5:
+                fig.add_hline(y=base_sond, line=dict(color="gray", width=1, dash="dot"),
+                              annotation_text=f"base {sond_sel}",
+                              annotation_position="left")
+            # perfil SPT sobreposto num eixo X secundario (N pancadas)
+            ensaios = GEO_SPT.get(sond_sel, [])
+            if ensaios:
+                sp_prof = [e[0] for e in ensaios]
+                sp_n = [e[1] for e in ensaios]
+                fig.add_trace(go.Scatter(
+                    x=sp_n, y=sp_prof, mode="lines+markers",
+                    name=f"SPT {sond_sel} (N)", xaxis="x2",
+                    line=dict(color="rgba(70,70,70,0.7)", width=1.5, dash="dot"),
+                    marker=dict(size=5, color="rgba(70,70,70,0.8)")))
             # entradas de legenda para as unidades
             for unidade, cor in GEO_CORES_LITO.items():
                 if any(u == unidade for _, _, u in GEO_LITOLOGIA[sond_sel]):
@@ -852,13 +914,21 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
                                      name=pd.to_datetime(d).strftime("%d/%m/%Y")))
         fig.update_yaxes(autorange="reversed", title="Profundidade (m)")
         fig.update_xaxes(title="Deslocamento acumulado (mm)")
+        # eixo X secundario para o SPT (0-65), no topo
+        if geo_on and sond_sel and GEO_SPT.get(sond_sel):
+            fig.update_layout(xaxis2=dict(title="N (SPT)", overlaying="x",
+                                          side="top", range=[0, 65],
+                                          showgrid=False))
         fig.update_layout(height=560, legend_title="Leitura / geologia")
         st.plotly_chart(fig, use_container_width=True)
         if geo_on and sond_sel:
-            st.caption(f"Geologia da sondagem {sond_sel} sobreposta. Repara se "
-                       f"a maior curvatura do perfil coincide com uma mudanca "
-                       f"de camada ou com o nivel freatico — e a leitura central "
-                       f"do back-analysis.")
+            st.caption(f"Litologia, NF e SPT da sondagem {sond_sel} sobrepostos "
+                       f"(SPT no eixo de cima). A leitura central do "
+                       f"back-analysis: ve se o 'joelho' de maior deformacao do "
+                       f"perfil coincide com uma subida do SPT (grés a "
+                       f"consolidar) ou com o nivel freatico. Onde o "
+                       f"inclinometro passa da base da sondagem, nao ha dado "
+                       f"geologico.")
 
     with col2:
         st.subheader("Evolucao do deslocamento")
