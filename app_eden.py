@@ -596,14 +596,20 @@ def separador_3d(dados):
                                "coordenadas em metros; amplifica-se para ver.")
     with col_c:
         mostrar_contorno = st.checkbox("Contorno do recinto", value=True)
-        mostrar_paredes = st.checkbox("Paredes dos alcados", value=False,
-                                      help="Desenha planos verticais nos "
-                                           "alcados da contencao, para dar "
-                                           "volume ao recinto.")
+        mostrar_caixa = st.checkbox(
+            "Caixa de escavacao", value=True,
+            help="Desenha o volume escavado abaixo do contorno, com a "
+                 "PROFUNDIDADE real de escavacao do projeto (coroamento-fundo "
+                 "= 16,3 m). E uma distancia, nao uma cota absoluta — os alvos "
+                 "e o projeto usam referenciais de cota diferentes.")
         destacar_alarmes = st.checkbox(
             "Destacar alarmes/alertas", value=True,
-            help="Contorna a vermelho os alvos em alarme e a laranja os "
+            help="Marca a vermelho os alvos e setas em alarme e a laranja os "
                  "em alerta, segundo os criterios oficiais recalculados.")
+        destacar_sc = st.checkbox(
+            "Realcar fachadas da Santa Casa", value=True,
+            help="Distingue a fachada frontal (A1-A4, exposta a escavacao) da "
+                 "lateral (A5-A8, ao mar).")
 
     campanha = alvos[alvos[COLS["data"]] == data_sel].copy()
     # recalcular estado de cada alvo da campanha com os criterios oficiais
@@ -620,25 +626,37 @@ def separador_3d(dados):
             line=dict(color="saddlebrown", width=6),
             name="Contorno do recinto (envolvente)", hoverinfo="skip",
         ))
-        # paredes verticais opcionais (da cota do contorno para baixo)
-        if mostrar_paredes:
-            base_z = min(Zs) - 8  # profundidade visual da escavacao
+        # caixa de escavacao: desce da envolvente uma PROFUNDIDADE real.
+        # A profundidade (coroamento - fundo) e uma DISTANCIA, invariante ao
+        # referencial; a cota absoluta nao (alvos e projeto usam sistemas de
+        # cota diferentes). Por isso usamos a profundidade, nao a cota do fundo.
+        if mostrar_caixa:
+            prof = COTA_COROAMENTO_PADRAO - COTA_FUNDO_ESCAVACAO   # 16,3 m
+            base_z = min(Zs) - prof
+            # paredes verticais (quads) ao longo do contorno
             for i in range(len(Ms) - 1):
                 fig.add_trace(go.Scatter3d(
                     x=[Ms[i], Ms[i+1], Ms[i+1], Ms[i], Ms[i]],
                     y=[Ps[i], Ps[i+1], Ps[i+1], Ps[i], Ps[i]],
                     z=[Zs[i], Zs[i+1], base_z, base_z, Zs[i]],
-                    mode="lines", line=dict(color="peru", width=2),
-                    surfaceaxis=2, surfacecolor="rgba(210,180,140,0.25)",
+                    mode="lines", line=dict(color="peru", width=1),
+                    surfaceaxis=2, surfacecolor="rgba(210,180,140,0.20)",
                     showlegend=False, hoverinfo="skip",
                 ))
+            # fundo da escavacao (poligono a base_z)
+            fig.add_trace(go.Scatter3d(
+                x=list(Ms), y=list(Ps), z=[base_z] * len(Ms),
+                mode="lines", line=dict(color="peru", width=3),
+                name=f"Fundo de escavacao (−{prof:.1f} m do coroamento)",
+                hoverinfo="skip",
+            ))
 
     # ---- alvos por grupo (cor por edificio; contencao a laranja) ---------
-    grupos = campanha.groupby(campanha[COLS["edificio"]].apply(
-        lambda s: classificar_grupo(s)[0] if classificar_grupo(s)[0] == "edificio"
-        else "Contencao periferica"))
+    # acumuladores para desenhar TODAS as setas em poucos traces (leve)
+    seg_x, seg_y, seg_z, seg_cor = [], [], [], []
+    cone_x, cone_y, cone_z, cone_u, cone_v, cone_w, cone_cor = ([] for _ in range(7))
+    COR_ESTADO = {"Alarme": "#c0140f", "Alerta": "#e67e00", "Regular": "#1f9e55"}
 
-    # primeiro a contencao (laranja), depois cada edificio com a sua cor
     for chave, grp in campanha.groupby(COLS["edificio"]):
         tipo, etiqueta = classificar_grupo(chave)
         x0 = grp[COLS["M0"]].to_numpy()
@@ -649,55 +667,75 @@ def separador_3d(dados):
         dz = grp[COLS["dZ"]].to_numpy() / 1000.0 * fator
         dh = grp[COLS["desl_h"]].to_numpy()
         nomes = grp[COLS["alvo"]].astype(str).to_numpy()
-
         estados = grp["Estado calculado"].to_numpy()
         fachadas = grp["Fachada SC"].to_numpy()
 
+        e_santa_casa = isinstance(chave, str) and "Santa Casa" in chave
         if tipo == "edificio":
-            cor = CORES_EDIFICIO.get(chave, None)
+            cor = CORES_EDIFICIO.get(chave, "#7f7f7f")
             nome_leg = chave
         else:
             cor = "#ff7f0e"
             nome_leg = f"Contencao — Alcado {etiqueta}"
 
-        # contorno do marcador por estado (destaque de alarme/alerta).
-        # NOTA: em Scatter3d, marker.line.width tem de ser um escalar (nao
-        # aceita lista por ponto, ao contrario do Scatter 2D). A cor da borda
-        # PODE ser uma lista por ponto — e o que usamos para o destaque.
+        # simbolo por fachada da Santa Casa (frontal vs lateral)
+        if destacar_sc and e_santa_casa:
+            simbolos = ["diamond" if f == "Frente escavacao" else "circle"
+                        for f in fachadas]
+        else:
+            simbolos = "circle"
+
+        # contorno do marcador por estado (cor por ponto; largura escalar)
         if destacar_alarmes:
-            cor_borda = ["#c0140f" if e == "Alarme" else
-                         ("#e67e00" if e == "Alerta" else "rgba(0,0,0,0.2)")
-                         for e in estados]
-            # largura unica: mais grossa se o grupo tiver algum alarme/alerta
+            cor_borda = [COR_ESTADO.get(e, "rgba(0,0,0,0.2)") for e in estados]
             larg_borda = 4 if any(e in ("Alarme", "Alerta") for e in estados) else 1
         else:
             cor_borda = "rgba(0,0,0,0.2)"
             larg_borda = 1
 
-        marker = dict(size=6, color=cor if cor else "#7f7f7f",
+        marker = dict(size=6, color=cor, symbol=simbolos,
                       line=dict(color=cor_borda, width=larg_borda))
-
-        # hover com estado e fachada
         cd = np.column_stack([dh, estados, fachadas])
         fig.add_trace(go.Scatter3d(
             x=x0 + dx, y=y0 + dy, z=z0 + dz, mode="markers+text",
             marker=marker,
             text=nomes, textposition="top center", textfont=dict(size=8),
-            name=nome_leg,
-            customdata=cd,
+            name=nome_leg, customdata=cd,
             hovertemplate="Alvo %{text}<br>Desl. h: %{customdata[0]:.1f} mm"
                           "<br>Estado: %{customdata[1]}"
                           "<br>%{customdata[2]}"
                           "<extra>" + nome_leg + "</extra>",
         ))
-        # setas de deslocamento
+
+        # acumular setas (segmento + cone na ponta), cor por estado
         for i in range(len(x0)):
-            fig.add_trace(go.Scatter3d(
-                x=[x0[i], x0[i] + dx[i]], y=[y0[i], y0[i] + dy[i]],
-                z=[z0[i], z0[i] + dz[i]],
-                mode="lines", line=dict(color="crimson", width=3),
-                showlegend=False, hoverinfo="skip",
-            ))
+            c = COR_ESTADO.get(estados[i], "#888888") if destacar_alarmes else "crimson"
+            seg_x += [x0[i], x0[i] + dx[i], None]
+            seg_y += [y0[i], y0[i] + dy[i], None]
+            seg_z += [z0[i], z0[i] + dz[i], None]
+            seg_cor.append(c)
+            cone_x.append(x0[i] + dx[i]); cone_y.append(y0[i] + dy[i])
+            cone_z.append(z0[i] + dz[i])
+            cone_u.append(dx[i]); cone_v.append(dy[i]); cone_w.append(dz[i])
+            cone_cor.append(c)
+
+    # desenhar todas as hastes das setas de uma vez (por cor, para poucos traces)
+    for c in set(seg_cor):
+        xs, ys, zs = [], [], []
+        for j, cc in enumerate(seg_cor):
+            if cc == c:
+                xs += seg_x[3*j:3*j+3]; ys += seg_y[3*j:3*j+3]; zs += seg_z[3*j:3*j+3]
+        fig.add_trace(go.Scatter3d(x=xs, y=ys, z=zs, mode="lines",
+                                   line=dict(color=c, width=4),
+                                   showlegend=False, hoverinfo="skip"))
+    # pontas das setas (cones), num unico trace
+    if cone_x:
+        fig.add_trace(go.Cone(
+            x=cone_x, y=cone_y, z=cone_z, u=cone_u, v=cone_v, w=cone_w,
+            sizemode="absolute", sizeref=1.2, anchor="tip",
+            showscale=False, colorscale=[[0, "#555"], [1, "#555"]],
+            hoverinfo="skip", showlegend=False, opacity=0.9,
+        ))
 
     fig.update_layout(
         height=720,
@@ -720,10 +758,25 @@ def separador_3d(dados):
     c3.metric("Em alarme", n_alarme)
     c4.metric("Em alerta", n_alerta)
     idx = int(np.nanargmax(desl_h_all))
-    st.caption(f"O alvo mais afetado ({nomes_all[idx]}, "
-               f"{np.nanmax(desl_h_all):.1f} mm) pertence a: {edif_all[idx]}. "
-               f"Contorno vermelho = alarme; laranja = alerta (criterios "
-               f"oficiais recalculados de ΔH/ΔV).")
+    # leitura frente vs lateral da Santa Casa, se houver dados
+    sc = campanha[campanha["Fachada SC"] != ""]
+    linha_sc = ""
+    if len(sc):
+        frente = sc[sc["Fachada SC"] == "Frente escavacao"][COLS["desl_h"]]
+        lateral = sc[sc["Fachada SC"] == "Lateral (mar)"][COLS["desl_h"]]
+        if len(frente) and len(lateral):
+            linha_sc = (f" Na Santa Casa, a fachada frontal (losangos, media "
+                        f"{frente.mean():.0f} mm) move-se mais que a lateral "
+                        f"(circulos, {lateral.mean():.0f} mm) — coerente com a "
+                        f"exposicao direta a escavacao.")
+    st.caption(
+        f"O alvo mais afetado ({nomes_all[idx]}, {np.nanmax(desl_h_all):.1f} mm) "
+        f"pertence a: {edif_all[idx]}. Setas e contornos: vermelho = alarme, "
+        f"laranja = alerta, verde = regular (criterios oficiais recalculados). "
+        f"A caixa mostra a profundidade real de escavacao (16,3 m, do projeto) "
+        f"como distancia abaixo da cortina — os alvos e o projeto usam "
+        f"referenciais de cota diferentes, por isso e profundidade, nao cota "
+        f"absoluta.{linha_sc}")
 
 
 # =========================================================================
