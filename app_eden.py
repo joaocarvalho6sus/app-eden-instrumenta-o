@@ -116,6 +116,133 @@ LIMIAR_VEL_DEFEITO = 0.5
 FATOR_ACEL_DEFEITO = 1.8
 
 # =========================================================================
+# CRITERIOS DE ALERTA / ALARME DOS ALVOS TOPOGRAFICOS
+# -------------------------------------------------------------------------
+# Transcritos do relatorio de alvos topograficos (33GRADOS). Sao criterios
+# de DESLOCAMENTO ACUMULADO, em mm, aplicados por grupo. O estado de cada
+# leitura e o MAIS SEVERO entre o nivel horizontal e o vertical.
+#
+#   (H_alerta, H_alarme, V_alerta, V_alarme)  em mm
+#
+# EDIFICIOS ADJACENTES (Santa Casa, Cimas, Clinica): H 15/25, V 10/20.
+#   -> CONFIRMADO no relatorio (Cap. 4, "Criterios de Alerta e de Alarme
+#      (Edificios Adjacentes)"). Reproduz a coluna Estado do Excel a 100%.
+# CONTENCAO 17 m (alcados AB, CD, BF, PQ): H 20/40, V 10/15.
+# CONTENCAO 24 m (alcados FG, GH, JK, KL, MNO, OP): H 30/40, V 10/15.
+#   -> Estes reproduzem a coluna Estado a 100% nos respetivos alcados.
+# ALCADO DE: classificado provisoriamente como 17 m. Os deslocamentos
+#   observados sao ~0 (tudo Regular), pelo que os dados NAO permitem
+#   distinguir 17 de 24 m. A CONFIRMAR com o projeto de contencao.
+# =========================================================================
+CRIT_VIZINHOS   = (15, 25, 10, 20)   # edificios adjacentes (OFICIAL)
+CRIT_CONT_17    = (20, 40, 10, 15)   # contencao 17 m
+CRIT_CONT_24    = (30, 40, 10, 15)   # contencao 24 m
+
+ALCADOS_24M = {"FG", "GH", "JK", "KL", "MNO", "OP"}
+ALCADOS_17M = {"AB", "CD", "BF", "PQ"}
+ALCADOS_A_CONFIRMAR = {"DE"}         # sem deslocamento -> grupo nao distinguivel
+
+
+def _extrair_alcado(edif):
+    """Devolve o codigo do alcado (ex. 'FG') ou None se nao for contencao."""
+    import re
+    if isinstance(edif, str) and "Alçado" in edif:
+        m = re.search(r"Alçado (\w+)", edif)
+        return m.group(1) if m else None
+    return None
+
+
+def criterios_do_alvo(edif):
+    """
+    Devolve (criterio, rotulo, a_confirmar) para uma linha de alvo, a partir
+    do nome do edificio/elemento. 'criterio' e o tuplo (Ha,Hm,Va,Vm).
+    """
+    alc = _extrair_alcado(edif)
+    if alc is None:
+        return CRIT_VIZINHOS, "Edificio adjacente (15/25 · 10/20)", False
+    if alc in ALCADOS_24M:
+        return CRIT_CONT_24, f"Contencao 24 m — Alcado {alc} (30/40 · 10/15)", False
+    if alc in ALCADOS_17M:
+        return CRIT_CONT_17, f"Contencao 17 m — Alcado {alc} (20/40 · 10/15)", False
+    # alcado sem classificacao segura
+    return CRIT_CONT_17, f"Alcado {alc} (17 m assumido — A CONFIRMAR)", True
+
+
+def estado_calculado(h, v, criterio):
+    """
+    Estado a partir do deslocamento horizontal (h) e vertical (v) acumulados,
+    dado um criterio (Ha,Hm,Va,Vm). O estado e o mais severo entre H e V.
+    Devolve 'Alarme' | 'Alerta' | 'Regular' | 'Sem leitura'.
+    """
+    ha, hm, va, vm = criterio
+    if pd.isna(h) and pd.isna(v):
+        return "Sem leitura"
+    nh = 2 if (pd.notna(h) and h >= hm) else (1 if (pd.notna(h) and h >= ha) else 0)
+    nv = 2 if (pd.notna(v) and abs(v) >= vm) else (1 if (pd.notna(v) and abs(v) >= va) else 0)
+    n = max(nh, nv)
+    return "Alarme" if n == 2 else ("Alerta" if n == 1 else "Regular")
+
+
+def anexar_estado_calculado(df):
+    """
+    Recebe o dataframe de alvos e devolve uma copia com colunas novas:
+      'Criterio'          — rotulo legivel do criterio aplicado
+      'Estado calculado'  — estado recalculado de ΔH/ΔV com os criterios oficiais
+      'Confere'           — True se coincide com a coluna 'Estado' do Excel
+      'Fachada SC'        — 'Frente escavacao' | 'Lateral (mar)' | '' (so Santa Casa)
+    Nao altera a coluna 'Estado' original: serve de auditoria lado a lado.
+    """
+    d = df.copy()
+    crits, rotulos, estados, confere, fachadas = [], [], [], [], []
+    for _, r in d.iterrows():
+        crit, rotulo, _ac = criterios_do_alvo(r.get(COLS["edificio"]))
+        h = r.get(COLS["desl_h"]); v = r.get(COLS["dZ"])
+        ec = estado_calculado(h, v, crit)
+        crits.append(crit); rotulos.append(rotulo); estados.append(ec)
+        est_excel = r.get(COLS["estado"])
+        # so compara quando ambos tem um estado 'real'
+        if isinstance(est_excel, str) and est_excel in ("Regular", "Alerta", "Alarme") \
+           and ec in ("Regular", "Alerta", "Alarme"):
+            confere.append(ec == est_excel)
+        else:
+            confere.append(None)
+        fachadas.append(fachada_santa_casa(r.get(COLS["edificio"]), r.get(COLS["alvo"])))
+    d["Criterio"] = rotulos
+    d["Estado calculado"] = estados
+    d["Confere"] = confere
+    d["Fachada SC"] = fachadas
+    return d
+
+
+# =========================================================================
+# SANTA CASA — DUAS FACHADAS E SUBSTITUICAO DE ALVOS
+# -------------------------------------------------------------------------
+# O edificio da Santa Casa da Misericordia tem duas fachadas instrumentadas:
+#   Fachada 1 (frente a escavacao): alvos A1, A2, A3, A4
+#   Fachada 2 (lateral, virada ao mar): A5/A5b, A6/A6b, A7/A7b, A8/A8b
+# Os alvos A5-A8 foram tapados por um painel publicitario (out/2025) e
+# substituidos por A5b-A8b, RE-ZERADOS na data da troca (20/10/2025). Por
+# isso os "b" arrancam de zero mais tarde: os seus acumulados NAO sao
+# comparaveis diretamente com A1-A4. (Fonte: folha Qualidade_Dados do Excel
+# e planta de localizacao do relatorio.)
+# =========================================================================
+SC_FACHADA_1 = {"A1", "A2", "A3", "A4"}
+SC_FACHADA_2 = {"A5", "A6", "A7", "A8", "A5b", "A6b", "A7b", "A8b"}
+SC_SUBSTITUIDOS = {"A5": "A5b", "A6": "A6b", "A7": "A7b", "A8": "A8b"}
+
+
+def fachada_santa_casa(edif, alvo):
+    """Devolve a fachada da Santa Casa a que o alvo pertence, ou '' se nao aplicar."""
+    if not (isinstance(edif, str) and "Santa Casa" in edif):
+        return ""
+    a = str(alvo)
+    if a in SC_FACHADA_1:
+        return "Frente escavacao"
+    if a in SC_FACHADA_2:
+        return "Lateral (mar)"
+    return ""
+
+# =========================================================================
 # DADOS GEOLOGICOS  (Relatorio Geologico-Geotecnico ENGGEO, processo 220216)
 # Transcritos dos Quadros II, III, V, VI, VII e dos logs de sondagem.
 # Ficam embutidos porque vêm do relatorio e nao mudam. Nenhum valor inventado.
@@ -445,8 +572,14 @@ def separador_3d(dados):
                                       help="Desenha planos verticais nos "
                                            "alcados da contencao, para dar "
                                            "volume ao recinto.")
+        destacar_alarmes = st.checkbox(
+            "Destacar alarmes/alertas", value=True,
+            help="Contorna a vermelho os alvos em alarme e a laranja os "
+                 "em alerta, segundo os criterios oficiais recalculados.")
 
     campanha = alvos[alvos[COLS["data"]] == data_sel].copy()
+    # recalcular estado de cada alvo da campanha com os criterios oficiais
+    campanha = anexar_estado_calculado(campanha)
 
     fig = go.Figure()
 
@@ -489,6 +622,9 @@ def separador_3d(dados):
         dh = grp[COLS["desl_h"]].to_numpy()
         nomes = grp[COLS["alvo"]].astype(str).to_numpy()
 
+        estados = grp["Estado calculado"].to_numpy()
+        fachadas = grp["Fachada SC"].to_numpy()
+
         if tipo == "edificio":
             cor = CORES_EDIFICIO.get(chave, None)
             nome_leg = chave
@@ -496,14 +632,34 @@ def separador_3d(dados):
             cor = "#ff7f0e"
             nome_leg = f"Contencao — Alcado {etiqueta}"
 
-        # marcadores na posicao deslocada, coloridos pelo grupo
+        # contorno do marcador por estado (destaque de alarme/alerta).
+        # NOTA: em Scatter3d, marker.line.width tem de ser um escalar (nao
+        # aceita lista por ponto, ao contrario do Scatter 2D). A cor da borda
+        # PODE ser uma lista por ponto — e o que usamos para o destaque.
+        if destacar_alarmes:
+            cor_borda = ["#c0140f" if e == "Alarme" else
+                         ("#e67e00" if e == "Alerta" else "rgba(0,0,0,0.2)")
+                         for e in estados]
+            # largura unica: mais grossa se o grupo tiver algum alarme/alerta
+            larg_borda = 4 if any(e in ("Alarme", "Alerta") for e in estados) else 1
+        else:
+            cor_borda = "rgba(0,0,0,0.2)"
+            larg_borda = 1
+
+        marker = dict(size=6, color=cor if cor else "#7f7f7f",
+                      line=dict(color=cor_borda, width=larg_borda))
+
+        # hover com estado e fachada
+        cd = np.column_stack([dh, estados, fachadas])
         fig.add_trace(go.Scatter3d(
             x=x0 + dx, y=y0 + dy, z=z0 + dz, mode="markers+text",
-            marker=dict(size=5, color=cor) if cor else dict(size=5),
+            marker=marker,
             text=nomes, textposition="top center", textfont=dict(size=8),
             name=nome_leg,
-            customdata=dh,
-            hovertemplate="Alvo %{text}<br>Desl. h: %{customdata:.1f} mm"
+            customdata=cd,
+            hovertemplate="Alvo %{text}<br>Desl. h: %{customdata[0]:.1f} mm"
+                          "<br>Estado: %{customdata[1]}"
+                          "<br>%{customdata[2]}"
                           "<extra>" + nome_leg + "</extra>",
         ))
         # setas de deslocamento
@@ -528,13 +684,18 @@ def separador_3d(dados):
     desl_h_all = campanha[COLS["desl_h"]].to_numpy()
     nomes_all = campanha[COLS["alvo"]].astype(str).to_numpy()
     edif_all = campanha[COLS["edificio"]].to_numpy()
-    c1, c2, c3 = st.columns(3)
+    n_alarme = int((campanha["Estado calculado"] == "Alarme").sum())
+    n_alerta = int((campanha["Estado calculado"] == "Alerta").sum())
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Alvos na campanha", len(campanha))
     c2.metric("Desl. horizontal max. (mm)", f"{np.nanmax(desl_h_all):.1f}")
+    c3.metric("Em alarme", n_alarme)
+    c4.metric("Em alerta", n_alerta)
     idx = int(np.nanargmax(desl_h_all))
-    c3.metric("Mais afetado", f"{nomes_all[idx]}")
     st.caption(f"O alvo mais afetado ({nomes_all[idx]}, "
-               f"{np.nanmax(desl_h_all):.1f} mm) pertence a: {edif_all[idx]}.")
+               f"{np.nanmax(desl_h_all):.1f} mm) pertence a: {edif_all[idx]}. "
+               f"Contorno vermelho = alarme; laranja = alerta (criterios "
+               f"oficiais recalculados de ΔH/ΔV).")
 
 
 # =========================================================================
@@ -688,11 +849,88 @@ def separador_alvos_2d(dados):
         return
     st.subheader("Alvos topograficos — evolucao temporal")
 
+    # recalcular estado de ΔH/ΔV com os criterios oficiais (auditoria)
+    alvos = anexar_estado_calculado(alvos)
+
+    # ---- painel de estado da ultima campanha ----------------------------
+    ult = alvos[alvos[COLS["data"]] == alvos[COLS["data"]].max()].copy()
+    data_ult = pd.to_datetime(alvos[COLS["data"]].max()).strftime("%d/%m/%Y")
+    n_alarme = int((ult["Estado calculado"] == "Alarme").sum())
+    n_alerta = int((ult["Estado calculado"] == "Alerta").sum())
+    n_reg = int((ult["Estado calculado"] == "Regular").sum())
+    n_sl = int((ult["Estado calculado"] == "Sem leitura").sum())
+
+    st.markdown(f"**Estado na ultima campanha ({data_ult})** — recalculado dos "
+                f"deslocamentos ΔH/ΔV com os criterios oficiais:")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Em ALARME", n_alarme)
+    m2.metric("Em ALERTA", n_alerta)
+    m3.metric("Regular", n_reg)
+    m4.metric("Sem leitura", n_sl)
+
+    # auditoria: o recalculo confere com a coluna Estado do Excel?
+    comp = alvos[alvos["Confere"].notna()]
+    n_conf = int(comp["Confere"].sum())
+    n_tot = int(len(comp))
+    if n_tot:
+        if n_conf == n_tot:
+            st.success(f"Auditoria: o estado recalculado coincide com a coluna "
+                       f"'Estado' do relatorio em {n_conf}/{n_tot} leituras (100%). "
+                       f"Os criterios estao corretamente reproduzidos.")
+        else:
+            st.warning(f"Auditoria: divergencia em {n_tot - n_conf}/{n_tot} leituras "
+                       f"entre o estado recalculado e a coluna 'Estado' do relatorio. "
+                       f"Ver tabela de divergencias abaixo.")
+            with st.expander("Ver divergencias estado recalculado vs. relatorio"):
+                div = comp[~comp["Confere"]]
+                st.dataframe(
+                    div[[COLS["data"], COLS["alvo"], COLS["edificio"],
+                         COLS["desl_h"], COLS["dZ"], COLS["estado"],
+                         "Estado calculado", "Criterio"]],
+                    use_container_width=True, hide_index=True)
+
+    # alvos em alarme/alerta agora, para leitura rapida
+    crit_now = ult[ult["Estado calculado"].isin(["Alarme", "Alerta"])].copy()
+    if len(crit_now):
+        crit_now = crit_now.sort_values("Estado calculado")
+        st.caption("Alvos em alerta ou alarme na ultima campanha:")
+        st.dataframe(
+            crit_now[[COLS["alvo"], COLS["edificio"], "Fachada SC",
+                      COLS["desl_h"], COLS["dZ"], "Estado calculado", "Criterio"]]
+            .rename(columns={COLS["desl_h"]: "Desl. H (mm)", COLS["dZ"]: "ΔZ (mm)"}),
+            use_container_width=True, hide_index=True)
+    st.divider()
+
     edificios = sorted(alvos[COLS["edificio"]].dropna().unique())
     edi = st.selectbox("Edificio / elemento", edificios)
     sub = alvos[alvos[COLS["edificio"]] == edi]
+
+    # se for a Santa Casa, permitir filtrar por fachada e avisar da substituicao
+    e_santa_casa = isinstance(edi, str) and "Santa Casa" in edi
+    if e_santa_casa:
+        st.info(
+            "A Santa Casa tem duas fachadas instrumentadas: **Frente a escavacao** "
+            "(A1–A4) e **Lateral, virada ao mar** (A5–A8). Os alvos A5–A8 foram "
+            "tapados por um painel publicitario e substituidos por **A5b–A8b**, "
+            "RE-ZERADOS em 20/10/2025 — por isso os acumulados dos 'b' nao sao "
+            "comparaveis diretamente com A1–A4 (arrancam de zero mais tarde).")
+        fach = st.radio("Fachada", ["Ambas", "Frente escavacao", "Lateral (mar)"],
+                        horizontal=True)
+        if fach != "Ambas":
+            sub = sub[sub["Fachada SC"] == fach]
+
     lista = sorted(sub[COLS["alvo"]].dropna().unique())
     sel = st.multiselect("Alvos", lista, default=lista[:min(5, len(lista))])
+
+    # criterio aplicavel a este edificio (para desenhar as linhas de limiar)
+    crit_edi, rotulo_edi, ac_edi = criterios_do_alvo(edi)
+    Ha, Hm, Va, Vm = crit_edi
+    st.caption(f"Criterio aplicado: **{rotulo_edi}**. As linhas tracejadas nos "
+               f"graficos marcam os limiares de alerta e alarme.")
+    if ac_edi:
+        st.warning("Este alcado esta com criterio ASSUMIDO (a confirmar com o "
+                   "projeto de contencao).")
+    data_rezerag = pd.to_datetime("2025-10-20")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -704,6 +942,13 @@ def separador_alvos_2d(dados):
                                      mode="lines+markers", name=a))
         if st.session_state.get("mostrar_obra") and len(sub):
             adicionar_fases_obra(fig, sub[COLS["data"]].min(), sub[COLS["data"]].max())
+        fig.add_hline(y=Ha, line_dash="dash", line_color="orange",
+                      annotation_text=f"Alerta {Ha}", annotation_position="right")
+        fig.add_hline(y=Hm, line_dash="dash", line_color="red",
+                      annotation_text=f"Alarme {Hm}", annotation_position="right")
+        if e_santa_casa:
+            fig.add_vline(x=data_rezerag, line=dict(color="gray", width=1.5, dash="dot"),
+                          annotation_text="Re-zeragem A5b–A8b", annotation_position="top")
         fig.update_xaxes(title="Data")
         fig.update_yaxes(title="Desl. horizontal (mm)")
         fig.update_layout(height=460)
@@ -717,6 +962,14 @@ def separador_alvos_2d(dados):
                                       mode="lines+markers", name=a))
         if st.session_state.get("mostrar_obra") and len(sub):
             adicionar_fases_obra(fig2, sub[COLS["data"]].min(), sub[COLS["data"]].max())
+        # limiares verticais: o assentamento e negativo -> desenhar em -Va e -Vm
+        fig2.add_hline(y=-Va, line_dash="dash", line_color="orange",
+                       annotation_text=f"Alerta -{Va}", annotation_position="right")
+        fig2.add_hline(y=-Vm, line_dash="dash", line_color="red",
+                       annotation_text=f"Alarme -{Vm}", annotation_position="right")
+        if e_santa_casa:
+            fig2.add_vline(x=data_rezerag, line=dict(color="gray", width=1.5, dash="dot"),
+                           annotation_text="Re-zeragem A5b–A8b", annotation_position="top")
         fig2.update_xaxes(title="Data")
         fig2.update_yaxes(title="ΔZ (mm)")
         fig2.update_layout(height=460)
