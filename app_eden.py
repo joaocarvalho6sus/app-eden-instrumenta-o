@@ -265,9 +265,9 @@ GEO_LITOLOGIA = {
 
 # cor de cada unidade litologica (para a coluna)
 GEO_CORES_LITO = {
-    "Aterro": "#d9822b",
-    "Gres (C1As)": "#a9c47f",
-    "Calcario (C1A)": "#6b8e4e",
+    "Aterro": "#c0641e",          # mesmo laranja do ZG6 (aterro)
+    "Gres (C1As)": "#a9c47f",     # verde-base do gres (alinhado ao ZG4)
+    "Calcario (C1A)": "#5c8a45",  # verde mais escuro (calcario de fundo)
 }
 
 # ensaios SPT: (profundidade_m, N). N=60 indica nega.
@@ -1481,21 +1481,53 @@ def _zona_por_N(n):
     relatorio (Quadros V-VII): ZG5 (SPT 11-30), ZG4 (31-56), ZG3/ZG2/ZG1 (>=60,
     distinguidas pelo RQD que NAO temos por ponto). Serve so para colorir o
     ponto SPT e dar leitura rapida; NAO define fronteiras de camada.
+    Devolve a chave da zona (ou grupo) para indexar ZONA_CORES.
     """
     if n < 11:
-        return "ZG6/ZG5"
+        return "ZG6"
     if n <= 30:
         return "ZG5"
     if n <= 56:
         return "ZG4"
-    return "ZG3–ZG1 (nega)"
+    return "ZG3-ZG1"          # nega: SPT nao separa ZG3/ZG2/ZG1 (so o RQD separa)
 
 
+# =========================================================================
+# PALETA DE ZONAMENTO GEOTECNICO — alinhada ao relatorio ENGGEO (Quadros
+# V-VII). Gradiente que comunica a CONSOLIDACAO CRESCENTE do gres: laranja
+# (aterro) -> verdes progressivamente mais escuros ate quase preto (ZG1).
+# A luminancia desce monotonicamente do ZG5a ao ZG1 (validado).
+# ZONA_CORES_FULL: as 6 zonas + pontuais, para a tabela/legenda.
+# ZONA_CORES: as chaves que a classificacao por N produz (grupos), para
+# colorir os pontos SPT — a nega fica numa cor unica porque o SPT nao a
+# separa.
+# =========================================================================
+ZONA_CORES_FULL = {
+    "ZG6":  "#c0641e",   # aterro
+    "ZG5a": "#e8efe0",   # zona pontual (verde quase branco)
+    "ZG5":  "#d3e2c4",   # gres N 11-30
+    "ZG4":  "#a9c47f",   # gres N 31-56
+    "ZG3a": "#7fa860",   # zona pontual
+    "ZG3":  "#5c8a45",   # nega RQD 0-25%
+    "ZG2":  "#3f6f3f",   # nega RQD 45-75%
+    "ZG1":  "#26401f",   # nega RQD 76-100% (quase preto)
+}
+
+# cor de cada grupo produzido por _zona_por_N (a nega usa um verde escuro
+# intermedio, representando o conjunto ZG3-ZG1 que o SPT nao distingue)
 ZONA_CORES = {
-    "ZG6/ZG5": "#d9822b",
-    "ZG5": "#c9a227",
-    "ZG4": "#7fa650",
-    "ZG3–ZG1 (nega)": "#3f6f3f",
+    "ZG6": ZONA_CORES_FULL["ZG6"],
+    "ZG5": ZONA_CORES_FULL["ZG5"],
+    "ZG4": ZONA_CORES_FULL["ZG4"],
+    "ZG3-ZG1": "#3a5f34",   # nega (conjunto), verde escuro
+}
+
+# litologia alinhada a mesma familia de cores, para coerencia visual entre
+# o perfil litologico e o zonamento (mesmo verde-base para o gres)
+GEO_CORES_LITO_V2 = {
+    "Aterro": "#c0641e",
+    "Gres (C1As)": "#a9c47f",
+    "Calcario (C1A)": "#5c8a45",
 }
 
 
@@ -1636,7 +1668,20 @@ def separador_geologia(dados):
     }
     zt = pd.DataFrame(GEO_ZONAMENTO)
     zt.insert(2, "SPT tipico (N)", zt["Zona"].map(faixa_spt))
-    st.dataframe(zt, use_container_width=True, hide_index=True)
+
+    # colorir a celula da zona com a cor oficial (gradiente de consolidacao)
+    def _estilo_zona(v):
+        cor = ZONA_CORES_FULL.get(v, "")
+        if not cor:
+            return ""
+        # texto claro sobre fundos escuros
+        r = int(cor[1:3], 16); g = int(cor[3:5], 16); b = int(cor[5:7], 16)
+        lum = 0.299*r + 0.587*g + 0.114*b
+        txt = "#ffffff" if lum < 140 else "#1a1a1a"
+        return f"background-color: {cor}; color: {txt}; font-weight: 600;"
+
+    st.dataframe(zt.style.map(_estilo_zona, subset=["Zona"]),
+                 use_container_width=True, hide_index=True)
     st.caption("gama: peso volumico | c': coesao | fi': angulo de atrito | "
                "E': modulo de deformabilidade. Zonas ZG3-ZG1 (rocha) com c' e E' "
                "em MPa/GPa; ZG6-ZG4 (solo/grés brando) em kPa/MPa. Nota: as tres "
