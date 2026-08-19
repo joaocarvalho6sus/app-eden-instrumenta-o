@@ -993,6 +993,102 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
 # =========================================================================
 # SEPARADOR 3 — ALVOS (2D, series temporais)
 # =========================================================================
+def _plotar_alcado_esquematico(sub_edi, edi, selecionados, cores_estado):
+    """
+    Desenha um alcado ESQUEMATICO de um edificio a partir das coordenadas
+    reais dos alvos. Usa a coordenada ao longo da fachada (M ou P, conforme
+    a orientacao dominante) no eixo horizontal e o Z no eixo vertical. As
+    POSICOES RELATIVAS sao fieis aos dados; a ESCALA e esquematica (nao se
+    afirmam cotas absolutas). Devolve uma figura plotly ou None.
+    """
+    import plotly.graph_objects as go
+    d = sub_edi.dropna(subset=[COLS["M0"], COLS["P0"], COLS["Z0"]]).copy()
+    if len(d) < 2:
+        return None
+    # orientacao da fachada: escolher o eixo (M ou P) com maior amplitude
+    span_m = d[COLS["M0"]].max() - d[COLS["M0"]].min()
+    span_p = d[COLS["P0"]].max() - d[COLS["P0"]].min()
+    eixo = COLS["M0"] if span_m >= span_p else COLS["P0"]
+    horiz_lbl = "Posicao ao longo da fachada (m, relativo)"
+
+    fig = go.Figure()
+    # moldura da fachada (retangulo de fundo)
+    x0, x1 = d[eixo].min(), d[eixo].max()
+    z0, z1 = d[COLS["Z0"]].min(), d[COLS["Z0"]].max()
+    mx = (x1 - x0) * 0.15 + 0.5
+    mz = (z1 - z0) * 0.15 + 0.5
+    fig.add_shape(type="rect", x0=x0 - mx, x1=x1 + mx, y0=z0 - mz, y1=z1 + mz,
+                  line=dict(color="#999", width=1),
+                  fillcolor="rgba(200,200,200,0.12)", layer="below")
+
+    for _, r in d.iterrows():
+        a = str(r[COLS["alvo"]])
+        est = r.get("Estado calculado", "Regular")
+        cor = cores_estado.get(est, "#1f9e55")
+        realce = a in selecionados
+        fig.add_trace(go.Scatter(
+            x=[r[eixo]], y=[r[COLS["Z0"]]], mode="markers+text",
+            marker=dict(size=20 if realce else 13, color=cor,
+                        line=dict(color="black" if realce else "white",
+                                  width=2 if realce else 1),
+                        symbol="star" if realce else "circle"),
+            text=[a], textposition="middle right" if realce else "top center",
+            textfont=dict(size=12 if realce else 9,
+                          color="black" if realce else "#444"),
+            showlegend=False,
+            hovertemplate=f"{a}<br>Estado: {est}<extra></extra>",
+        ))
+    fig.update_xaxes(title=horiz_lbl, showticklabels=False)
+    fig.update_yaxes(title="Altura relativa (Z)", showticklabels=False)
+    fig.update_layout(height=340, margin=dict(l=10, r=10, t=10, b=30),
+                      plot_bgcolor="white")
+    return fig
+
+
+def _slug_edificio(edi):
+    """Nome de ficheiro seguro (sem acentos, minusculas) para a foto do edificio."""
+    import unicodedata
+    txt = unicodedata.normalize("NFKD", str(edi)).encode("ascii", "ignore").decode()
+    slug = "".join(c if c.isalnum() else "_" for c in txt).strip("_").lower()
+    while "__" in slug:
+        slug = slug.replace("__", "_")
+    return slug[:60]
+
+
+def mostrar_localizacao_alvo(sub_edi, edi, selecionados, cores_estado):
+    """
+    Mostra onde estao os alvos selecionados no edificio. Prioridade:
+      1) foto real do relatorio, se existir em fotos_alvos/<slug>.{png,jpg}
+      2) alcado esquematico das coordenadas reais (fallback)
+    A foto e propriedade do relatorio de instrumentacao (33GRADOS) — creditar.
+    """
+    import os
+    slug = _slug_edificio(edi)
+    # pasta de fotos ancorada ao diretorio do script (robusto ao CWD do deploy)
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    foto = None
+    for ext in ("png", "jpg", "jpeg"):
+        caminho = os.path.join(base_dir, "fotos_alvos", f"{slug}.{ext}")
+        if os.path.exists(caminho):
+            foto = caminho
+            break
+    if foto:
+        st.image(foto, use_container_width=True,
+                 caption=f"Localizacao dos alvos — {edi}. "
+                         f"Fonte: relatorio de instrumentacao (33GRADOS).")
+        return
+    # fallback: esquema das coordenadas
+    fig = _plotar_alcado_esquematico(sub_edi, edi, selecionados, cores_estado)
+    if fig is not None:
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption("Esquema a partir das coordenadas reais dos alvos (posicoes "
+                   "relativas fieis; escala esquematica). O alvo selecionado "
+                   "aparece em estrela. Para uma foto real, coloca a imagem em "
+                   f"'fotos_alvos/{slug}.png'.")
+    else:
+        st.caption("Sem coordenadas suficientes para esquematizar este edificio.")
+
+
 def separador_alvos_2d(dados):
     alvos = dados["alvos"]
     if not validar_colunas(alvos, [COLS["data"], COLS["alvo"], COLS["edificio"],
@@ -1072,6 +1168,14 @@ def separador_alvos_2d(dados):
 
     lista = sorted(sub[COLS["alvo"]].dropna().unique())
     sel = st.multiselect("Alvos", lista, default=lista[:min(5, len(lista))])
+
+    # localizacao fisica dos alvos (foto real ou esquema das coordenadas)
+    if st.checkbox("Mostrar localizacao dos alvos no edificio", value=False,
+                   help="Foto real do relatorio, se disponivel; caso contrario "
+                        "um alcado esquematico a partir das coordenadas."):
+        COR_ESTADO = {"Alarme": "#c0140f", "Alerta": "#e67e00",
+                      "Regular": "#1f9e55"}
+        mostrar_localizacao_alvo(sub, edi, sel, COR_ESTADO)
 
     # criterio aplicavel a este edificio (para desenhar as linhas de limiar)
     crit_edi, rotulo_edi, ac_edi = criterios_do_alvo(edi)
@@ -1848,11 +1952,17 @@ def main():
             st.stop()
         fonte = up
     else:
-        fonte = FICHEIRO_EXCEL
-        if not Path(FICHEIRO_EXCEL).exists():
-            st.error(f"Nao encontrei '{FICHEIRO_EXCEL}'. Poe o Excel na pasta do "
-                     f"script ou usa 'Carregar manualmente'.")
-            st.stop()
+        # caminho do Excel ancorado ao diretorio do script (robusto ao CWD)
+        base_dir = Path(__file__).resolve().parent
+        fonte = base_dir / FICHEIRO_EXCEL
+        if not fonte.exists():
+            # tentar tambem o CWD, por compatibilidade
+            if Path(FICHEIRO_EXCEL).exists():
+                fonte = FICHEIRO_EXCEL
+            else:
+                st.error(f"Nao encontrei '{FICHEIRO_EXCEL}'. Poe o Excel na pasta "
+                         f"do script ou usa 'Carregar manualmente'.")
+                st.stop()
     try:
         dados = carregar_dados(fonte)
     except Exception as e:
