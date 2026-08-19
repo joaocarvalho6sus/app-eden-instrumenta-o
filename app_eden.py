@@ -628,6 +628,11 @@ def separador_3d(dados):
                  "PROFUNDIDADE real de escavacao do projeto (coroamento-fundo "
                  "= 16,3 m). E uma distancia, nao uma cota absoluta — os alvos "
                  "e o projeto usam referenciais de cota diferentes.")
+        mostrar_fases = st.checkbox(
+            "Fases de escavacao (pisos)", value=False,
+            help="Marca dentro da caixa os niveis dos pisos (-1 a -4) como "
+                 "planos, a partir das cotas de projeto. Sao distancias abaixo "
+                 "do coroamento, invariantes ao referencial.")
         destacar_alarmes = st.checkbox(
             "Destacar alarmes/alertas", value=True,
             help="Marca a vermelho os alvos e setas em alarme e a laranja os "
@@ -656,26 +661,46 @@ def separador_3d(dados):
         # A profundidade (coroamento - fundo) e uma DISTANCIA, invariante ao
         # referencial; a cota absoluta nao (alvos e projeto usam sistemas de
         # cota diferentes). Por isso usamos a profundidade, nao a cota do fundo.
+        # Topo ancorado ao alvo mais ALTO da contencao (o mais proximo do
+        # coroamento), nao ao mais baixo — assim a caixa representa melhor a
+        # altura escavada a partir do coroamento.
         if mostrar_caixa:
             prof = COTA_COROAMENTO_PADRAO - COTA_FUNDO_ESCAVACAO   # 16,3 m
-            base_z = min(Zs) - prof
+            topo_z = max(Zs)               # alvo de contencao mais alto ~ coroamento
+            base_z = topo_z - prof
             # paredes verticais (quads) ao longo do contorno
             for i in range(len(Ms) - 1):
                 fig.add_trace(go.Scatter3d(
                     x=[Ms[i], Ms[i+1], Ms[i+1], Ms[i], Ms[i]],
                     y=[Ps[i], Ps[i+1], Ps[i+1], Ps[i], Ps[i]],
-                    z=[Zs[i], Zs[i+1], base_z, base_z, Zs[i]],
+                    z=[topo_z, topo_z, base_z, base_z, topo_z],
                     mode="lines", line=dict(color="peru", width=1),
-                    surfaceaxis=2, surfacecolor="rgba(210,180,140,0.20)",
+                    surfaceaxis=2, surfacecolor="rgba(210,180,140,0.18)",
                     showlegend=False, hoverinfo="skip",
                 ))
-            # fundo da escavacao (poligono a base_z)
+            # fundo da escavacao — plano preenchido (da volume ao fundo)
             fig.add_trace(go.Scatter3d(
                 x=list(Ms), y=list(Ps), z=[base_z] * len(Ms),
                 mode="lines", line=dict(color="peru", width=3),
+                surfaceaxis=2, surfacecolor="rgba(180,150,110,0.30)",
                 name=f"Fundo de escavacao (−{prof:.1f} m do coroamento)",
                 hoverinfo="skip",
             ))
+            # planos das FASES de escavacao (cotas dos pisos, como distancias
+            # abaixo do coroamento — invariante ao referencial)
+            if mostrar_fases:
+                for nome, cota in COTAS_PISOS:
+                    d_piso = COTA_COROAMENTO_PADRAO - cota   # prof. abaixo coroamento
+                    if 0 < d_piso < prof:                    # so os que estao dentro
+                        z_piso = topo_z - d_piso
+                        fig.add_trace(go.Scatter3d(
+                            x=list(Ms), y=list(Ps), z=[z_piso] * len(Ms),
+                            mode="lines",
+                            line=dict(color="rgba(90,90,90,0.55)", width=1),
+                            name=f"{nome} (−{d_piso:.1f} m)",
+                            hovertemplate=f"{nome}<br>{d_piso:.1f} m abaixo do "
+                                          f"coroamento<extra></extra>",
+                        ))
 
     # ---- alvos por grupo (cor por edificio; contencao a laranja) ---------
     # acumuladores para desenhar TODAS as setas em poucos traces (leve)
