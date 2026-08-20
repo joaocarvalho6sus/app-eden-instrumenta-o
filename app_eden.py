@@ -375,18 +375,15 @@ CORES_FASES = ["#8dd3c7", "#ffffb3", "#bebada", "#fb8072", "#80b1d3",
 
 def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True):
     """
-    Sobrepoe as fases da obra a um grafico com o tempo no eixo X.
+    Sobrepoe as fases da obra a um grafico com o tempo no eixo X — apenas como
+    FAIXAS de fundo coloridas (sem texto, para nao colidir). Os nomes das fases
+    aparecem numa barra de faseamento separada por cima (ver barra_faseamento).
     So desenha as fases que se sobrepoem a janela [dt_min, dt_max] dos dados.
-    As etiquetas sao ESCALONADAS em alturas diferentes (top / abaixo) para
-    nao se sobreporem quando varias fases arrancam proximas no tempo.
     """
     dt_min = pd.to_datetime(dt_min)
     dt_max = pd.to_datetime(dt_max)
     margem = pd.Timedelta(days=20)
 
-    # posicoes de etiqueta alternadas, para escalonar verticalmente
-    posicoes = ["top left", "top right", "bottom left", "bottom right"]
-    visiveis = 0
     for i, (nome, ini, fim) in enumerate(FASES_OBRA):
         t0 = pd.to_datetime(ini)
         t1 = pd.to_datetime(fim)
@@ -396,16 +393,56 @@ def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True):
         vt0 = max(t0, dt_min - margem)
         vt1 = min(t1, dt_max + margem)
         if faixas:
-            pos = posicoes[visiveis % len(posicoes)]
+            # so a faixa colorida, SEM annotation (o texto vai na barra Gantt)
             fig.add_vrect(x0=vt0, x1=vt1, fillcolor=cor, opacity=0.15,
-                          line_width=0, layer="below",
-                          annotation_text=nome, annotation_position=pos,
-                          annotation=dict(font_size=8, textangle=0,
-                                          font_color="#444"))
-            visiveis += 1
+                          line_width=0, layer="below")
         if marcos:
             if dt_min - margem <= t0 <= dt_max + margem:
-                fig.add_vline(x=t0, line=dict(color=cor, width=1.5, dash="dot"))
+                fig.add_vline(x=t0, line=dict(color=cor, width=1.2, dash="dot"))
+
+
+def barra_faseamento(dt_min, dt_max, altura=34):
+    """
+    Desenha uma mini-barra de faseamento (tipo Gantt) para o periodo visivel:
+    cada fase e uma barra horizontal na sua propria linha, com o nome legivel,
+    sem sobreposicoes. Devolve uma figura plotly compacta para colocar POR CIMA
+    do grafico principal — assim as etiquetas das fases saem de dentro do
+    grafico e deixam de colidir.
+    """
+    import plotly.graph_objects as go
+    dt_min = pd.to_datetime(dt_min)
+    dt_max = pd.to_datetime(dt_max)
+    margem = pd.Timedelta(days=20)
+
+    visiveis = []
+    for i, (nome, ini, fim) in enumerate(FASES_OBRA):
+        t0, t1 = pd.to_datetime(ini), pd.to_datetime(fim)
+        if t1 < dt_min - margem or t0 > dt_max + margem:
+            continue
+        visiveis.append((nome, max(t0, dt_min), min(t1, dt_max),
+                         CORES_FASES[i % len(CORES_FASES)]))
+    if not visiveis:
+        return None
+
+    fig = go.Figure()
+    for linha, (nome, t0, t1, cor) in enumerate(visiveis):
+        y = len(visiveis) - linha          # uma linha por fase (topo->fundo)
+        fig.add_trace(go.Scatter(
+            x=[t0, t1], y=[y, y], mode="lines",
+            line=dict(color=cor, width=14),
+            hovertemplate=f"{nome}<br>%{{x|%d/%m/%Y}}<extra></extra>",
+            showlegend=False))
+        # nome da fase, alinhado a esquerda no inicio da barra
+        fig.add_annotation(x=t0, y=y, text=" " + nome, xanchor="left",
+                           yanchor="middle", showarrow=False,
+                           font=dict(size=10, color="#333"))
+    fig.update_yaxes(visible=False, range=[0.3, len(visiveis) + 0.7])
+    fig.update_xaxes(range=[dt_min, dt_max], showticklabels=False,
+                     showgrid=False)
+    fig.update_layout(height=altura * len(visiveis) + 20,
+                      margin=dict(l=0, r=0, t=4, b=0),
+                      plot_bgcolor="white")
+    return fig
 
 
 def configurar_eixo_tempo(fig, granularidade="Automatico"):
@@ -1252,9 +1289,21 @@ def separador_alvos_2d(dados):
     j1 = pd.to_datetime(janela[1])
     sub = sub[(sub[COLS["data"]] >= j0) & (sub[COLS["data"]] <= j1)]
 
+    # barra de faseamento (Gantt) por cima dos graficos — nomes das fases
+    # legiveis, fora do grafico, sem colisoes
+    if st.session_state.get("mostrar_obra") and len(sub):
+        fb = barra_faseamento(sub[COLS["data"]].min(), sub[COLS["data"]].max())
+        if fb is not None:
+            st.caption("Faseamento da obra no periodo (previsto):")
+            st.plotly_chart(fb, use_container_width=True,
+                            config={"displayModeBar": False})
+
     col1, col2 = st.columns(2)
     with col1:
-        st.caption("Deslocamento horizontal acumulado (mm)")
+        st.markdown(
+            "<h4 style='text-align:center; margin-bottom:0; color:#1f2a44;'>"
+            "Deslocamento horizontal acumulado (mm)</h4>",
+            unsafe_allow_html=True)
         fig = go.Figure()
         for a in sel:
             s = sub[sub[COLS["alvo"]] == a].sort_values(COLS["data"])
@@ -1275,7 +1324,10 @@ def separador_alvos_2d(dados):
         fig.update_layout(height=460)
         st.plotly_chart(fig, use_container_width=True)
     with col2:
-        st.caption("Assentamento vertical acumulado, ΔZ (mm)")
+        st.markdown(
+            "<h4 style='text-align:center; margin-bottom:0; color:#1f2a44;'>"
+            "Assentamento vertical acumulado, ΔZ (mm)</h4>",
+            unsafe_allow_html=True)
         fig2 = go.Figure()
         for a in sel:
             s = sub[sub[COLS["alvo"]] == a].sort_values(COLS["data"])
