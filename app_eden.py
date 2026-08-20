@@ -376,33 +376,55 @@ CORES_FASES = ["#8dd3c7", "#ffffb3", "#bebada", "#fb8072", "#80b1d3",
 def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True):
     """
     Sobrepoe as fases da obra a um grafico com o tempo no eixo X.
-    So desenha as fases que se sobrepoem a janela [dt_min, dt_max] dos dados,
-    para nao encher o grafico com fases de 2026 quando os dados sao de 2025.
+    So desenha as fases que se sobrepoem a janela [dt_min, dt_max] dos dados.
+    As etiquetas sao ESCALONADAS em alturas diferentes (top / abaixo) para
+    nao se sobreporem quando varias fases arrancam proximas no tempo.
     """
     dt_min = pd.to_datetime(dt_min)
     dt_max = pd.to_datetime(dt_max)
-    # margem para as fases que comecam pouco antes/depois
     margem = pd.Timedelta(days=20)
 
+    # posicoes de etiqueta alternadas, para escalonar verticalmente
+    posicoes = ["top left", "top right", "bottom left", "bottom right"]
+    visiveis = 0
     for i, (nome, ini, fim) in enumerate(FASES_OBRA):
         t0 = pd.to_datetime(ini)
         t1 = pd.to_datetime(fim)
-        # sobrepoe a janela dos dados?
         if t1 < dt_min - margem or t0 > dt_max + margem:
             continue
         cor = CORES_FASES[i % len(CORES_FASES)]
-        # recortar a faixa a janela visivel
         vt0 = max(t0, dt_min - margem)
         vt1 = min(t1, dt_max + margem)
         if faixas:
-            fig.add_vrect(x0=vt0, x1=vt1, fillcolor=cor, opacity=0.18,
+            pos = posicoes[visiveis % len(posicoes)]
+            fig.add_vrect(x0=vt0, x1=vt1, fillcolor=cor, opacity=0.15,
                           line_width=0, layer="below",
-                          annotation_text=nome, annotation_position="top left",
-                          annotation=dict(font_size=9, textangle=0))
+                          annotation_text=nome, annotation_position=pos,
+                          annotation=dict(font_size=8, textangle=0,
+                                          font_color="#444"))
+            visiveis += 1
         if marcos:
-            # linha no inicio da fase, se cair na janela
             if dt_min - margem <= t0 <= dt_max + margem:
                 fig.add_vline(x=t0, line=dict(color=cor, width=1.5, dash="dot"))
+
+
+def configurar_eixo_tempo(fig, granularidade="Automatico"):
+    """
+    Define a granularidade das marcas do eixo temporal (X).
+    'Mensal' -> 1 marca/mes; 'Quinzenal' -> de 15 em 15 dias;
+    'Semanal' -> de 7 em 7 dias; 'Automatico' -> deixa o plotly decidir.
+    Marcas mais finas ajudam a ler o faseamento da obra ao nivel a que as
+    campanhas existem (~8 em 8 dias).
+    """
+    if granularidade == "Mensal":
+        fig.update_xaxes(dtick="M1", tickformat="%b %Y", tickangle=-30)
+    elif granularidade == "Quinzenal":
+        fig.update_xaxes(dtick=14 * 24 * 3600 * 1000, tickformat="%d %b",
+                         tickangle=-45)
+    elif granularidade == "Semanal":
+        fig.update_xaxes(dtick=7 * 24 * 3600 * 1000, tickformat="%d %b",
+                         tickangle=-45)
+    # 'Automatico' -> nao mexe
 
 
 st.set_page_config(page_title="IMS — Instrumentation Monitoring System",
@@ -1212,6 +1234,24 @@ def separador_alvos_2d(dados):
                    "projeto de contencao).")
     data_rezerag = pd.to_datetime("2025-10-20")
 
+    # --- controlo de zoom temporal (util quando as fases da obra estao ligadas)
+    cz1, cz2 = st.columns([1, 2])
+    with cz1:
+        granul = st.selectbox("Detalhe do eixo temporal",
+                              ["Automatico", "Mensal", "Quinzenal", "Semanal"],
+                              index=0,
+                              help="Marcas mais finas ajudam a ler o faseamento "
+                                   "da obra (as campanhas sao ~8 em 8 dias).")
+    with cz2:
+        # janela de datas para focar um periodo (ex. onde os deslocamentos disparam)
+        d_min = pd.to_datetime(sub[COLS["data"]].min()).date()
+        d_max = pd.to_datetime(sub[COLS["data"]].max()).date()
+        janela = st.slider("Janela temporal", min_value=d_min, max_value=d_max,
+                           value=(d_min, d_max), format="DD/MM/YY")
+    j0 = pd.to_datetime(janela[0])
+    j1 = pd.to_datetime(janela[1])
+    sub = sub[(sub[COLS["data"]] >= j0) & (sub[COLS["data"]] <= j1)]
+
     col1, col2 = st.columns(2)
     with col1:
         st.caption("Deslocamento horizontal acumulado (mm)")
@@ -1231,6 +1271,7 @@ def separador_alvos_2d(dados):
                           annotation_text="Re-zeragem A5b–A8b", annotation_position="top")
         fig.update_xaxes(title="Data")
         fig.update_yaxes(title="Desl. horizontal (mm)")
+        configurar_eixo_tempo(fig, granul)
         fig.update_layout(height=460)
         st.plotly_chart(fig, use_container_width=True)
     with col2:
@@ -1252,6 +1293,7 @@ def separador_alvos_2d(dados):
                            annotation_text="Re-zeragem A5b–A8b", annotation_position="top")
         fig2.update_xaxes(title="Data")
         fig2.update_yaxes(title="ΔZ (mm)")
+        configurar_eixo_tempo(fig2, granul)
         fig2.update_layout(height=460)
         st.plotly_chart(fig2, use_container_width=True)
 
