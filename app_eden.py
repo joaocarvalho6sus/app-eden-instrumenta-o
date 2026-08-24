@@ -1981,6 +1981,196 @@ def separador_obra(dados):
 # =========================================================================
 # SEPARADOR 0 — PAGINA INICIAL (HOME)
 # =========================================================================
+def separador_pressupostos(dados):
+    """
+    Reune num so sitio TODOS os pressupostos, inferencias e limitacoes da
+    ferramenta e dos dados — o que e medido vs. o que e assumido, e o estado de
+    confirmacao de cada um. Assumir as limitacoes explicitamente e uma forca:
+    antecipa as perguntas dificeis da defesa.
+    """
+    st.subheader("Pressupostos, inferencias e qualidade dos dados")
+    st.caption("Transparencia sobre o que e MEDIDO e o que e ASSUMIDO. Cada "
+               "pressuposto tem a sua origem e o estado de confirmacao. Esta "
+               "seccao reune, num so sitio, as ressalvas assinaladas ao longo "
+               "da aplicacao.")
+
+    st.markdown("#### Pressupostos e inferencias da ferramenta")
+    press = pd.DataFrame([
+        {"Item": "Referencial de cota (3D)",
+         "O que se assume": "A caixa de escavacao usa a PROFUNDIDADE real "
+                            "(16,3 m), nao a cota absoluta — os sistemas de cota "
+                            "dos alvos (Z 42-63) e do projeto (4,5-24,6) nao "
+                            "estao relacionados.",
+         "Estado": "A confirmar (falta 1 par de cotas nos 2 sistemas)"},
+        {"Item": "Associacao inclinometro-sondagem",
+         "O que se assume": "I1<->SC8, I2<->SC9, I3<->SC6, inferido por "
+                            "sobreposicao das plantas de prospecao e de "
+                            "instrumentacao.",
+         "Estado": "A confirmar com a equipa de instrumentacao"},
+        {"Item": "Criterio do alcado DE",
+         "O que se assume": "Classificado como contencao 17 m; os deslocamentos "
+                            "sao ~0, pelo que os dados nao distinguem 17 de 24 m.",
+         "Estado": "A confirmar com o projeto de contencao"},
+        {"Item": "Faseamento da obra",
+         "O que se assume": "Datas do cronograma PREVISTO, nao do executado.",
+         "Estado": "Substituivel pelas datas reais de obra"},
+        {"Item": "Zona geotecnica no perfil SPT",
+         "O que se assume": "A cor da zona (ZG) e a provavel pelo valor de N; o "
+                            "relatorio nao define fronteiras de zona por "
+                            "profundidade.",
+         "Estado": "Leitura qualitativa (nao fronteiras reais)"},
+    ])
+    st.dataframe(press, use_container_width=True, hide_index=True)
+
+    st.markdown("#### Tratamento de dados (criterios aplicados)")
+    trat = pd.DataFrame([
+        {"Item": "Estado dos alvos",
+         "Tratamento": "Recalculado de ΔH/ΔV com criterios oficiais do "
+                       "relatorio; auditado contra a coluna do Excel (467/467, "
+                       "100%)."},
+        {"Item": "Alvos A5-A8 -> A5b-A8b",
+         "Tratamento": "Tratados como series separadas; os 'b' foram re-zerados "
+                       "em 20/10/2025 e os acumulados nao sao comparaveis "
+                       "diretamente com A1-A4."},
+        {"Item": "Fachadas da Santa Casa",
+         "Tratamento": "Distinguidas frontal (A1-A4) e lateral (A5-A8) pela "
+                       "posicao em planta."},
+    ])
+    st.dataframe(trat, use_container_width=True, hide_index=True)
+
+    # questoes de qualidade do proprio ficheiro (folha Qualidade_Dados)
+    try:
+        base_dir = Path(__file__).resolve().parent
+        fpath = base_dir / FICHEIRO_EXCEL
+        if not fpath.exists():
+            fpath = FICHEIRO_EXCEL
+        xq = pd.ExcelFile(fpath)
+        if "Qualidade_Dados" in xq.sheet_names:
+            qd = pd.read_excel(xq, "Qualidade_Dados")
+            st.markdown("#### Questoes de qualidade dos dados (do relatorio)")
+            st.caption("Ressalvas identificadas no proprio modelo de dados, "
+                       "transcritas da folha Qualidade_Dados.")
+            st.dataframe(qd, use_container_width=True, hide_index=True)
+    except Exception:
+        pass
+
+    st.info("Nota metodologica: estas limitacoes nao invalidam a analise — "
+            "delimitam o seu alcance. As conclusoes centrais (relacao entre "
+            "escavacao, rebaixamento da agua e deformacao; consolidacao "
+            "crescente do gres) assentam em dados medidos, nao nos "
+            "pressupostos acima.")
+
+
+def separador_sintese(dados):
+    """
+    Sintese do back-analysis: num unico eixo temporal, cruza a DEFORMACAO
+    (alvo OU inclinometro, a escolha) com a COTA DA AGUA (piezometro) e o
+    FASEAMENTO da obra. E aqui que a relacao causa-efeito da tese se ve: a
+    agua desce e a deformacao acelera nas datas em que a escavacao avanca.
+    """
+    st.subheader("Sintese — deformacao vs. agua vs. obra")
+    st.caption("Os tres fatores do back-analysis num so eixo de tempo: a "
+               "deformacao medida (esquerda), a cota da agua subterranea "
+               "(direita) e as fases da obra (fundo). Permite ler a "
+               "relacao causa-efeito: o rebaixamento da agua e a aceleracao "
+               "da deformacao acompanham o avanco da escavacao.")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        tipo = st.radio("Serie de deformacao", ["Inclinometro", "Alvo"],
+                        horizontal=True, key="sint_tipo")
+    # --- serie de deformacao escolhida ---
+    df_def = None
+    lbl_def = ""
+    with c2:
+        if tipo == "Inclinometro":
+            res = dados.get("resumo")
+            if res is not None and COLS["data"] in res.columns:
+                res = res.copy()
+                res[COLS["data"]] = pd.to_datetime(res[COLS["data"]], errors="coerce")
+                col_inc = "Inclinómetro"
+                incs = sorted(res[col_inc].dropna().unique())
+                sel = st.selectbox("Inclinometro", incs, key="sint_inc")
+                s = res[res[col_inc] == sel].sort_values(COLS["data"])
+                df_def = s[[COLS["data"], "Máx. desloc. acumulado total (mm)"]].rename(
+                    columns={"Máx. desloc. acumulado total (mm)": "def"})
+                lbl_def = f"Desl. max. {sel} (mm)"
+        else:
+            alv = dados["alvos"].copy()
+            alv[COLS["data"]] = pd.to_datetime(alv[COLS["data"]], errors="coerce")
+            alvos = sorted(alv[COLS["alvo"]].dropna().unique())
+            # sugerir A3 (o alvo critico) se existir
+            idx = alvos.index("A3") if "A3" in alvos else 0
+            sel = st.selectbox("Alvo", alvos, index=idx, key="sint_alvo")
+            s = alv[alv[COLS["alvo"]] == sel].sort_values(COLS["data"])
+            df_def = s[[COLS["data"], COLS["desl_h"]]].rename(
+                columns={COLS["desl_h"]: "def"})
+            lbl_def = f"Desl. horizontal {sel} (mm)"
+
+    # --- serie da agua (piezometro) ---
+    pz = dados["piezo"].copy()
+    pz[COLS["data"]] = pd.to_datetime(pz[COLS["data"]], errors="coerce")
+    pzs = sorted(pz[COLS["piezometro"]].dropna().unique())
+    pz_sel = pzs[0] if pzs else None
+    df_agua = None
+    if pz_sel:
+        sa = pz[pz[COLS["piezometro"]] == pz_sel].sort_values(COLS["data"])
+        df_agua = sa[[COLS["data"], COLS["cota_agua"]]].rename(
+            columns={COLS["cota_agua"]: "agua"})
+
+    if df_def is None or df_def.empty:
+        st.info("Sem dados de deformacao para a serie escolhida.")
+        return
+
+    # --- grafico de eixo duplo ---
+    fig = go.Figure()
+    # fases da obra (faixas + etiquetas diagonais), na janela dos dados
+    dt_min = df_def[COLS["data"]].min()
+    dt_max = df_def[COLS["data"]].max()
+    if df_agua is not None and not df_agua.empty:
+        dt_min = min(dt_min, df_agua[COLS["data"]].min())
+        dt_max = max(dt_max, df_agua[COLS["data"]].max())
+    adicionar_fases_obra(fig, dt_min, dt_max)
+
+    # deformacao (eixo Y esquerdo)
+    fig.add_trace(go.Scatter(
+        x=df_def[COLS["data"]], y=df_def["def"], mode="lines+markers",
+        name=lbl_def, line=dict(color="#c0140f", width=2)))
+    # agua (eixo Y direito)
+    if df_agua is not None and not df_agua.empty:
+        fig.add_trace(go.Scatter(
+            x=df_agua[COLS["data"]], y=df_agua["agua"], mode="lines+markers",
+            name=f"Cota da agua {pz_sel} (m)", yaxis="y2",
+            line=dict(color="#2563eb", width=2, dash="dot")))
+
+    fig.update_layout(
+        height=520,
+        margin=dict(t=110),
+        xaxis=dict(title="Data"),
+        yaxis=dict(title=dict(text=lbl_def, font=dict(color="#c0140f")),
+                   tickfont=dict(color="#c0140f")),
+        yaxis2=dict(title=dict(text="Cota da agua (m)", font=dict(color="#2563eb")),
+                    tickfont=dict(color="#2563eb"),
+                    overlaying="y", side="right"),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.25))
+    st.plotly_chart(fig, use_container_width=True)
+
+    # leitura automatica da correlacao
+    if df_agua is not None and len(df_agua) >= 2 and len(df_def) >= 2:
+        d_ini = df_def["def"].iloc[0]
+        d_fim = df_def["def"].iloc[-1]
+        a_ini = df_agua["agua"].iloc[0]
+        a_fim = df_agua["agua"].iloc[-1]
+        st.markdown(
+            f"**Leitura:** no periodo, a deformacao evoluiu de {d_ini:.1f} para "
+            f"**{d_fim:.1f} mm** enquanto a cota da agua desceu de {a_ini:.2f} "
+            f"para **{a_fim:.2f} m** ({a_fim - a_ini:+.2f} m). A deformacao "
+            f"cresce a medida que a agua e rebaixada e a escavacao avanca — "
+            f"consistente com o desconfinamento induzido pela escavacao.")
+    st.caption("Deformacao e cota da agua tem escalas independentes (eixos Y "
+               "esquerdo/direito). As fases da obra sao o cronograma previsto.")
+
+
 def separador_home(dados):
     # ---- BANNER no topo: gradiente azul ---------------------------------
     banner = (
@@ -1999,6 +2189,26 @@ def separador_home(dados):
         "</div></div>"
     )
     st.markdown(banner, unsafe_allow_html=True)
+
+    # ---- enquadramento do caso (o problema, para o juri entrar na narrativa)
+    st.markdown(
+        "Esta aplicacao apoia o **back-analysis** da contencao periferica da "
+        "reformulacao do **Hotel Eden, no Estoril**. A obra envolve uma "
+        "escavacao profunda (ate ~16 m) executada com cortina de contencao "
+        "junto a **edificios sensiveis** — em especial a Santa Casa da "
+        "Misericordia, o Restaurante Cimas e a Clinica Abreu Loureiro — e "
+        "**abaixo do nivel freatico** de repouso. A instrumentacao "
+        "(inclinometros, alvos topograficos, celulas de carga e piezometros) "
+        "monitoriza os deslocamentos induzidos pela escavacao na propria "
+        "contencao e nos edificios vizinhos.")
+    st.markdown(
+        "O objetivo da ferramenta nao e apenas visualizar leituras, mas "
+        "**relacionar a deformacao medida com as suas causas** — o avanco da "
+        "escavacao, o rebaixamento da agua e a natureza do terreno. A analise "
+        "sustenta que a deformacao e governada pelo grau de consolidacao "
+        "crescente do gres (nao por uma camada mole) e acompanha a escavacao "
+        "abaixo do nivel freatico. O separador **Sintese** cruza estes "
+        "fatores num so eixo de tempo.")
 
     # ---- identificacao da obra + numeros-chave --------------------------
     col_id, col_num = st.columns([1.3, 2])
@@ -2033,6 +2243,8 @@ def separador_home(dados):
                "de cada area.")
 
     cartoes = [
+        ("Sintese", "A relacao causa-efeito num so eixo de tempo: deformacao "
+         "(alvo ou inclinometro) vs. cota da agua vs. fases da obra."),
         ("Visao geral 3D", "Alvos no espaco com a geometria da obra: contorno do "
          "recinto, edificios vizinhos e vetores de deslocamento amplificados."),
         ("Inclinometros", "Perfil deformado em profundidade, evolucao no tempo, "
@@ -2049,6 +2261,8 @@ def separador_home(dados):
          "instrumentacao assinalada. Sobrepoe-se aos graficos temporais."),
         ("Planta (DXF)", "Leitura de plantas de escavacao em DXF, com opcao de "
          "alinhamento aos alvos por pontos de referencia."),
+        ("Pressupostos", "O que e medido vs. o que e assumido: inferencias, "
+         "limitacoes e qualidade dos dados, num so sitio."),
     ]
     # desenhar em grelha de 2 colunas
     for i in range(0, len(cartoes), 2):
@@ -2125,11 +2339,15 @@ def main():
     if not TEM_EZDXF:
         st.sidebar.info("Instala 'ezdxf' para ativar a leitura de plantas DXF.")
 
-    thome, t3d, tinc, talv, tcc, tpz, tgeo, tobra, tplan = st.tabs(
-        ["Inicio", "Visao geral 3D", "Inclinometros", "Alvos (2D)",
-         "Celulas de carga", "Piezometros", "Geologia", "Obra", "Planta (DXF)"])
+    (thome, tsint, t3d, tinc, talv, tcc, tpz, tgeo, tobra, tplan,
+     tpress) = st.tabs(
+        ["Inicio", "Sintese", "Visao geral 3D", "Inclinometros", "Alvos (2D)",
+         "Celulas de carga", "Piezometros", "Geologia", "Obra", "Planta (DXF)",
+         "Pressupostos"])
     with thome:
         separador_home(dados)
+    with tsint:
+        separador_sintese(dados)
     with t3d:
         separador_3d(dados)
     with tinc:
@@ -2146,6 +2364,8 @@ def main():
         separador_obra(dados)
     with tplan:
         separador_planta(dados)
+    with tpress:
+        separador_pressupostos(dados)
 
 
 if __name__ == "__main__":
