@@ -357,16 +357,35 @@ def _rumo_cardeal(az):
 # Datas PREVISTAS transcritas do PDF do plano. Sao o planeado, nao o real.
 # =========================================================================
 # (nome, inicio ISO, conclusao ISO)
+# =========================================================================
+# FASEAMENTO DA OBRA — datas REAIS de execucao (plano de trabalhos impactado,
+# Aquatecnica, 22/04/2026). As macro-fases usam as datas impactadas (o que foi
+# de facto executado). Fonte: "Plano de Trabalhos - Impactado ECP".
+# =========================================================================
 FASES_OBRA = [
-    ("Contencao periferica",                 "2025-05-13", "2026-02-03"),
-    ("Estacas Poente e Norte",               "2025-05-13", "2025-06-23"),
-    ("Estacas Central e Nascente",           "2025-06-24", "2025-08-18"),
-    ("Escavacao + bandas de laje + ancoragens", "2025-07-08", "2026-03-02"),
-    ("Fundacao e laje de fundo",             "2026-01-20", "2026-03-16"),
-    ("Microestacas",                         "2026-02-03", "2026-03-02"),
-    ("Piso -3", "2026-02-24", "2026-04-06"),
-    ("Piso -2", "2026-03-17", "2026-04-27"),
-    ("Piso -1", "2026-03-31", "2026-05-11"),
+    ("Contencao periferica",                    "2025-05-13", "2026-04-15"),
+    ("Estacas Poente e Norte",                  "2025-05-13", "2025-08-12"),
+    ("Estacas Central e Nascente",              "2025-08-13", "2025-10-07"),
+    ("Estacas Cimas",                           "2025-05-13", "2025-09-25"),
+    ("Escavacao + bandas de laje + ancoragens", "2025-07-08", "2026-04-15"),
+    ("Viga coroamento + muros contencao",       "2025-07-08", "2025-11-13"),
+]
+
+# ESCAVACAO POR COTA — marcos reais (cota atingida + datas), do planeamento
+# impactado. Estes marcos permitem cruzar QUANDO a escavacao chegou a cada
+# cota com o que a instrumentacao mediu nessas datas. As cotas estao no
+# referencial de PROJETO (o mesmo das cotas dos pisos), nao no dos alvos.
+# (rotulo, cota_final_m, data_inicio, data_fim)
+ESCAVACAO_COTAS = [
+    ("cota 26,50 → 23,75",              23.75, "2025-09-04", "2025-09-05"),
+    ("cota 29 → 22,55 (fundo Anel P2)", 22.55, "2025-09-15", "2025-09-17"),
+    ("cota 22,55 → 18,90",              18.90, "2025-09-17", "2025-09-22"),
+    ("até cota 21,45",                  21.45, "2025-09-22", "2025-09-22"),
+    ("até cota 19,80/19,00 (fundo VD Piso 1)", 19.00, "2025-10-22", "2025-10-24"),
+    ("até cota VD Piso -1",             15.90, "2025-11-13", "2025-11-26"),
+    ("de 4,95 m → cota 14,85",          14.85, "2025-11-12", "2025-11-25"),
+    ("até cota VD Piso -2",             12.45, "2025-12-26", "2026-01-06"),
+    ("até cota VD Piso -3",              9.00, "2026-02-10", "2026-02-25"),
 ]
 
 CORES_FASES = ["#8dd3c7", "#ffffb3", "#bebada", "#fb8072", "#80b1d3",
@@ -2079,6 +2098,11 @@ def separador_sintese(dados):
     with c1:
         tipo = st.radio("Serie de deformacao", ["Inclinometro", "Alvo"],
                         horizontal=True, key="sint_tipo")
+        st.checkbox("Marcos de escavacao por cota (datas reais)", value=True,
+                    key="sint_escav",
+                    help="Linhas verticais nas datas reais em que a escavacao "
+                         "atingiu cada cota (do plano de trabalhos impactado). "
+                         "Permite ver a deformacao acelerar apos cada fase.")
     # --- serie de deformacao escolhida ---
     df_def = None
     lbl_def = ""
@@ -2131,6 +2155,19 @@ def separador_sintese(dados):
         dt_min = min(dt_min, df_agua[COLS["data"]].min())
         dt_max = max(dt_max, df_agua[COLS["data"]].max())
     adicionar_fases_obra(fig, dt_min, dt_max)
+
+    # marcos de escavacao por cota (datas reais) — linhas verticais datadas.
+    # E aqui que se ve a causa: a deformacao acelera logo apos cada escavacao.
+    mostrar_escav = st.session_state.get("sint_escav", True)
+    if mostrar_escav:
+        for rotulo, cota, ini, fim in ESCAVACAO_COTAS:
+            t = pd.to_datetime(fim)
+            if dt_min <= t <= dt_max:
+                fig.add_vline(x=t, line=dict(color="#8B4513", width=1, dash="dash"),
+                              annotation_text=f"⛏ {rotulo}",
+                              annotation_position="bottom",
+                              annotation_font_size=8,
+                              annotation_font_color="#8B4513")
 
     # deformacao (eixo Y esquerdo)
     fig.add_trace(go.Scatter(
