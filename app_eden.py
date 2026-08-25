@@ -2192,23 +2192,27 @@ def separador_home(dados):
 
     # ---- enquadramento do caso (o problema, para o juri entrar na narrativa)
     st.markdown(
-        "Esta aplicacao apoia o **back-analysis** da contencao periferica da "
-        "reformulacao do **Hotel Eden, no Estoril**. A obra envolve uma "
-        "escavacao profunda (ate ~16 m) executada com cortina de contencao "
-        "junto a **edificios sensiveis** — em especial a Santa Casa da "
-        "Misericordia, o Restaurante Cimas e a Clinica Abreu Loureiro — e "
-        "**abaixo do nivel freatico** de repouso. A instrumentacao "
-        "(inclinometros, alvos topograficos, celulas de carga e piezometros) "
-        "monitoriza os deslocamentos induzidos pela escavacao na propria "
-        "contencao e nos edificios vizinhos.")
+        "Esta aplicação apoia a **análise inversa** (*back-analysis*) da "
+        "contenção periférica da reformulação do **Hotel Eden**, no Monte "
+        "Estoril. A obra compreende uma escavação profunda — cerca de 16 m — "
+        "executada ao abrigo de uma cortina de contenção, num contexto "
+        "exigente: confina com **edifícios sensíveis**, em particular a Santa "
+        "Casa da Misericórdia, o Restaurante Cimas e a Clínica Abreu Loureiro, "
+        "e desenvolve-se **abaixo do nível freático** de repouso. A "
+        "instrumentação instalada — inclinómetros, alvos topográficos, células "
+        "de carga e piezómetros — permite acompanhar, ao longo do tempo, os "
+        "deslocamentos induzidos pela escavação, tanto na própria contenção "
+        "como nos edifícios vizinhos.")
     st.markdown(
-        "O objetivo da ferramenta nao e apenas visualizar leituras, mas "
-        "**relacionar a deformacao medida com as suas causas** — o avanco da "
-        "escavacao, o rebaixamento da agua e a natureza do terreno. A analise "
-        "sustenta que a deformacao e governada pelo grau de consolidacao "
-        "crescente do gres (nao por uma camada mole) e acompanha a escavacao "
-        "abaixo do nivel freatico. O separador **Sintese** cruza estes "
-        "fatores num so eixo de tempo.")
+        "O propósito da ferramenta não se esgota na visualização das leituras: "
+        "procura sobretudo **relacionar a deformação medida com as suas "
+        "causas** — o avanço da escavação, o rebaixamento do nível freático e "
+        "a natureza do maciço. A leitura conjunta destes fatores sustenta que "
+        "a deformação da contenção é governada pelo **grau de consolidação "
+        "crescente do grés** — e não por qualquer camada mole, que não existe "
+        "— acentuando-se à medida que a escavação progride abaixo do nível "
+        "freático. O separador **Síntese** reúne estes três fatores num único "
+        "eixo temporal, tornando essa relação diretamente legível.")
 
     # ---- identificacao da obra + numeros-chave --------------------------
     col_id, col_num = st.columns([1.3, 2])
