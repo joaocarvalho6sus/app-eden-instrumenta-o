@@ -2225,18 +2225,27 @@ def separador_sintese(dados):
         dt_max = max(dt_max, df_agua[COLS["data"]].max())
     fases_vis = adicionar_fases_obra(fig, dt_min, dt_max)
 
-    # marcos de escavacao por cota (datas reais) — linhas verticais datadas.
-    # E aqui que se ve a causa: a deformacao acelera logo apos cada escavacao.
+    # marcos de escavacao por cota (datas reais) — linha vertical + etiqueta
+    # CURTA (E1, E2...) no fundo. O rotulo completo (cota + data) vai numa
+    # legenda por baixo do grafico. Etiquetas curtas nao colidem, ao
+    # contrario dos rotulos longos com datas proximas.
     mostrar_escav = st.session_state.get("sint_escav", True)
+    escav_visiveis = []
     if mostrar_escav:
-        for rotulo, cota, ini, fim in ESCAVACAO_COTAS:
-            t = pd.to_datetime(fim)
-            if dt_min <= t <= dt_max:
-                fig.add_vline(x=t, line=dict(color="#8B4513", width=1, dash="dash"),
-                              annotation_text=f"⛏ {rotulo}",
-                              annotation_position="bottom",
-                              annotation_font_size=8,
-                              annotation_font_color="#8B4513")
+        # so os que caem na janela, ordenados por data
+        na_janela = [(pd.to_datetime(fim), rotulo, cota)
+                     for rotulo, cota, ini, fim in ESCAVACAO_COTAS
+                     if dt_min <= pd.to_datetime(fim) <= dt_max]
+        na_janela.sort()
+        for k, (t, rotulo, cota) in enumerate(na_janela, start=1):
+            fig.add_vline(x=t, line=dict(color="#8B4513", width=1, dash="dash"))
+            fig.add_annotation(
+                x=t, y=-0.02, yref="paper", text=f"E{k}",
+                showarrow=False, xanchor="center", yanchor="top",
+                font=dict(size=9, color="white"),
+                bgcolor="#8B4513", borderpad=2,
+                hovertext=f"{rotulo} — {t.strftime('%d/%m/%Y')}")
+            escav_visiveis.append((k, rotulo, t, cota))
 
     # deformacao (eixo Y esquerdo)
     fig.add_trace(go.Scatter(
@@ -2251,7 +2260,7 @@ def separador_sintese(dados):
 
     fig.update_layout(
         height=520,
-        margin=dict(t=60),
+        margin=dict(t=60, b=70),
         xaxis=dict(title="Data"),
         yaxis=dict(title=dict(text=lbl_def, font=dict(color="#c0140f")),
                    tickfont=dict(color="#c0140f")),
@@ -2261,6 +2270,12 @@ def separador_sintese(dados):
         legend=dict(orientation="h", yanchor="bottom", y=-0.25))
     st.plotly_chart(fig, use_container_width=True)
     legenda_fases(fases_vis)
+    # legenda dos marcos de escavacao (E1, E2...) -> cota + data
+    if escav_visiveis:
+        itens = "  ·  ".join(
+            f"**E{k}** {rotulo} ({t.strftime('%d/%m')})"
+            for k, rotulo, t, cota in escav_visiveis)
+        st.caption("⛏ Escavacao (cota atingida, data real): " + itens)
 
     # leitura automatica da correlacao
     if df_agua is not None and len(df_agua) >= 2 and len(df_def) >= 2:
