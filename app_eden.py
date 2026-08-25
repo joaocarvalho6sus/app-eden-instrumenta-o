@@ -2149,6 +2149,107 @@ def separador_pressupostos(dados):
             "pressupostos acima.")
 
 
+@st.cache_data
+def _carregar_terreno():
+    """Le o modelo digital de terreno (MDT) extraido do levantamento topografico."""
+    import json
+    base_dir = Path(__file__).resolve().parent
+    fp = base_dir / "terreno_mdt.json"
+    if not fp.exists():
+        fp = "terreno_mdt.json"
+        if not Path(fp).exists():
+            return None
+    try:
+        return json.load(open(fp, encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def separador_terreno3d(dados):
+    """
+    3D do terreno REAL, a partir do levantamento topografico (MDT triangulado),
+    no referencial da obra e com cotas Z reais. Mostra a superficie do terreno,
+    a linha de escavacao (cota 4,55) e o volume escavado. Ao contrario do 3D dos
+    alvos (referencial local, cotas relativas), este assenta em cotas absolutas.
+    """
+    st.subheader("Terreno 3D — modelo do levantamento topografico")
+    st.caption("Superficie real do terreno (modelo digital triangulado) do "
+               "levantamento topografico, no referencial da obra e com COTAS "
+               "REAIS. Mostra a topografia original e o volume a escavar ate a "
+               "cota de fundo (4,55 m). Complementa o 3D dos alvos — que usa um "
+               "referencial local e cotas relativas — com geometria absoluta.")
+
+    terreno = _carregar_terreno()
+    if terreno is None:
+        st.info("Modelo de terreno nao disponivel (falta terreno_mdt.json).")
+        return
+
+    import numpy as np
+    faces = np.array(terreno["faces"])           # (N,3,3)
+    z_fundo = terreno.get("cota_fundo", 4.55)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        mostrar_escav = st.checkbox("Mostrar volume de escavacao", value=True)
+    with c2:
+        exagero = st.slider("Exagero vertical", 1.0, 4.0, 1.5, 0.5,
+                            help="Amplia a escala vertical para realcar o "
+                                 "relevo. 1.0 = escala real.")
+
+    # construir a malha Mesh3d a partir dos triangulos
+    verts = faces.reshape(-1, 3)
+    # indices dos vertices de cada triangulo
+    i = np.arange(0, len(verts), 3)
+    j = i + 1
+    k = i + 2
+    x, y, z = verts[:, 0], verts[:, 1], verts[:, 2]
+    z_base = z.min()
+    z_plot = z_base + (z - z_base) * exagero    # exagero vertical (so visual)
+
+    fig = go.Figure()
+    fig.add_trace(go.Mesh3d(
+        x=x, y=y, z=z_plot, i=i, j=j, k=k,
+        intensity=z, colorscale="earth", opacity=0.92,
+        colorbar=dict(title="Cota (m)"),
+        name="Terreno", hovertemplate="Cota: %{intensity:.1f} m<extra></extra>"))
+
+    # linha de escavacao (contorno a cota 4,55) + volume escavado
+    esc = terreno.get("escavacao", [])
+    if esc and mostrar_escav:
+        ex = [p[0] for p in esc]
+        ey = [p[1] for p in esc]
+        zf = z_base + (z_fundo - z_base) * exagero
+        # contorno do fundo
+        fig.add_trace(go.Scatter3d(
+            x=ex, y=ey, z=[zf] * len(ex), mode="lines",
+            line=dict(color="#b45309", width=4),
+            name=f"Fundo de escavacao (cota {z_fundo})"))
+        # paredes verticais da escavacao (do terreno ate ao fundo)
+        # amostra de vertices para nao pesar
+        for idx in range(0, len(esc) - 1, 3):
+            fig.add_trace(go.Scatter3d(
+                x=[ex[idx], ex[idx]], y=[ey[idx], ey[idx]],
+                z=[z_plot.max(), zf], mode="lines",
+                line=dict(color="rgba(180,83,9,0.35)", width=1),
+                showlegend=False, hoverinfo="skip"))
+
+    fig.update_layout(
+        height=640,
+        scene=dict(
+            xaxis_title="M (m)", yaxis_title="P (m)", zaxis_title="Cota (m)",
+            aspectmode="data"),
+        margin=dict(l=0, r=0, t=10, b=0))
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.caption(f"Superficie do terreno entre as cotas {z.min():.1f} e "
+               f"{z.max():.1f} m; fundo de escavacao a {z_fundo} m — "
+               f"aproximadamente {z.max()-z_fundo:.0f} m de altura escavada no "
+               f"ponto mais alto. Fonte: levantamento topografico (DXF). Nota: "
+               f"o exagero vertical e apenas visual. As sondagens e os alvos "
+               f"nao sao mostrados aqui por usarem outro referencial — ver 3D "
+               f"dos alvos e separador Geologia.")
+
+
 def separador_sintese(dados):
     """
     Sintese do back-analysis: num unico eixo temporal, cruza a DEFORMACAO
@@ -2465,17 +2566,19 @@ def main():
     if not TEM_EZDXF:
         st.sidebar.info("Instala 'ezdxf' para ativar a leitura de plantas DXF.")
 
-    (thome, tsint, t3d, tinc, talv, tcc, tpz, tgeo, tobra, tplan,
+    (thome, tsint, t3d, tterr, tinc, talv, tcc, tpz, tgeo, tobra, tplan,
      tpress) = st.tabs(
-        ["Inicio", "Sintese", "Visao geral 3D", "Inclinometros", "Alvos (2D)",
-         "Celulas de carga", "Piezometros", "Geologia", "Obra", "Planta (DXF)",
-         "Pressupostos"])
+        ["Inicio", "Sintese", "Visao geral 3D", "Terreno 3D", "Inclinometros",
+         "Alvos (2D)", "Celulas de carga", "Piezometros", "Geologia", "Obra",
+         "Planta (DXF)", "Pressupostos"])
     with thome:
         separador_home(dados)
     with tsint:
         separador_sintese(dados)
     with t3d:
         separador_3d(dados)
+    with tterr:
+        separador_terreno3d(dados)
     with tinc:
         separador_inclinometros(dados, limiar_vel, fator_acel)
     with talv:
