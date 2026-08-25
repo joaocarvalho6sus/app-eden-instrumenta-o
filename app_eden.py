@@ -391,22 +391,33 @@ ESCAVACAO_COTAS = [
 CORES_FASES = ["#8dd3c7", "#ffffb3", "#bebada", "#fb8072", "#80b1d3",
                "#fdb462", "#b3de69", "#fccde5", "#d9d9d9"]
 
+# FASEAMENTO: real (impactado) vs contratual (previsto), para comparacao de
+# desempenho face ao prazo. Fonte: plano de trabalhos impactado (Aquatecnica).
+# (nome, ini_real, fim_real, dur_real_dias, dur_contratual_dias)
+FASES_COMPARACAO = [
+    ("Contencao periferica",        "2025-05-13", "2026-04-15", 242, 210),
+    ("Execucao de estacas",         "2025-05-13", "2025-10-07", 106,  70),
+    ("Estacas Poente e Norte",      "2025-05-13", "2025-08-12",  66,  30),
+    ("Estacas Central e Nascente",  "2025-08-13", "2025-10-07", 106,  40),
+    ("Estacas Cimas",               "2025-05-13", "2025-09-25",  98,  98),
+    ("Escavacao + bandas + ancoragens", "2025-07-08", "2026-04-15", 202, 170),
+    ("Viga coroamento + muros",     "2025-07-08", "2025-11-13",  93,  57),
+]
+
 
 def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True):
     """
     Sobrepoe as fases da obra a um grafico com o tempo no eixo X: faixas de
-    fundo coloridas + etiqueta de cada fase na diagonal no topo, ancorada ao
-    inicio da fase. Fases que arrancam PROXIMAS no tempo teriam as etiquetas
-    sobrepostas (mesmo x), por isso escalonam-se em ALTURAS diferentes — a
-    seguinte sobe um degrau — para ficarem lado a lado sem colidir.
-    So desenha as fases que se sobrepoem a janela [dt_min, dt_max] dos dados.
+    fundo coloridas + um NUMERO por fase (no topo, no inicio da fase). O nome
+    completo aparece no hover e numa legenda compacta por baixo do grafico
+    (ver legenda_fases). Numeros curtos NAO colidem, ao contrario dos nomes
+    longos — resolve a sobreposicao de forma definitiva.
+    Devolve a lista de fases visiveis (para a legenda).
     """
     dt_min = pd.to_datetime(dt_min)
     dt_max = pd.to_datetime(dt_max)
     margem = pd.Timedelta(days=20)
-    janela_dias = max((dt_max - dt_min).days, 1)
 
-    # recolher as fases visiveis, ordenadas pelo inicio
     visiveis = []
     for i, (nome, ini, fim) in enumerate(FASES_OBRA):
         t0, t1 = pd.to_datetime(ini), pd.to_datetime(fim)
@@ -415,11 +426,7 @@ def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True):
         visiveis.append((t0, t1, nome, CORES_FASES[i % len(CORES_FASES)]))
     visiveis.sort(key=lambda v: v[0])
 
-    # niveis de altura (paper coords) — degraus para escalonar as etiquetas
-    niveis = [1.02, 1.10, 1.18, 1.26]
-    ult_x = None
-    nivel = 0
-    for t0, t1, nome, cor in visiveis:
+    for n, (t0, t1, nome, cor) in enumerate(visiveis, start=1):
         vt0 = max(t0, dt_min - margem)
         vt1 = min(t1, dt_max + margem)
         if faixas:
@@ -427,19 +434,24 @@ def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True):
                           line_width=0, layer="below")
         if marcos and dt_min - margem <= t0 <= dt_max + margem:
             fig.add_vline(x=t0, line=dict(color=cor, width=1.2, dash="dot"))
-        # decidir o nivel: se este inicio esta perto do anterior, sobe um degrau
+        # marcador numerado no topo (circulo com o numero da fase)
         x_lbl = t0 if t0 >= dt_min else vt0
-        if ult_x is not None and abs((x_lbl - ult_x).days) < janela_dias * 0.18:
-            nivel = (nivel + 1) % len(niveis)
-        else:
-            nivel = 0
-        ult_x = x_lbl
         fig.add_annotation(
-            x=x_lbl, y=niveis[nivel], yref="paper", text=nome,
-            textangle=-30, showarrow=False,
-            xanchor="left", yanchor="bottom",
-            font=dict(size=9, color="#333"),
-            bgcolor="rgba(255,255,255,0.6)")
+            x=x_lbl, y=1.02, yref="paper", text=f"<b>{n}</b>",
+            showarrow=False, xanchor="center", yanchor="bottom",
+            font=dict(size=11, color="white"),
+            bgcolor=cor, borderpad=3, opacity=0.95,
+            hovertext=nome)
+    return visiveis
+
+
+def legenda_fases(visiveis):
+    """Escreve, por baixo do grafico, a legenda numero -> nome das fases."""
+    if not visiveis:
+        return
+    itens = "  ·  ".join(f"**{n}**. {nome}"
+                         for n, (_, _, nome, _) in enumerate(visiveis, start=1))
+    st.caption("Fases da obra (planeamento real): " + itens)
 
 
 def barra_faseamento(dt_min, dt_max, altura=34):
@@ -1354,7 +1366,7 @@ def separador_alvos_2d(dados):
         fig.update_yaxes(title="Desl. horizontal (mm)")
         configurar_eixo_tempo(fig, granul)
         # margem superior maior quando as fases estao ligadas (etiquetas diagonais)
-        top_m = 130 if st.session_state.get("mostrar_obra") else 30
+        top_m = 55 if st.session_state.get("mostrar_obra") else 30
         fig.update_layout(height=460, margin=dict(t=top_m))
         st.plotly_chart(fig, use_container_width=True)
     with col2:
@@ -1380,9 +1392,18 @@ def separador_alvos_2d(dados):
         fig2.update_xaxes(title="Data")
         fig2.update_yaxes(title="ΔZ (mm)")
         configurar_eixo_tempo(fig2, granul)
-        top_m2 = 130 if st.session_state.get("mostrar_obra") else 30
+        top_m2 = 55 if st.session_state.get("mostrar_obra") else 30
         fig2.update_layout(height=460, margin=dict(t=top_m2))
         st.plotly_chart(fig2, use_container_width=True)
+
+    # legenda das fases (uma vez, por baixo dos dois graficos)
+    if st.session_state.get("mostrar_obra") and len(sub):
+        vis = [(pd.to_datetime(i), pd.to_datetime(f), n, CORES_FASES[k % len(CORES_FASES)])
+               for k, (n, i, f) in enumerate(FASES_OBRA)
+               if pd.to_datetime(f) >= sub[COLS["data"]].min() - pd.Timedelta(days=20)
+               and pd.to_datetime(i) <= sub[COLS["data"]].max() + pd.Timedelta(days=20)]
+        vis.sort(key=lambda v: v[0])
+        legenda_fases(vis)
 
 
 # =========================================================================
@@ -1477,12 +1498,16 @@ def separador_piezometros(dados):
     fig.add_trace(go.Scatter(x=sub[COLS["data"]], y=sub[COLS["cota_agua"]],
                              mode="lines+markers", name="Cota da agua (PZ)",
                              line=dict(color="#2563eb", width=2)))
+    fases_vis_pz = []
     if st.session_state.get("mostrar_obra") and len(sub):
-        adicionar_fases_obra(fig, sub[COLS["data"]].min(), sub[COLS["data"]].max())
+        fases_vis_pz = adicionar_fases_obra(fig, sub[COLS["data"]].min(),
+                                            sub[COLS["data"]].max())
     fig.update_xaxes(title="Data")
     fig.update_yaxes(title="Cota (m)")
-    fig.update_layout(height=520, margin=dict(r=140))
+    fig.update_layout(height=520, margin=dict(r=140, t=55))
     st.plotly_chart(fig, use_container_width=True)
+    if fases_vis_pz:
+        legenda_fases(fases_vis_pz)
 
     # leitura cruzada quantitativa
     if len(sub):
@@ -1952,49 +1977,93 @@ def separador_geologia(dados):
 # SEPARADOR 8 — CRONOGRAMA DA OBRA
 # =========================================================================
 def separador_obra(dados):
-    st.subheader("Cronograma da obra (Plano de Trabalhos)")
-    st.caption("Plano de trabalhos da empreitada (Alves Ribeiro / HCI, "
-               "05/05/2025). Sao datas PREVISTAS — o planeado, que pode diferir "
-               "do executado. A janela de instrumentacao (out-dez 2025) esta "
-               "assinalada para veres que fases estavam ativas durante a "
-               "monitorizacao.")
+    st.subheader("Cronograma da obra — planeado vs. executado")
+    st.caption("Comparacao entre o planeamento CONTRATUAL (previsto) e o "
+               "EXECUTADO (real, do plano de trabalhos impactado da "
+               "Aquatecnica, 22/04/2026). A janela de instrumentacao esta "
+               "assinalada, para relacionar as fases com a monitorizacao.")
 
-    # Gantt simples com barras horizontais
+    vista = st.radio("Cronograma a mostrar",
+                     ["Executado (real)", "Comparacao real vs. previsto"],
+                     horizontal=True)
+
     fig = go.Figure()
-    for i, (nome, ini, fim) in enumerate(FASES_OBRA):
-        t0 = pd.to_datetime(ini)
-        t1 = pd.to_datetime(fim)
-        cor = CORES_FASES[i % len(CORES_FASES)]
-        fig.add_trace(go.Scatter(
-            x=[t0, t1], y=[nome, nome], mode="lines",
-            line=dict(color=cor, width=16),
-            hovertemplate=f"{nome}<br>{ini} a {fim}<extra></extra>",
-            showlegend=False,
-        ))
+    nomes = [f[0] for f in FASES_COMPARACAO]
+
+    if vista == "Executado (real)":
+        for i, (nome, ini, fim, dur_r, dur_c) in enumerate(FASES_COMPARACAO):
+            cor = CORES_FASES[i % len(CORES_FASES)]
+            fig.add_trace(go.Scatter(
+                x=[pd.to_datetime(ini), pd.to_datetime(fim)],
+                y=[nome, nome], mode="lines", line=dict(color=cor, width=16),
+                hovertemplate=f"{nome}<br>{ini} a {fim}<br>{dur_r} dias "
+                              f"(previsto {dur_c})<extra></extra>",
+                showlegend=False))
+    else:
+        # duas barras por fase: real (cor) e contratual (cinza), deslocadas
+        for i, (nome, ini, fim, dur_r, dur_c) in enumerate(FASES_COMPARACAO):
+            cor = CORES_FASES[i % len(CORES_FASES)]
+            t0 = pd.to_datetime(ini)
+            t1_real = pd.to_datetime(fim)
+            t1_prev = t0 + pd.Timedelta(days=dur_c)   # fim previsto ancorado ao inicio real
+            # barra real (em cima)
+            fig.add_trace(go.Scatter(
+                x=[t0, t1_real], y=[f"{nome} ", f"{nome} "], mode="lines",
+                line=dict(color=cor, width=11),
+                hovertemplate=f"REAL: {dur_r} dias<extra></extra>",
+                showlegend=False))
+            # barra prevista (em baixo, cinza)
+            fig.add_trace(go.Scatter(
+                x=[t0, t1_prev], y=[f" {nome}", f" {nome}"], mode="lines",
+                line=dict(color="rgba(120,120,120,0.6)", width=11),
+                hovertemplate=f"PREVISTO: {dur_c} dias<extra></extra>",
+                showlegend=False))
 
     # faixa da janela de instrumentacao
     alvos = dados.get("alvos")
     if alvos is not None and not alvos.empty and COLS["data"] in alvos.columns:
         d0 = alvos[COLS["data"]].min()
         d1 = alvos[COLS["data"]].max()
-        fig.add_vrect(x0=d0, x1=d1, fillcolor="crimson", opacity=0.12,
-                      line_width=0,
-                      annotation_text="Instrumentacao (dados)",
+        fig.add_vrect(x0=d0, x1=d1, fillcolor="crimson", opacity=0.10,
+                      line_width=0, annotation_text="Instrumentacao",
                       annotation_position="top left")
 
     fig.update_xaxes(title="Data")
-    fig.update_layout(height=460, margin=dict(l=0, r=0, t=30, b=0))
+    fig.update_layout(height=480, margin=dict(l=0, r=0, t=30, b=0))
     st.plotly_chart(fig, use_container_width=True)
 
-    st.caption("Nota para a tese: apresentar estas datas como PLANEADAS. Se "
-               "tiveres os autos de obra (datas reais de execucao), o cruzamento "
-               "com a instrumentacao passa a ser rigoroso; sem eles, e uma "
-               "aproximacao defensavel desde que assinalada como tal.")
+    # ---- analise de desempenho de prazo -------------------------------
+    st.markdown("#### Desempenho face ao prazo")
+    linhas = []
+    for nome, ini, fim, dur_r, dur_c in FASES_COMPARACAO:
+        desvio = dur_r - dur_c
+        pct = (desvio / dur_c * 100) if dur_c else 0
+        linhas.append({
+            "Fase": nome,
+            "Previsto (dias)": dur_c,
+            "Executado (dias)": dur_r,
+            "Desvio (dias)": f"{desvio:+d}",
+            "Desvio (%)": f"{pct:+.0f}%",
+        })
+    df_des = pd.DataFrame(linhas)
+    st.dataframe(df_des, use_container_width=True, hide_index=True)
 
-    # tabela do plano
-    tabela = pd.DataFrame(
-        [{"Fase": n, "Inicio": i, "Conclusao": f} for n, i, f in FASES_OBRA])
-    st.dataframe(tabela, use_container_width=True, hide_index=True)
+    # sintese do desvio global das fases estruturais
+    tot_r = sum(f[3] for f in FASES_COMPARACAO)
+    tot_c = sum(f[4] for f in FASES_COMPARACAO)
+    pior = max(FASES_COMPARACAO, key=lambda f: f[3] - f[4])
+    st.markdown(
+        f"**Leitura:** somando as fases estruturais, foram executadas em "
+        f"**{tot_r} dias** contra **{tot_c} previstos** "
+        f"({(tot_r-tot_c)/tot_c*100:+.0f}%). O maior desvio foi em "
+        f"**{pior[0]}** (+{pior[3]-pior[4]} dias). Os desvios de prazo sao "
+        f"relevantes para o back-analysis: fases que se prolongaram "
+        f"mantiveram o macico desconfinado mais tempo, o que ajuda a "
+        f"interpretar a evolucao da deformacao.")
+    st.caption("Nota: a duracao prevista e a contratual (sem impacto); a "
+               "executada e a impactada. As datas de inicio reais e "
+               "contratuais coincidem na maioria das macro-fases — o desvio "
+               "manifesta-se na duracao, nao no arranque.")
 
 
 # =========================================================================
@@ -2154,7 +2223,7 @@ def separador_sintese(dados):
     if df_agua is not None and not df_agua.empty:
         dt_min = min(dt_min, df_agua[COLS["data"]].min())
         dt_max = max(dt_max, df_agua[COLS["data"]].max())
-    adicionar_fases_obra(fig, dt_min, dt_max)
+    fases_vis = adicionar_fases_obra(fig, dt_min, dt_max)
 
     # marcos de escavacao por cota (datas reais) — linhas verticais datadas.
     # E aqui que se ve a causa: a deformacao acelera logo apos cada escavacao.
@@ -2182,7 +2251,7 @@ def separador_sintese(dados):
 
     fig.update_layout(
         height=520,
-        margin=dict(t=110),
+        margin=dict(t=60),
         xaxis=dict(title="Data"),
         yaxis=dict(title=dict(text=lbl_def, font=dict(color="#c0140f")),
                    tickfont=dict(color="#c0140f")),
@@ -2191,6 +2260,7 @@ def separador_sintese(dados):
                     overlaying="y", side="right"),
         legend=dict(orientation="h", yanchor="bottom", y=-0.25))
     st.plotly_chart(fig, use_container_width=True)
+    legenda_fases(fases_vis)
 
     # leitura automatica da correlacao
     if df_agua is not None and len(df_agua) >= 2 and len(df_def) >= 2:
