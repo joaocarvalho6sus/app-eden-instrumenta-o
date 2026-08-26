@@ -753,6 +753,10 @@ def separador_3d(dados):
             "Realcar fachadas da Santa Casa", value=True,
             help="Distingue a fachada frontal (A1-A4, exposta a escavacao) da "
                  "lateral (A5-A8, ao mar).")
+        identificar_edif = st.checkbox(
+            "Identificar edificios", value=True,
+            help="Etiqueta com o nome de cada edificio, flutuando sobre os "
+                 "seus alvos.")
 
     campanha = alvos[alvos[COLS["data"]] == data_sel].copy()
     # recalcular estado de cada alvo da campanha com os criterios oficiais
@@ -881,6 +885,14 @@ def separador_3d(dados):
             cone_z.append(z0[i] + dz[i])
             cone_u.append(dx[i]); cone_v.append(dy[i]); cone_w.append(dz[i])
             cone_cor.append(c)
+
+        # etiqueta identificadora do edificio, sobre o centro dos seus alvos
+        if identificar_edif and tipo == "edificio" and len(x0):
+            fig.add_trace(go.Scatter3d(
+                x=[x0.mean()], y=[y0.mean()], z=[z0.max() + 3],
+                mode="text", text=[f"<b>{chave}</b>"],
+                textfont=dict(size=12, color=cor),
+                showlegend=False, hoverinfo="skip"))
 
     # desenhar todas as hastes das setas de uma vez (por cor, para poucos traces)
     for c in set(seg_cor):
@@ -2191,6 +2203,9 @@ def separador_terreno3d(dados):
     c1, c2 = st.columns(2)
     with c1:
         mostrar_escav = st.checkbox("Mostrar volume de escavacao", value=True)
+        mostrar_curvas = st.checkbox("Curvas de nivel", value=False,
+                                     help="Curvas de nivel do levantamento, que "
+                                          "dao a leitura do relevo (alcados).")
     with c2:
         exagero = st.slider("Exagero vertical", 1.0, 4.0, 1.5, 0.5,
                             help="Amplia a escala vertical para realcar o "
@@ -2232,6 +2247,24 @@ def separador_terreno3d(dados):
                 z=[z_plot.max(), zf], mode="lines",
                 line=dict(color="rgba(180,83,9,0.35)", width=1),
                 showlegend=False, hoverinfo="skip"))
+
+    # curvas de nivel (dao a leitura do relevo / alcados do terreno)
+    if mostrar_curvas:
+        curvas = terreno.get("curvas_nivel", [])
+        cx, cy, cz = [], [], []
+        for c in curvas:
+            zc = c[0][2] if len(c[0]) > 2 else 0
+            if zc < 1:            # ignorar curvas sem cota valida
+                continue
+            for p in c:
+                cx.append(p[0]); cy.append(p[1])
+                cz.append(z_base + (p[2] - z_base) * exagero)
+            cx.append(None); cy.append(None); cz.append(None)
+        if cx:
+            fig.add_trace(go.Scatter3d(
+                x=cx, y=cy, z=cz, mode="lines",
+                line=dict(color="rgba(60,40,20,0.5)", width=1),
+                name="Curvas de nivel", hoverinfo="skip"))
 
     fig.update_layout(
         height=640,
