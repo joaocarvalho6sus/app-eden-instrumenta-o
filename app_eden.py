@@ -1444,10 +1444,12 @@ def separador_correlacao(dados):
     col1, col2 = st.columns(2)
     with col1:
         inc = st.selectbox("Inclinometro",
-                           sorted(resumo[COLS["inclinometro"]].dropna().unique()))
+                           sorted(resumo[COLS["inclinometro"]].dropna().unique()),
+                           key="corr_inc")
     with col2:
         piez = st.selectbox("Piezometro",
-                            sorted(pz[COLS["piezometro"]].dropna().unique()))
+                            sorted(pz[COLS["piezometro"]].dropna().unique()),
+                            key="corr_piez")
 
     s_inc = resumo[resumo[COLS["inclinometro"]] == inc].sort_values(COLS["data"])
     s_pz = pz[pz[COLS["piezometro"]] == piez].sort_values(COLS["data"])
