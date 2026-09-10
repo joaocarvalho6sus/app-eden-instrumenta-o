@@ -701,6 +701,53 @@ CORES_EDIFICIO = {
 }
 
 
+def _casa_edificio(fig, grp, cor, nome):
+    """
+    Desenha uma casa simples e MERAMENTE ILUSTRATIVA na posicao de um edificio
+    vizinho: um bloco (paredes) rematado por um telhado de duas aguas. A posicao
+    e a extensao assentam nas coordenadas reais dos alvos do edificio; a forma e
+    esquematica e nao representa a geometria real do edificio.
+    """
+    import numpy as np
+    x0, x1 = grp[COLS["M0"]].min(), grp[COLS["M0"]].max()
+    y0, y1 = grp[COLS["P0"]].min(), grp[COLS["P0"]].max()
+    zbase = grp[COLS["Z0"]].min()
+    mx = max((x1 - x0) * 0.2, 2.0); my = max((y1 - y0) * 0.2, 2.0)
+    x0 -= mx; x1 += mx; y0 -= my; y1 += my
+    h_parede = 5.0
+    h_telhado = 3.0
+    zt = zbase + h_parede
+    zc = zt + h_telhado
+
+    # paredes (caixa)
+    xs = [x0, x1, x1, x0, x0, x1, x1, x0]
+    ys = [y0, y0, y1, y1, y0, y0, y1, y1]
+    zs = [zbase, zbase, zbase, zbase, zt, zt, zt, zt]
+    fig.add_trace(go.Mesh3d(
+        x=xs, y=ys, z=zs,
+        i=[0, 0, 0, 4, 1, 1, 2, 3, 0, 3],
+        j=[1, 2, 4, 5, 2, 5, 3, 7, 3, 7],
+        k=[2, 3, 5, 7, 5, 6, 7, 4, 7, 4],
+        color=cor, opacity=0.30, name=nome, hoverinfo="name",
+        showlegend=False, flatshading=True))
+
+    # telhado de duas aguas (cumeeira ao meio em Y)
+    ym = (y0 + y1) / 2.0
+    xr = [x0, x1, x1, x0, x0, x1]
+    yr = [y0, y0, y1, y1, ym, ym]
+    zr = [zt, zt, zt, zt, zc, zc]
+    fig.add_trace(go.Mesh3d(
+        x=xr, y=yr, z=zr,
+        i=[0, 1, 3, 2, 0, 1],
+        j=[1, 4, 2, 5, 4, 4],
+        k=[4, 5, 5, 4, 3, 0],
+        color=cor, opacity=0.45, hoverinfo="skip",
+        showlegend=False, flatshading=True))
+    fig.add_trace(go.Scatter3d(
+        x=[x0, x1], y=[ym, ym], z=[zc, zc], mode="lines",
+        line=dict(color=cor, width=4), showlegend=False, hoverinfo="skip"))
+
+
 def separador_3d(dados):
     alvos = dados["alvos"]
     ok = validar_colunas(
@@ -757,6 +804,11 @@ def separador_3d(dados):
             "Identificar edificios", value=True,
             help="Etiqueta com o nome de cada edificio, flutuando sobre os "
                  "seus alvos.")
+        mostrar_casas = st.checkbox(
+            "Casas dos edificios (ilustrativo)", value=True,
+            help="Desenha cada edificio vizinho como uma casa simples "
+                 "(bloco + telhado). Posicao real dos alvos; forma esquematica "
+                 "— nao representa a geometria real do edificio.")
 
     campanha = alvos[alvos[COLS["data"]] == data_sel].copy()
     # recalcular estado de cada alvo da campanha com os criterios oficiais
@@ -893,6 +945,10 @@ def separador_3d(dados):
                 mode="text", text=[f"<b>{chave}</b>"],
                 textfont=dict(size=12, color=cor),
                 showlegend=False, hoverinfo="skip"))
+
+        # casa simples ilustrativa do edificio vizinho
+        if mostrar_casas and tipo == "edificio" and len(x0):
+            _casa_edificio(fig, grp, cor, chave)
 
     # desenhar todas as hastes das setas de uma vez (por cor, para poucos traces)
     for c in set(seg_cor):
@@ -2177,6 +2233,79 @@ def _carregar_terreno():
         return None
 
 
+def _cor_lados_por_movimento(dados, esc):
+    """
+    Coloracao ILUSTRATIVA e QUALITATIVA dos lados do recinto de escavacao
+    conforme o nivel de movimento dos alvos, associado por ORIENTACAO.
+
+    Como o terreno (coords nacionais) e os alvos (coords locais) estao em
+    referenciais diferentes, nao ha correspondencia ponto-a-ponto. A associacao
+    e feita por lado/orientacao: divide-se o contorno em 4 quadrantes (N, S, E,
+    O) relativos ao centro, e a cada quadrante atribui-se a cor do pior estado
+    dos alvos cuja orientacao (relativa ao centro dos alvos) corresponde a esse
+    lado. E uma leitura de tendencia, nao uma medida exata.
+
+    Devolve lista de (indice_inicio, indice_fim, cor, etiqueta) para desenhar
+    o contorno por troços coloridos.
+    """
+    import numpy as np
+    alvos = dados.get("alvos")
+    if alvos is None or alvos.empty:
+        return None
+    alvos = anexar_estado_calculado(alvos)
+    ult = alvos[alvos[COLS["data"]] == alvos[COLS["data"]].max()].copy()
+
+    # orientacao de cada alvo relativa ao centro dos alvos (referencial local)
+    cxa, cya = ult[COLS["M0"]].mean(), ult[COLS["P0"]].mean()
+    sev = {"Alarme": 3, "Alerta": 2, "Regular": 1, "Sem leitura": 0}
+    cor_sev = {3: "#c0140f", 2: "#e67e00", 1: "#1f9e55", 0: "#9e9e9e"}
+    # pior estado por quadrante de orientacao (N, E, S, O)
+    pior = {"N": 0, "E": 0, "S": 0, "O": 0}
+    for _, r in ult.iterrows():
+        ang = np.degrees(np.arctan2(r[COLS["P0"]] - cya, r[COLS["M0"]] - cxa))
+        if -45 <= ang < 45:      qd = "E"
+        elif 45 <= ang < 135:    qd = "N"
+        elif ang >= 135 or ang < -135: qd = "O"
+        else:                    qd = "S"
+        s = sev.get(r["Estado calculado"], 0)
+        pior[qd] = max(pior[qd], s)
+
+    # dividir o contorno da escavacao em 4 quadrantes pela orientacao ao centro
+    esc_arr = np.array(esc)
+    cxe, cye = esc_arr[:, 0].mean(), esc_arr[:, 1].mean()
+    segmentos = []
+    ini = 0
+    qd_ant = None
+    etiquetas_usadas = set()
+    for idx in range(len(esc)):
+        ang = np.degrees(np.arctan2(esc_arr[idx, 1] - cye, esc_arr[idx, 0] - cxe))
+        if -45 <= ang < 45:      qd = "E"
+        elif 45 <= ang < 135:    qd = "N"
+        elif ang >= 135 or ang < -135: qd = "O"
+        else:                    qd = "S"
+        if qd_ant is None:
+            qd_ant = qd
+        if qd != qd_ant:
+            sev_q = pior.get(qd_ant, 0)
+            nome_q = {"N": "Lado N", "S": "Lado S", "E": "Lado E", "O": "Lado O"}[qd_ant]
+            estado_q = {3: "alarme", 2: "alerta", 1: "regular", 0: "s/ dados"}[sev_q]
+            lbl = f"{nome_q} ({estado_q})"
+            # so mostrar cada etiqueta uma vez na legenda
+            segmentos.append((ini, idx, cor_sev[sev_q],
+                              lbl if lbl not in etiquetas_usadas else None))
+            etiquetas_usadas.add(lbl)
+            ini = idx
+            qd_ant = qd
+    # ultimo troco
+    sev_q = pior.get(qd_ant, 0)
+    nome_q = {"N": "Lado N", "S": "Lado S", "E": "Lado E", "O": "Lado O"}[qd_ant]
+    estado_q = {3: "alarme", 2: "alerta", 1: "regular", 0: "s/ dados"}[sev_q]
+    lbl = f"{nome_q} ({estado_q})"
+    segmentos.append((ini, len(esc) - 1, cor_sev[sev_q],
+                      lbl if lbl not in etiquetas_usadas else None))
+    return segmentos
+
+
 def separador_terreno3d(dados):
     """
     3D do terreno REAL, a partir do levantamento topografico (MDT triangulado),
@@ -2206,20 +2335,46 @@ def separador_terreno3d(dados):
         mostrar_curvas = st.checkbox("Curvas de nivel", value=False,
                                      help="Curvas de nivel do levantamento, que "
                                           "dao a leitura do relevo (alcados).")
+        colorir_lados = st.checkbox(
+            "Colorir alcados por movimento (ilustrativo)", value=False,
+            help="Colore os lados do recinto conforme o nivel de movimento dos "
+                 "alvos proximos, por orientacao. E QUALITATIVO e ilustrativo: "
+                 "o terreno e os alvos estao em referenciais diferentes, pelo "
+                 "que a associacao e por lado, nao por ponto exato.")
     with c2:
         exagero = st.slider("Exagero vertical", 1.0, 4.0, 1.5, 0.5,
                             help="Amplia a escala vertical para realcar o "
                                  "relevo. 1.0 = escala real.")
+        # filtro por fase de escavacao: ate que piso ja se escavou
+        fases_esc = ["Terreno original (sem escavar)"] + \
+            [f"Ate {nome} (cota {cota:.2f})" for nome, cota in COTAS_PISOS
+             if cota < z.max()] + \
+            [f"Escavacao completa (fundo {z_fundo})"]
+        fase_esc = st.selectbox(
+            "Fase de escavacao a representar", fases_esc,
+            index=len(fases_esc) - 1,
+            help="Mostra a escavacao ate a cota do piso correspondente. As "
+                 "cotas sao as do projeto; a escavacao real progride por fases.")
+
+    # cota de escavacao correspondente a fase escolhida
+    if fase_esc.startswith("Terreno original"):
+        cota_escav_fase = None                 # nao escavado
+    elif fase_esc.startswith("Escavacao completa"):
+        cota_escav_fase = z_fundo
+    else:
+        # extrair a cota do texto "...(cota XX.XX)"
+        import re
+        m = re.search(r"cota ([\d.]+)", fase_esc)
+        cota_escav_fase = float(m.group(1)) if m else z_fundo
 
     # construir a malha Mesh3d a partir dos triangulos
     verts = faces.reshape(-1, 3)
-    # indices dos vertices de cada triangulo
     i = np.arange(0, len(verts), 3)
     j = i + 1
     k = i + 2
     x, y, z = verts[:, 0], verts[:, 1], verts[:, 2]
     z_base = z.min()
-    z_plot = z_base + (z - z_base) * exagero    # exagero vertical (so visual)
+    z_plot = z_base + (z - z_base) * exagero
 
     fig = go.Figure()
     fig.add_trace(go.Mesh3d(
@@ -2228,24 +2383,39 @@ def separador_terreno3d(dados):
         colorbar=dict(title="Cota (m)"),
         name="Terreno", hovertemplate="Cota: %{intensity:.1f} m<extra></extra>"))
 
-    # linha de escavacao (contorno a cota 4,55) + volume escavado
+    # ---- volume de escavacao ate a cota da FASE escolhida ----------------
     esc = terreno.get("escavacao", [])
-    if esc and mostrar_escav:
+    if esc and mostrar_escav and cota_escav_fase is not None:
         ex = [p[0] for p in esc]
         ey = [p[1] for p in esc]
-        zf = z_base + (z_fundo - z_base) * exagero
-        # contorno do fundo
-        fig.add_trace(go.Scatter3d(
-            x=ex, y=ey, z=[zf] * len(ex), mode="lines",
-            line=dict(color="#b45309", width=4),
-            name=f"Fundo de escavacao (cota {z_fundo})"))
-        # paredes verticais da escavacao (do terreno ate ao fundo)
-        # amostra de vertices para nao pesar
+        zf = z_base + (cota_escav_fase - z_base) * exagero
+
+        # coloracao ILUSTRATIVA dos lados por movimento dos alvos
+        cor_fundo = "#b45309"
+        segmentos_cor = None
+        if colorir_lados:
+            segmentos_cor = _cor_lados_por_movimento(dados, esc)
+
+        # contorno do fundo (a cota da fase)
+        if segmentos_cor is None:
+            fig.add_trace(go.Scatter3d(
+                x=ex, y=ey, z=[zf] * len(ex), mode="lines",
+                line=dict(color=cor_fundo, width=4),
+                name=f"Escavacao ate cota {cota_escav_fase:.2f}"))
+        else:
+            # desenhar o contorno por segmentos coloridos conforme o lado
+            for (i0, i1, cor, lbl) in segmentos_cor:
+                fig.add_trace(go.Scatter3d(
+                    x=ex[i0:i1+1], y=ey[i0:i1+1], z=[zf]*(i1-i0+1),
+                    mode="lines", line=dict(color=cor, width=6),
+                    name=lbl))
+
+        # paredes verticais da escavacao (do terreno ate a cota da fase)
         for idx in range(0, len(esc) - 1, 3):
             fig.add_trace(go.Scatter3d(
                 x=[ex[idx], ex[idx]], y=[ey[idx], ey[idx]],
                 z=[z_plot.max(), zf], mode="lines",
-                line=dict(color="rgba(180,83,9,0.35)", width=1),
+                line=dict(color="rgba(180,83,9,0.25)", width=1),
                 showlegend=False, hoverinfo="skip"))
 
     # curvas de nivel (dao a leitura do relevo / alcados do terreno)
@@ -2277,10 +2447,13 @@ def separador_terreno3d(dados):
     st.caption(f"Superficie do terreno entre as cotas {z.min():.1f} e "
                f"{z.max():.1f} m; fundo de escavacao a {z_fundo} m — "
                f"aproximadamente {z.max()-z_fundo:.0f} m de altura escavada no "
-               f"ponto mais alto. Fonte: levantamento topografico (DXF). Nota: "
-               f"o exagero vertical e apenas visual. As sondagens e os alvos "
-               f"nao sao mostrados aqui por usarem outro referencial — ver 3D "
-               f"dos alvos e separador Geologia.")
+               f"ponto mais alto. Fonte: levantamento topografico (DXF). Notas: "
+               f"o exagero vertical e apenas visual; o filtro de fase mostra a "
+               f"escavacao ate a cota do piso do projeto (a progressao real e "
+               f"por fases). A coloracao dos alcados por movimento, quando "
+               f"ativa, e ILUSTRATIVA e qualitativa — associa o estado dos "
+               f"alvos ao lado do recinto por orientacao, nao por coordenada "
+               f"exata, porque terreno e alvos usam referenciais distintos.")
 
 
 def separador_sintese(dados):
