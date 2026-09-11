@@ -2328,6 +2328,7 @@ def separador_terreno3d(dados):
     import numpy as np
     faces = np.array(terreno["faces"])           # (N,3,3)
     z_fundo = terreno.get("cota_fundo", 4.55)
+    z_max_terreno = float(faces.reshape(-1, 3)[:, 2].max())  # cota mais alta
 
     c1, c2 = st.columns(2)
     with c1:
@@ -2348,7 +2349,7 @@ def separador_terreno3d(dados):
         # filtro por fase de escavacao: ate que piso ja se escavou
         fases_esc = ["Terreno original (sem escavar)"] + \
             [f"Ate {nome} (cota {cota:.2f})" for nome, cota in COTAS_PISOS
-             if cota < z.max()] + \
+             if cota < z_max_terreno] + \
             [f"Escavacao completa (fundo {z_fundo})"]
         fase_esc = st.selectbox(
             "Fase de escavacao a representar", fases_esc,
