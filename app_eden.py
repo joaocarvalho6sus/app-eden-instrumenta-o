@@ -448,18 +448,35 @@ def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True):
                             color=cor, opacity=0.35,
                             line=dict(color=cor, width=1.5)),
                 hoverinfo="skip", showlegend=True))
+    # --- marcadores numerados no topo ---
+    # Problema anterior: fases que comecam ANTES do inicio do eixo visivel
+    # tinham o numero colocado em dt_min - margem (fora da area), e desapareciam.
+    # Correcao: numeros dessas fases ficam colados a borda esquerda visivel, em
+    # coordenadas de paper, desencontrados na vertical para nao se sobreporem.
+    n_borda = 0  # quantas fases ja "empilhadas" na borda esquerda
+    for t0, t1, nome, cor, n in sorted(visiveis, key=lambda v: v[0]):
+        comeca_dentro = t0 >= dt_min
         if marcos and dt_min - margem <= t0 <= dt_max + margem:
             fig.add_vline(x=t0, line=dict(color=cor, width=1.2, dash="dot"))
-        # marcador numerado DENTRO do topo do grafico (nao em y=1.02, que
-        # colide com o titulo do eixo secundario e com a legenda superior).
-        # ancorado ao topo da area de plot, a descer.
-        x_lbl = t0 if t0 >= dt_min else vt0
-        fig.add_annotation(
-            x=x_lbl, y=0.99, yref="paper", text=f"<b>{n}</b>",
-            showarrow=False, xanchor="center", yanchor="top",
-            font=dict(size=11, color="white"),
-            bgcolor=cor, borderpad=3, opacity=0.95,
-            hovertext=nome)
+        if comeca_dentro:
+            # numero na data real de inicio da fase (dentro do grafico)
+            fig.add_annotation(
+                x=t0, y=0.99, yref="paper", xref="x", text=f"<b>{n}</b>",
+                showarrow=False, xanchor="center", yanchor="top",
+                font=dict(size=11, color="white"),
+                bgcolor=cor, borderpad=3, opacity=0.95, hovertext=nome)
+        else:
+            # fase iniciada antes da janela: encostar a esquerda, em paper,
+            # com pequeno passo horizontal para nao empilhar em cima umas das
+            # outras (todas comecam "fora" no mesmo sitio).
+            fig.add_annotation(
+                x=0.006 + n_borda * 0.032, y=0.99, xref="paper", yref="paper",
+                text=f"<b>{n}</b>",
+                showarrow=False, xanchor="left", yanchor="top",
+                font=dict(size=11, color="white"),
+                bgcolor=cor, borderpad=3, opacity=0.95,
+                hovertext=f"{nome} (iniciada antes do periodo visivel)")
+            n_borda += 1
     return visiveis
 
 
