@@ -449,34 +449,45 @@ def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True):
                             line=dict(color=cor, width=1.5)),
                 hoverinfo="skip", showlegend=True))
     # --- marcadores numerados no topo ---
-    # Problema anterior: fases que comecam ANTES do inicio do eixo visivel
-    # tinham o numero colocado em dt_min - margem (fora da area), e desapareciam.
-    # Correcao: numeros dessas fases ficam colados a borda esquerda visivel, em
-    # coordenadas de paper, desencontrados na vertical para nao se sobreporem.
-    n_borda = 0  # quantas fases ja "empilhadas" na borda esquerda
+    # Cada algarismo fica por cima da SUA faixa de cor: no centro da parte
+    # visivel da faixa. Como as fases se sobrepoem no tempo, os centros podem
+    # coincidir — por isso aplica-se um desencontro horizontal MINIMO: os
+    # numeros que ficariam demasiado juntos sao empurrados para a direita o
+    # estritamente necessario para nao colidirem, mantendo-se sobre a sua faixa.
+    lim_esq = dt_min - margem
+    lim_dir = dt_max + margem
+    span = (lim_dir - lim_esq)
+    dist_min = span * 0.038  # folga minima entre numeros (~ largura de um badge)
+
+    # 1) calcular centro da parte visivel de cada faixa
+    marcadores = []
     for t0, t1, nome, cor, n in sorted(visiveis, key=lambda v: v[0]):
-        comeca_dentro = t0 >= dt_min
-        if marcos and dt_min - margem <= t0 <= dt_max + margem:
+        if marcos and lim_esq <= t0 <= lim_dir:
             fig.add_vline(x=t0, line=dict(color=cor, width=1.2, dash="dot"))
-        if comeca_dentro:
-            # numero na data real de inicio da fase (dentro do grafico)
-            fig.add_annotation(
-                x=t0, y=0.99, yref="paper", xref="x", text=f"<b>{n}</b>",
-                showarrow=False, xanchor="center", yanchor="top",
-                font=dict(size=11, color="white"),
-                bgcolor=cor, borderpad=3, opacity=0.95, hovertext=nome)
-        else:
-            # fase iniciada antes da janela: encostar a esquerda, em paper,
-            # com pequeno passo horizontal para nao empilhar em cima umas das
-            # outras (todas comecam "fora" no mesmo sitio).
-            fig.add_annotation(
-                x=0.006 + n_borda * 0.032, y=0.99, xref="paper", yref="paper",
-                text=f"<b>{n}</b>",
-                showarrow=False, xanchor="left", yanchor="top",
-                font=dict(size=11, color="white"),
-                bgcolor=cor, borderpad=3, opacity=0.95,
-                hovertext=f"{nome} (iniciada antes do periodo visivel)")
-            n_borda += 1
+        vt0 = max(t0, lim_esq)
+        vt1 = min(t1, lim_dir)
+        centro = vt0 + (vt1 - vt0) / 2
+        marcadores.append([centro, nome, cor, n])
+
+    # 2) desencontro: percorrer por ordem de centro e empurrar para a direita
+    #    quem estiver a menos de dist_min do anterior
+    marcadores.sort(key=lambda m: m[0])
+    for i in range(1, len(marcadores)):
+        if marcadores[i][0] - marcadores[i - 1][0] < dist_min:
+            marcadores[i][0] = marcadores[i - 1][0] + dist_min
+    # nao deixar sair pela direita: se o ultimo passou do limite, recuar todos
+    if marcadores and marcadores[-1][0] > lim_dir:
+        desvio = marcadores[-1][0] - lim_dir
+        for m in marcadores:
+            m[0] -= desvio
+
+    # 3) desenhar
+    for centro, nome, cor, n in marcadores:
+        fig.add_annotation(
+            x=centro, y=0.99, yref="paper", xref="x", text=f"<b>{n}</b>",
+            showarrow=False, xanchor="center", yanchor="top",
+            font=dict(size=11, color="white"),
+            bgcolor=cor, borderpad=3, opacity=0.95, hovertext=nome)
     return visiveis
 
 
