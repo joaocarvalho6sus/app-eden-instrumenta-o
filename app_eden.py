@@ -423,10 +423,14 @@ def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True):
         t0, t1 = pd.to_datetime(ini), pd.to_datetime(fim)
         if t1 < dt_min - margem or t0 > dt_max + margem:
             continue
-        visiveis.append((t0, t1, nome, CORES_FASES[i % len(CORES_FASES)]))
+        # numero FIXO global (posicao em FASES_OBRA, base 1): a fase X tem
+        # sempre o mesmo numero em toda a app, independentemente do intervalo
+        # de datas do grafico. Pode haver saltos (1, 3, 5) se faltarem fases.
+        num_fixo = i + 1
+        visiveis.append((t0, t1, nome, CORES_FASES[i % len(CORES_FASES)], num_fixo))
     visiveis.sort(key=lambda v: v[0])
 
-    for n, (t0, t1, nome, cor) in enumerate(visiveis, start=1):
+    for t0, t1, nome, cor, n in visiveis:
         vt0 = max(t0, dt_min - margem)
         vt1 = min(t1, dt_max + margem)
         if faixas:
@@ -460,11 +464,12 @@ def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True):
 
 
 def legenda_fases(visiveis):
-    """Escreve, por baixo do grafico, a legenda numero -> nome das fases."""
+    """Escreve, por baixo do grafico, a legenda numero -> nome das fases.
+    Usa o numero FIXO global que vem no tuplo (nao re-enumera)."""
     if not visiveis:
         return
     itens = "  ·  ".join(f"**{n}**. {nome}"
-                         for n, (_, _, nome, _) in enumerate(visiveis, start=1))
+                         for _, _, nome, _, n in visiveis)
     st.caption("Fases da obra (planeamento real): " + itens)
 
 
@@ -1047,8 +1052,9 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
         st.warning("Sem leituras com data valida.")
         return
 
-    col1, col2 = st.columns(2)
-    with col1:
+    tab_perfil, tab_evol = st.tabs(
+        ["📐 Perfil deformado", "📈 Evolucao do deslocamento"])
+    with tab_perfil:
         st.subheader("Perfil deformado")
         st.caption("Deslocamento acumulado ao longo da profundidade. Base fixa.")
         idx = sorted(set([0, len(datas_inc) // 2, len(datas_inc) - 1]))
@@ -1138,18 +1144,18 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
             fig.update_layout(xaxis2=dict(title="N (SPT)", overlaying="x",
                                           side="top", range=[0, 65],
                                           showgrid=False))
-        # legenda horizontal por baixo, em varias colunas: as 19 campanhas
-        # continuam todas clicaveis (isolar uma campanha e o gesto central do
-        # back-analysis), mas deixam de formar uma parede vertical.
+        # ecra cheio: legenda vertical a direita (litologia, campanhas e fases
+        # numa so coluna). Ha largura de sobra, por isso nao precisa de ir para
+        # baixo. As 20 campanhas continuam todas clicaveis para isolar.
         fig.update_layout(
-            height=620,
+            height=760,
             legend=dict(
                 title="Leitura / geologia",
-                orientation="h", yanchor="top", y=-0.18,
-                xanchor="left", x=0,
-                font=dict(size=10),
+                orientation="v", yanchor="top", y=1,
+                xanchor="left", x=1.02,
+                font=dict(size=11),
                 traceorder="normal"),
-            margin=dict(b=120))
+            margin=dict(r=60, t=60, b=40))
         st.plotly_chart(fig, use_container_width=True)
         if geo_on and sond_sel:
             st.caption(f"Litologia, NF e SPT da sondagem {sond_sel} sobrepostos "
@@ -1160,7 +1166,7 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
                        f"inclinometro passa da base da sondagem, nao ha dado "
                        f"geologico.")
 
-    with col2:
+    with tab_evol:
         st.subheader("Evolucao do deslocamento")
         st.caption("Maximo global vs. profundidade fixa.")
         profs = sorted(p_inc[COLS["profundidade"]].dropna().unique())
@@ -1183,16 +1189,15 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
         fig2.update_xaxes(title="Data")
         fig2.update_yaxes(title="Deslocamento (mm)")
         fig2.update_layout(
-            height=600,
-            legend=dict(title="Serie / fases", orientation="h",
-                        yanchor="top", y=-0.18, xanchor="left", x=0,
-                        font=dict(size=10)),
-            margin=dict(t=40, b=110))
+            height=700,
+            legend=dict(title="Serie / fases", orientation="v",
+                        yanchor="top", y=1, xanchor="left", x=1.02,
+                        font=dict(size=11)),
+            margin=dict(r=60, t=60, b=40))
         st.plotly_chart(fig2, use_container_width=True)
         if fases_vis_inc:
-            legenda_fases(fases_vis_inc)
             st.caption("Os numeros no topo do grafico correspondem as fases da "
-                       "obra listadas acima. Repara se a aceleracao do "
+                       "obra (ver legenda a direita). Repara se a aceleracao do "
                        "deslocamento coincide com o avanco de uma fase.")
 
     st.divider()
@@ -1442,8 +1447,9 @@ def separador_alvos_2d(dados):
     j1 = pd.to_datetime(janela[1])
     sub = sub[(sub[COLS["data"]] >= j0) & (sub[COLS["data"]] <= j1)]
 
-    col1, col2 = st.columns(2)
-    with col1:
+    tab_h, tab_v = st.tabs(
+        ["↔ Deslocamento horizontal (H)", "↕ Assentamento vertical (ΔZ)"])
+    with tab_h:
         st.markdown(
             "<h4 style='text-align:center; margin-bottom:0; color:#1f2a44;'>"
             "Deslocamento horizontal acumulado (mm)</h4>",
@@ -1469,12 +1475,12 @@ def separador_alvos_2d(dados):
         configurar_eixo_tempo(fig, granul)
         obra_on = st.session_state.get("mostrar_obra")
         fig.update_layout(
-            height=520 if obra_on else 460,
-            margin=dict(t=40, b=110 if obra_on else 40),
-            legend=dict(orientation="h", yanchor="top", y=-0.18,
-                        xanchor="left", x=0, font=dict(size=10)))
+            height=700,
+            margin=dict(r=60, t=60, b=40),
+            legend=dict(orientation="v", yanchor="top", y=1,
+                        xanchor="left", x=1.02, font=dict(size=11)))
         st.plotly_chart(fig, use_container_width=True)
-    with col2:
+    with tab_v:
         st.markdown(
             "<h4 style='text-align:center; margin-bottom:0; color:#1f2a44;'>"
             "Assentamento vertical acumulado, ΔZ (mm)</h4>",
@@ -1499,15 +1505,14 @@ def separador_alvos_2d(dados):
         configurar_eixo_tempo(fig2, granul)
         obra_on2 = st.session_state.get("mostrar_obra")
         fig2.update_layout(
-            height=520 if obra_on2 else 460,
-            margin=dict(t=40, b=110 if obra_on2 else 40),
-            legend=dict(orientation="h", yanchor="top", y=-0.18,
-                        xanchor="left", x=0, font=dict(size=10)))
+            height=700,
+            margin=dict(r=60, t=60, b=40),
+            legend=dict(orientation="v", yanchor="top", y=1,
+                        xanchor="left", x=1.02, font=dict(size=11)))
         st.plotly_chart(fig2, use_container_width=True)
 
-    # legenda das fases (uma vez, por baixo dos dois graficos)
-    if st.session_state.get("mostrar_obra") and fases_vis_alv:
-        legenda_fases(fases_vis_alv)
+    # nota: as fases aparecem agora na legenda a direita de cada grafico
+    # (uma entrada por faixa), por isso a caption redundante foi removida.
 
 
 # =========================================================================
