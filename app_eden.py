@@ -1151,17 +1151,19 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
                                   mode="lines+markers", name="Maximo global"))
         fig2.add_trace(go.Scatter(x=s_fix[COLS["data"]], y=s_fix[COLS["desl_total"]],
                                   mode="lines+markers", name=f"A {prof_fixa:.1f} m"))
+        fases_vis_inc = None
         if st.session_state.get("mostrar_obra") and len(s_max):
-            adicionar_fases_obra(fig2, s_max[COLS["data"]].min(),
-                                 s_max[COLS["data"]].max())
+            fases_vis_inc = adicionar_fases_obra(fig2, s_max[COLS["data"]].min(),
+                                                 s_max[COLS["data"]].max())
         fig2.update_xaxes(title="Data")
         fig2.update_yaxes(title="Deslocamento (mm)")
         fig2.update_layout(height=560, legend_title="Serie")
         st.plotly_chart(fig2, use_container_width=True)
-        if st.session_state.get("mostrar_obra"):
-            st.caption("Faixas coloridas = fases do plano de trabalhos "
-                       "(previstas). Repara se a aceleracao do deslocamento "
-                       "coincide com o avanco de uma fase de escavacao.")
+        if fases_vis_inc:
+            legenda_fases(fases_vis_inc)
+            st.caption("Os numeros no topo do grafico correspondem as fases da "
+                       "obra listadas acima. Repara se a aceleracao do "
+                       "deslocamento coincide com o avanco de uma fase.")
 
     st.divider()
     st.subheader("Velocidade e sinais precursores")
@@ -1421,8 +1423,10 @@ def separador_alvos_2d(dados):
             s = sub[sub[COLS["alvo"]] == a].sort_values(COLS["data"])
             fig.add_trace(go.Scatter(x=s[COLS["data"]], y=s[COLS["desl_h"]],
                                      mode="lines+markers", name=a))
+        fases_vis_alv = None
         if st.session_state.get("mostrar_obra") and len(sub):
-            adicionar_fases_obra(fig, sub[COLS["data"]].min(), sub[COLS["data"]].max())
+            fases_vis_alv = adicionar_fases_obra(fig, sub[COLS["data"]].min(),
+                                                 sub[COLS["data"]].max())
         fig.add_hline(y=Ha, line_dash="dash", line_color="orange",
                       annotation_text=f"Alerta {Ha}", annotation_position="right")
         fig.add_hline(y=Hm, line_dash="dash", line_color="red",
@@ -1465,13 +1469,8 @@ def separador_alvos_2d(dados):
         st.plotly_chart(fig2, use_container_width=True)
 
     # legenda das fases (uma vez, por baixo dos dois graficos)
-    if st.session_state.get("mostrar_obra") and len(sub):
-        vis = [(pd.to_datetime(i), pd.to_datetime(f), n, CORES_FASES[k % len(CORES_FASES)])
-               for k, (n, i, f) in enumerate(FASES_OBRA)
-               if pd.to_datetime(f) >= sub[COLS["data"]].min() - pd.Timedelta(days=20)
-               and pd.to_datetime(i) <= sub[COLS["data"]].max() + pd.Timedelta(days=20)]
-        vis.sort(key=lambda v: v[0])
-        legenda_fases(vis)
+    if st.session_state.get("mostrar_obra") and fases_vis_alv:
+        legenda_fases(fases_vis_alv)
 
 
 # =========================================================================
