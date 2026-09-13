@@ -2773,35 +2773,57 @@ def main():
     if not TEM_EZDXF:
         st.sidebar.info("Instala 'ezdxf' para ativar a leitura de plantas DXF.")
 
-    (thome, tsint, t3d, tterr, tinc, talv, tcc, tpz, tgeo, tobra, tplan,
-     tpress) = st.tabs(
-        ["Inicio", "Sintese", "Visao geral 3D", "Terreno 3D", "Inclinometros",
-         "Alvos (2D)", "Celulas de carga", "Piezometros", "Geologia", "Obra",
-         "Planta (DXF)", "Pressupostos"])
-    with thome:
-        separador_home(dados)
-    with tsint:
-        separador_sintese(dados)
-    with t3d:
-        separador_3d(dados)
-    with tterr:
-        separador_terreno3d(dados)
-    with tinc:
-        separador_inclinometros(dados, limiar_vel, fator_acel)
-    with talv:
-        separador_alvos_2d(dados)
-    with tcc:
-        separador_celulas(dados)
-    with tpz:
-        separador_piezometros(dados)
-    with tgeo:
-        separador_geologia(dados)
-    with tobra:
-        separador_obra(dados)
-    with tplan:
-        separador_planta(dados)
-    with tpress:
-        separador_pressupostos(dados)
+    # -------------------------------------------------------------------
+    # ORGANIZACAO EM DUAS FRENTES (escolhidas na barra lateral)
+    #   Inputs:  dados que alimentam a analise — instrumentacao, geologia
+    #            e planeamento (obra).
+    #   Outputs: analise e avaliacao de resultados, e comportamento no espaco.
+    # O separador Inicio esta sempre acessivel (primeiro de cada frente).
+    # -------------------------------------------------------------------
+    st.sidebar.divider()
+    st.sidebar.subheader("Navegacao")
+    frente = st.sidebar.radio(
+        "Componente",
+        ["Inputs — instrumentacao, geologia e planeamento",
+         "Outputs — analise de resultados"],
+        help="Inputs: os dados que alimentam a analise (cada instrumento, a "
+             "geologia e o planeamento da obra). Outputs: a analise e avaliacao "
+             "de resultados e o comportamento no espaco.")
+
+    if frente.startswith("Inputs"):
+        thome, tinc, talv, tcc, tpz, tgeo, tobra, tplan = st.tabs(
+            ["Inicio", "Inclinometros", "Alvos (2D)", "Celulas de carga",
+             "Piezometros", "Geologia", "Obra", "Planta (DXF)"])
+        with thome:
+            separador_home(dados)
+        with tinc:
+            separador_inclinometros(dados, limiar_vel, fator_acel)
+        with talv:
+            separador_alvos_2d(dados)
+        with tcc:
+            separador_celulas(dados)
+        with tpz:
+            separador_piezometros(dados)
+        with tgeo:
+            separador_geologia(dados)
+        with tobra:
+            separador_obra(dados)
+        with tplan:
+            separador_planta(dados)
+    else:
+        thome, t3d, tterr, tsint, tpress = st.tabs(
+            ["Inicio", "Visao geral 3D", "Terreno 3D", "Sintese",
+             "Pressupostos"])
+        with thome:
+            separador_home(dados)
+        with t3d:
+            separador_3d(dados)
+        with tterr:
+            separador_terreno3d(dados)
+        with tsint:
+            separador_sintese(dados)
+        with tpress:
+            separador_pressupostos(dados)
 
 
 if __name__ == "__main__":
