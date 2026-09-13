@@ -432,13 +432,27 @@ def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True):
         if faixas:
             fig.add_vrect(x0=vt0, x1=vt1, fillcolor=cor, opacity=0.15,
                           line_width=0, layer="below")
+            # entrada de legenda para a faixa (trace fantasma: x/y None -> nao
+            # desenha nada, so serve para dar cara e clique a faixa na legenda).
+            # marker semi-transparente + contorno para bater certo com a faixa
+            # real (opacity 0.15), evitando que a legenda pareca mais forte.
+            fig.add_trace(go.Scatter(
+                x=[None], y=[None], mode="markers",
+                name=f"{n}. {nome}", legendgroup="fases",
+                legendgrouptitle_text="Fases da obra",
+                marker=dict(size=13, symbol="square",
+                            color=cor, opacity=0.35,
+                            line=dict(color=cor, width=1.5)),
+                hoverinfo="skip", showlegend=True))
         if marcos and dt_min - margem <= t0 <= dt_max + margem:
             fig.add_vline(x=t0, line=dict(color=cor, width=1.2, dash="dot"))
-        # marcador numerado no topo (circulo com o numero da fase)
+        # marcador numerado DENTRO do topo do grafico (nao em y=1.02, que
+        # colide com o titulo do eixo secundario e com a legenda superior).
+        # ancorado ao topo da area de plot, a descer.
         x_lbl = t0 if t0 >= dt_min else vt0
         fig.add_annotation(
-            x=x_lbl, y=1.02, yref="paper", text=f"<b>{n}</b>",
-            showarrow=False, xanchor="center", yanchor="bottom",
+            x=x_lbl, y=0.99, yref="paper", text=f"<b>{n}</b>",
+            showarrow=False, xanchor="center", yanchor="top",
             font=dict(size=11, color="white"),
             bgcolor=cor, borderpad=3, opacity=0.95,
             hovertext=nome)
@@ -1124,7 +1138,18 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
             fig.update_layout(xaxis2=dict(title="N (SPT)", overlaying="x",
                                           side="top", range=[0, 65],
                                           showgrid=False))
-        fig.update_layout(height=560, legend_title="Leitura / geologia")
+        # legenda horizontal por baixo, em varias colunas: as 19 campanhas
+        # continuam todas clicaveis (isolar uma campanha e o gesto central do
+        # back-analysis), mas deixam de formar uma parede vertical.
+        fig.update_layout(
+            height=620,
+            legend=dict(
+                title="Leitura / geologia",
+                orientation="h", yanchor="top", y=-0.18,
+                xanchor="left", x=0,
+                font=dict(size=10),
+                traceorder="normal"),
+            margin=dict(b=120))
         st.plotly_chart(fig, use_container_width=True)
         if geo_on and sond_sel:
             st.caption(f"Litologia, NF e SPT da sondagem {sond_sel} sobrepostos "
@@ -1157,7 +1182,12 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
                                                  s_max[COLS["data"]].max())
         fig2.update_xaxes(title="Data")
         fig2.update_yaxes(title="Deslocamento (mm)")
-        fig2.update_layout(height=560, legend_title="Serie")
+        fig2.update_layout(
+            height=600,
+            legend=dict(title="Serie / fases", orientation="h",
+                        yanchor="top", y=-0.18, xanchor="left", x=0,
+                        font=dict(size=10)),
+            margin=dict(t=40, b=110))
         st.plotly_chart(fig2, use_container_width=True)
         if fases_vis_inc:
             legenda_fases(fases_vis_inc)
@@ -1437,9 +1467,12 @@ def separador_alvos_2d(dados):
         fig.update_xaxes(title="Data")
         fig.update_yaxes(title="Desl. horizontal (mm)")
         configurar_eixo_tempo(fig, granul)
-        # margem superior maior quando as fases estao ligadas (etiquetas diagonais)
-        top_m = 55 if st.session_state.get("mostrar_obra") else 30
-        fig.update_layout(height=460, margin=dict(t=top_m))
+        obra_on = st.session_state.get("mostrar_obra")
+        fig.update_layout(
+            height=520 if obra_on else 460,
+            margin=dict(t=40, b=110 if obra_on else 40),
+            legend=dict(orientation="h", yanchor="top", y=-0.18,
+                        xanchor="left", x=0, font=dict(size=10)))
         st.plotly_chart(fig, use_container_width=True)
     with col2:
         st.markdown(
@@ -1464,8 +1497,12 @@ def separador_alvos_2d(dados):
         fig2.update_xaxes(title="Data")
         fig2.update_yaxes(title="ΔZ (mm)")
         configurar_eixo_tempo(fig2, granul)
-        top_m2 = 55 if st.session_state.get("mostrar_obra") else 30
-        fig2.update_layout(height=460, margin=dict(t=top_m2))
+        obra_on2 = st.session_state.get("mostrar_obra")
+        fig2.update_layout(
+            height=520 if obra_on2 else 460,
+            margin=dict(t=40, b=110 if obra_on2 else 40),
+            legend=dict(orientation="h", yanchor="top", y=-0.18,
+                        xanchor="left", x=0, font=dict(size=10)))
         st.plotly_chart(fig2, use_container_width=True)
 
     # legenda das fases (uma vez, por baixo dos dois graficos)
@@ -1571,7 +1608,12 @@ def separador_piezometros(dados):
                                             sub[COLS["data"]].max())
     fig.update_xaxes(title="Data")
     fig.update_yaxes(title="Cota (m)")
-    fig.update_layout(height=520, margin=dict(r=140, t=55))
+    obra_on_pz = st.session_state.get("mostrar_obra") and fases_vis_pz
+    fig.update_layout(
+        height=580 if obra_on_pz else 520,
+        margin=dict(r=140, t=40, b=110 if obra_on_pz else 40),
+        legend=dict(orientation="h", yanchor="top", y=-0.18,
+                    xanchor="left", x=0, font=dict(size=10)))
     st.plotly_chart(fig, use_container_width=True)
     if fases_vis_pz:
         legenda_fases(fases_vis_pz)
