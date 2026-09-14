@@ -2422,6 +2422,127 @@ def _cor_lados_por_movimento(dados, esc):
     return segmentos
 
 
+def _bbox_alinhamento(dados, terreno):
+    """
+    Calcula os parametros de alinhamento CAIXA-ENVOLVENTE entre o referencial
+    dos alvos (local, M~5000/P~5050) e o do terreno (nacional, X~-110900/
+    Y~-106300). Centra o conjunto dos alvos no centro do terreno e aplica uma
+    escala UNICA proporcional (a menor razao de extensao, para nao distorcer).
+    Devolve um dicionario com centros, escala e extensao — a transformacao em si
+    e aplicada por _transformar_xy, que aceita ajustes finos do utilizador.
+
+    NOTA IMPORTANTE (honestidade para a tese): este alinhamento e ILUSTRATIVO.
+    Nao ha pontos de controlo comuns aos dois referenciais, por isso a posicao
+    de cada alvo sobre o terreno e APROXIMADA (erro tipico de metros). Serve
+    para ver a tendencia do movimento sobre o relevo, nao para medir. A precisao
+    esta no separador Alvos (2D).
+    """
+    import numpy as np
+    alvos = dados.get("alvos")
+    if alvos is None or alvos.empty:
+        return None
+    ult = alvos[alvos[COLS["data"]] == alvos[COLS["data"]].max()]
+    aM, aP = ult[COLS["M0"]].to_numpy(), ult[COLS["P0"]].to_numpy()
+    faces = np.array(terreno["faces"]).reshape(-1, 3)
+    aW = max(aM.max() - aM.min(), 1e-6)
+    aH = max(aP.max() - aP.min(), 1e-6)
+    tW = faces[:, 0].max() - faces[:, 0].min()
+    tH = faces[:, 1].max() - faces[:, 1].min()
+    return {
+        "alvo_cx": float(aM.mean()), "alvo_cy": float(aP.mean()),
+        "ter_cx": float(faces[:, 0].mean()), "ter_cy": float(faces[:, 1].mean()),
+        "escala": float(min(tW / aW, tH / aH)),
+    }
+
+
+def _transformar_xy(M, P, par, rot_deg=0, flip_x=False, flip_y=False,
+                    off_x=0.0, off_y=0.0):
+    """Aplica a transformacao caixa-envolvente (par de _bbox_alinhamento) a
+    coordenadas de alvos, com ajustes finos opcionais (rotacao em torno do
+    centro, espelhamento e desvio manual). Devolve (X, Y) no referencial do
+    terreno."""
+    import numpy as np
+    M = np.asarray(M, dtype=float); P = np.asarray(P, dtype=float)
+    x = M - par["alvo_cx"]; y = P - par["alvo_cy"]
+    if flip_x: x = -x
+    if flip_y: y = -y
+    th = np.radians(rot_deg)
+    xr = x * np.cos(th) - y * np.sin(th)
+    yr = x * np.sin(th) + y * np.cos(th)
+    return (par["ter_cx"] + xr * par["escala"] + off_x,
+            par["ter_cy"] + yr * par["escala"] + off_y)
+
+
+def _transformar_vetor(dM, dP, par, rot_deg=0, flip_x=False, flip_y=False):
+    """Transforma um VETOR de deslocamento (sem translacao nem centro): so
+    aplica espelhamento, rotacao e escala. Para as setas de movimento assentarem
+    coerentes com os alvos transformados."""
+    import numpy as np
+    dM = np.asarray(dM, dtype=float); dP = np.asarray(dP, dtype=float)
+    x = -dM if flip_x else dM
+    y = -dP if flip_y else dP
+    th = np.radians(rot_deg)
+    xr = x * np.cos(th) - y * np.sin(th)
+    yr = x * np.sin(th) + y * np.cos(th)
+    return xr * par["escala"], yr * par["escala"]
+
+
+@st.cache_data
+def _superficie_terreno(_terreno):
+    """Prepara os pontos (XY -> Z) do MDT para interpolar a cota. Em cache
+    porque o griddata reconstroi a triangulacao a cada chamada."""
+    import numpy as np
+    v = np.array(_terreno["faces"]).reshape(-1, 3)
+    return v[:, :2], v[:, 2]
+
+
+def _cota_terreno_em(X, Y, pts_xy, pts_z):
+    """Interpola a cota da superficie do terreno nos pontos (X,Y) — para
+    'drapejar' os alvos sobre o relevo. Linear dentro do casco; nearest fora."""
+    import numpy as np
+    from scipy.interpolate import griddata
+    X = np.atleast_1d(np.asarray(X, dtype=float))
+    Y = np.atleast_1d(np.asarray(Y, dtype=float))
+    z = griddata(pts_xy, pts_z, (X, Y), method="linear")
+    m = np.isnan(z)
+    if m.any():
+        z[m] = griddata(pts_xy, pts_z, (X[m], Y[m]), method="nearest")
+    return z
+
+
+def _casa_edificio_xy(fig, X, Y, zbase, cor, nome):
+    """Como _casa_edificio, mas recebe coordenadas JA TRANSFORMADAS (X,Y no
+    referencial do terreno) e a cota de base do terreno — para desenhar a casa
+    ilustrativa do edificio vizinho sobre a superficie fundida."""
+    import numpy as np
+    x0, x1 = float(np.min(X)), float(np.max(X))
+    y0, y1 = float(np.min(Y)), float(np.max(Y))
+    mx = max((x1 - x0) * 0.2, 2.0); my = max((y1 - y0) * 0.2, 2.0)
+    x0 -= mx; x1 += mx; y0 -= my; y1 += my
+    h_parede, h_telhado = 5.0, 3.0
+    zt = zbase + h_parede; zc = zt + h_telhado
+    xs = [x0, x1, x1, x0, x0, x1, x1, x0]
+    ys = [y0, y0, y1, y1, y0, y0, y1, y1]
+    zs = [zbase, zbase, zbase, zbase, zt, zt, zt, zt]
+    fig.add_trace(go.Mesh3d(
+        x=xs, y=ys, z=zs,
+        i=[0, 0, 0, 4, 1, 1, 2, 3, 0, 3],
+        j=[1, 2, 4, 5, 2, 5, 3, 7, 3, 7],
+        k=[2, 3, 5, 7, 5, 6, 7, 4, 7, 4],
+        color=cor, opacity=0.30, name=nome, hoverinfo="name",
+        showlegend=False, flatshading=True))
+    ym = (y0 + y1) / 2.0
+    fig.add_trace(go.Mesh3d(
+        x=[x0, x1, x1, x0, x0, x1], y=[y0, y0, y1, y1, ym, ym],
+        z=[zt, zt, zt, zt, zc, zc],
+        i=[0, 1, 3, 2, 0, 1], j=[1, 4, 2, 5, 4, 4], k=[4, 5, 5, 4, 3, 0],
+        color=cor, opacity=0.45, hoverinfo="skip",
+        showlegend=False, flatshading=True))
+    fig.add_trace(go.Scatter3d(
+        x=[x0, x1], y=[ym, ym], z=[zc, zc], mode="lines",
+        line=dict(color=cor, width=4), showlegend=False, hoverinfo="skip"))
+
+
 def separador_terreno3d(dados):
     """
     3D do terreno REAL, a partir do levantamento topografico (MDT triangulado),
@@ -2571,6 +2692,258 @@ def separador_terreno3d(dados):
                f"ativa, e ILUSTRATIVA e qualitativa — associa o estado dos "
                f"alvos ao lado do recinto por orientacao, nao por coordenada "
                f"exata, porque terreno e alvos usam referenciais distintos.")
+
+
+def separador_terreno_alvos_3d(dados):
+    """
+    SEPARADOR FUNDIDO: terreno real (MDT) + alvos com movimento drapejados
+    sobre a superficie. Junta o melhor dos dois 3D antigos — o relevo real com
+    curvas de nivel e volume de escavacao, e os alvos coloridos por estado com
+    setas de deslocamento, casas dos edificios e destaque da Santa Casa.
+
+    Referenciais diferentes: os alvos sao alinhados ao terreno por CAIXA-
+    ENVOLVENTE (ilustrativo, ver _bbox_alinhamento) e assentes na cota do
+    terreno (drapejados). A posicao e APROXIMADA; a precisao esta no Alvos 2D.
+    """
+    import numpy as np
+    st.subheader("Terreno + Alvos 3D — movimento sobre o relevo real")
+    st.caption("Funde o modelo real do terreno (levantamento topografico, com "
+               "curvas de nivel e volume de escavacao) com os alvos e o seu "
+               "movimento. Os alvos estao num referencial diferente do terreno, "
+               "por isso sao POUSADOS sobre a superficie por alinhamento "
+               "aproximado (caixa-envolvente) — a posicao e ILUSTRATIVA, para "
+               "ler a tendencia do movimento sobre o relevo. A medicao precisa "
+               "esta no separador Alvos (2D).")
+
+    terreno = _carregar_terreno()
+    if terreno is None:
+        st.info("Modelo de terreno nao disponivel (falta terreno_mdt.json).")
+        return
+    alvos = dados.get("alvos")
+    if alvos is None or alvos.empty:
+        st.info("Sem dados de alvos.")
+        return
+
+    par = _bbox_alinhamento(dados, terreno)
+    if par is None:
+        st.info("Nao foi possivel alinhar alvos e terreno.")
+        return
+
+    faces = np.array(terreno["faces"])
+    v = faces.reshape(-1, 3)
+    z_fundo = terreno.get("cota_fundo", 4.55)
+    z_max_terreno = float(v[:, 2].max())
+    pts_xy, pts_z = _superficie_terreno(terreno)
+
+    datas = sorted(alvos[COLS["data"]].dropna().unique())
+    col_a, col_b, col_c = st.columns([2, 1, 1])
+    with col_a:
+        data_sel = st.select_slider(
+            "Campanha", options=datas, value=datas[-1],
+            format_func=lambda d: pd.to_datetime(d).strftime("%d/%m/%Y"),
+            key="fus_campanha")
+        fator = st.slider("Amplificacao do deslocamento", 50, 2000, 500, 50,
+                          key="fus_fator",
+                          help="Deslocamentos milimetricos sobre coordenadas em "
+                               "metros; amplia-se para se verem.")
+        exagero = st.slider("Exagero vertical do terreno", 1.0, 4.0, 1.5, 0.5,
+                            key="fus_exag",
+                            help="Amplia so a escala vertical do relevo.")
+    with col_b:
+        mostrar_curvas = st.checkbox("Curvas de nivel", value=True,
+                                     key="fus_curvas")
+        mostrar_escav = st.checkbox("Volume de escavacao", value=True,
+                                    key="fus_escav")
+        mostrar_casas = st.checkbox("Casas dos edificios", value=True,
+                                    key="fus_casas")
+        identificar_edif = st.checkbox("Identificar edificios", value=True,
+                                       key="fus_idedif")
+    with col_c:
+        destacar_alarmes = st.checkbox("Destacar alarmes/alertas", value=True,
+                                       key="fus_alarmes")
+        destacar_sc = st.checkbox("Realcar Santa Casa", value=True,
+                                  key="fus_sc")
+        # ajustes finos do alinhamento (o utilizador valida a olho)
+        with st.expander("Ajuste fino do alinhamento"):
+            rot = st.select_slider("Rotacao", [0, 90, 180, 270], value=0,
+                                   key="fus_rot")
+            flip_x = st.checkbox("Espelhar horizontal", value=False,
+                                 key="fus_flipx")
+            flip_y = st.checkbox("Espelhar vertical", value=False,
+                                 key="fus_flipy")
+
+    # fase de escavacao segue a campanha? Mantemos escavacao completa por
+    # simplicidade (a progressao real ve-se no Terreno 3D antigo / Alvos 2D).
+    cota_escav_fase = z_fundo
+
+    campanha = alvos[alvos[COLS["data"]] == data_sel].copy()
+    campanha = anexar_estado_calculado(campanha)
+
+    # ---- cotas Z do terreno com exagero ----
+    z_base = v[:, 2].min()
+
+    def _zex(zabs):
+        return z_base + (np.asarray(zabs) - z_base) * exagero
+
+    fig = go.Figure()
+
+    # ---- superficie do terreno ----
+    i = np.arange(0, len(v), 3); j = i + 1; k = i + 2
+    fig.add_trace(go.Mesh3d(
+        x=v[:, 0], y=v[:, 1], z=_zex(v[:, 2]), i=i, j=j, k=k,
+        intensity=v[:, 2], colorscale="earth", opacity=0.9,
+        colorbar=dict(title="Cota (m)"), name="Terreno",
+        hovertemplate="Cota: %{intensity:.1f} m<extra></extra>"))
+
+    # ---- volume de escavacao ----
+    esc = terreno.get("escavacao", [])
+    if esc and mostrar_escav:
+        ex = [p[0] for p in esc]; ey = [p[1] for p in esc]
+        zf = float(_zex(cota_escav_fase))
+        fig.add_trace(go.Scatter3d(
+            x=ex, y=ey, z=[zf] * len(ex), mode="lines",
+            line=dict(color="#b45309", width=4),
+            name=f"Escavacao (fundo {cota_escav_fase:.2f} m)"))
+        for idx in range(0, len(esc) - 1, 3):
+            fig.add_trace(go.Scatter3d(
+                x=[ex[idx], ex[idx]], y=[ey[idx], ey[idx]],
+                z=[float(_zex(z_max_terreno)), zf], mode="lines",
+                line=dict(color="rgba(180,83,9,0.25)", width=1),
+                showlegend=False, hoverinfo="skip"))
+
+    # ---- curvas de nivel ----
+    if mostrar_curvas:
+        cx, cy, cz = [], [], []
+        for c in terreno.get("curvas_nivel", []):
+            zc = c[0][2] if len(c[0]) > 2 else 0
+            if zc < 1:
+                continue
+            for p in c:
+                cx.append(p[0]); cy.append(p[1]); cz.append(float(_zex(p[2])))
+            cx.append(None); cy.append(None); cz.append(None)
+        if cx:
+            fig.add_trace(go.Scatter3d(
+                x=cx, y=cy, z=cz, mode="lines",
+                line=dict(color="rgba(60,40,20,0.5)", width=1),
+                name="Curvas de nivel", hoverinfo="skip"))
+
+    # ---- alvos drapejados + movimento ----
+    COR_ESTADO = {"Alarme": "#c0140f", "Alerta": "#e67e00", "Regular": "#1f9e55"}
+    seg_x, seg_y, seg_z, seg_cor = [], [], [], []
+    cone_x, cone_y, cone_z, cone_u, cone_v, cone_w = ([] for _ in range(6))
+    dz_alt = 2.0  # levantar os alvos um pouco acima da superficie, p/ se verem
+
+    for chave, grp in campanha.groupby(COLS["edificio"]):
+        tipo, etiqueta = classificar_grupo(chave)
+        M0 = grp[COLS["M0"]].to_numpy(); P0 = grp[COLS["P0"]].to_numpy()
+        # transformar posicao para o referencial do terreno
+        X, Y = _transformar_xy(M0, P0, par, rot, flip_x, flip_y)
+        Zs = _cota_terreno_em(X, Y, pts_xy, pts_z)
+        Zs = _zex(Zs) + dz_alt
+        # transformar vetores de deslocamento (mm -> m -> amplificado)
+        dM = grp[COLS["dM"]].to_numpy() / 1000.0 * fator
+        dP = grp[COLS["dP"]].to_numpy() / 1000.0 * fator
+        dZ = grp[COLS["dZ"]].to_numpy() / 1000.0 * fator * exagero
+        dX, dY = _transformar_vetor(dM, dP, par, rot, flip_x, flip_y)
+
+        dh = grp[COLS["desl_h"]].to_numpy()
+        nomes = grp[COLS["alvo"]].astype(str).to_numpy()
+        estados = grp["Estado calculado"].to_numpy()
+        fachadas = grp["Fachada SC"].to_numpy()
+        e_santa_casa = isinstance(chave, str) and "Santa Casa" in chave
+
+        if tipo == "edificio":
+            cor = CORES_EDIFICIO.get(chave, "#7f7f7f"); nome_leg = chave
+        else:
+            cor = "#ff7f0e"; nome_leg = f"Contencao — Alcado {etiqueta}"
+
+        if destacar_sc and e_santa_casa:
+            simbolos = ["diamond" if f == "Frente escavacao" else "circle"
+                        for f in fachadas]
+        else:
+            simbolos = "circle"
+        if destacar_alarmes:
+            cor_borda = [COR_ESTADO.get(e, "rgba(0,0,0,0.2)") for e in estados]
+            larg = 4 if any(e in ("Alarme", "Alerta") for e in estados) else 1
+        else:
+            cor_borda = "rgba(0,0,0,0.2)"; larg = 1
+
+        cd = np.column_stack([dh, estados, fachadas])
+        fig.add_trace(go.Scatter3d(
+            x=X + dX, y=Y + dY, z=Zs + dZ, mode="markers+text",
+            marker=dict(size=6, color=cor, symbol=simbolos,
+                        line=dict(color=cor_borda, width=larg)),
+            text=nomes, textposition="top center", textfont=dict(size=8),
+            name=nome_leg, customdata=cd,
+            hovertemplate="Alvo %{text}<br>Desl. h: %{customdata[0]:.1f} mm"
+                          "<br>Estado: %{customdata[1]}<br>%{customdata[2]}"
+                          "<extra>" + nome_leg + "</extra>"))
+
+        for n in range(len(X)):
+            c = (COR_ESTADO.get(estados[n], "#888") if destacar_alarmes
+                 else "crimson")
+            seg_x += [X[n], X[n] + dX[n], None]
+            seg_y += [Y[n], Y[n] + dY[n], None]
+            seg_z += [Zs[n], Zs[n] + dZ[n], None]
+            seg_cor.append(c)
+            cone_x.append(X[n] + dX[n]); cone_y.append(Y[n] + dY[n])
+            cone_z.append(Zs[n] + dZ[n])
+            cone_u.append(dX[n]); cone_v.append(dY[n]); cone_w.append(dZ[n])
+
+        if identificar_edif and tipo == "edificio" and len(X):
+            fig.add_trace(go.Scatter3d(
+                x=[X.mean()], y=[Y.mean()], z=[Zs.max() + 6],
+                mode="text", text=[f"<b>{chave}</b>"],
+                textfont=dict(size=12, color=cor),
+                showlegend=False, hoverinfo="skip"))
+        if mostrar_casas and tipo == "edificio" and len(X):
+            _casa_edificio_xy(fig, X, Y, float(Zs.min()) - dz_alt, cor, chave)
+
+    # hastes das setas por cor
+    for c in set(seg_cor):
+        xs, ys, zs = [], [], []
+        for jj, cc in enumerate(seg_cor):
+            if cc == c:
+                xs += seg_x[3*jj:3*jj+3]; ys += seg_y[3*jj:3*jj+3]
+                zs += seg_z[3*jj:3*jj+3]
+        fig.add_trace(go.Scatter3d(x=xs, y=ys, z=zs, mode="lines",
+                                   line=dict(color=c, width=4),
+                                   showlegend=False, hoverinfo="skip"))
+    if cone_x:
+        fig.add_trace(go.Cone(
+            x=cone_x, y=cone_y, z=cone_z, u=cone_u, v=cone_v, w=cone_w,
+            sizemode="absolute", sizeref=1.2, anchor="tip", showscale=False,
+            colorscale=[[0, "#555"], [1, "#555"]], hoverinfo="skip",
+            showlegend=False, opacity=0.9))
+
+    fig.update_layout(
+        height=760,
+        scene=dict(xaxis_title="M (m)", yaxis_title="P (m)",
+                   zaxis_title="Cota (m)", aspectmode="data"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                    font=dict(size=9)),
+        margin=dict(l=0, r=0, t=30, b=0))
+    st.plotly_chart(fig, use_container_width=True)
+
+    # metricas
+    desl_h_all = campanha[COLS["desl_h"]].to_numpy()
+    nomes_all = campanha[COLS["alvo"]].astype(str).to_numpy()
+    n_alarme = int((campanha["Estado calculado"] == "Alarme").sum())
+    n_alerta = int((campanha["Estado calculado"] == "Alerta").sum())
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Alvos na campanha", len(campanha))
+    c2.metric("Desl. horizontal max. (mm)", f"{np.nanmax(desl_h_all):.1f}")
+    c3.metric("Em alarme", n_alarme)
+    c4.metric("Em alerta", n_alerta)
+    idx = int(np.nanargmax(desl_h_all))
+    st.caption(
+        f"O alvo mais afetado ({nomes_all[idx]}, {np.nanmax(desl_h_all):.1f} mm) "
+        f"esta drapejado sobre o relevo real. Vermelho = alarme, laranja = "
+        f"alerta, verde = regular. IMPORTANTE: a posicao dos alvos sobre o "
+        f"terreno e aproximada (alinhamento por caixa-envolvente entre "
+        f"referenciais diferentes) — para leitura tendencial do movimento sobre "
+        f"o relevo, nao metrica. A medicao precisa esta no separador Alvos (2D). "
+        f"Se algum alvo cair no lado errado, usa o 'Ajuste fino do alinhamento'.")
 
 
 def separador_sintese(dados):
@@ -2927,15 +3300,12 @@ def main():
         with tplan:
             separador_planta(dados)
     else:
-        thome, t3d, tterr, tsint, tpress = st.tabs(
-            ["Inicio", "Visao geral 3D", "Terreno 3D", "Sintese",
-             "Pressupostos"])
+        thome, t3d, tsint, tpress = st.tabs(
+            ["Inicio", "Terreno + Alvos 3D", "Sintese", "Pressupostos"])
         with thome:
             separador_home(dados)
         with t3d:
-            separador_3d(dados)
-        with tterr:
-            separador_terreno3d(dados)
+            separador_terreno_alvos_3d(dados)
         with tsint:
             separador_sintese(dados)
         with tpress:
