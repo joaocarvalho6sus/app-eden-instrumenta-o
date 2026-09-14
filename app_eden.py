@@ -2694,6 +2694,97 @@ def separador_terreno3d(dados):
                f"exata, porque terreno e alvos usam referenciais distintos.")
 
 
+def _detetar_cantos_contorno(pts, n_cantos=4):
+    """Deteta os cantos de um contorno fechado (angulo interno mais fechado),
+    espacados entre si. Usado para posicionar as escoras de canto."""
+    import numpy as np
+    pts = np.asarray(pts)
+    n = len(pts)
+    angs = []
+    for i in range(n):
+        a = pts[(i - 3) % n]; b = pts[i]; c = pts[(i + 3) % n]
+        v1 = a - b; v2 = c - b
+        cos = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-9)
+        angs.append(np.arccos(np.clip(cos, -1, 1)))
+    angs = np.array(angs)
+    cantos = []
+    for i in np.argsort(angs):
+        if all(min(abs(i - j), n - abs(i - j)) > n // 8 for j in cantos):
+            cantos.append(int(i))
+        if len(cantos) >= n_cantos:
+            break
+    return sorted(cantos)
+
+
+def _elementos_contencao_esquematicos(fig, esc, zex, cotas_pisos,
+                                      coroamento, fundo):
+    """
+    Desenha, de forma ESQUEMATICA E ILUSTRATIVA, as solucoes de contencao
+    periferica sobre o contorno da escavacao: viga de coroamento/distribuicao,
+    bandas de laje e escoramentos de canto.
+
+    ATENCAO — HONESTIDADE: a geometria de projeto destes elementos NAO consta
+    dos dados da app. As COTAS das bandas de laje e da viga assentam em cotas
+    reais de projeto (COTAS_PISOS / coroamento); a FORMA, largura e seccao sao
+    esquematicas. Os ESCORAMENTOS sao totalmente ilustrativos (posicao, cota e
+    existencia assumidas). Tudo vem rotulado como '(esquematico)' na legenda e
+    no hover; a leitura rigorosa das solucoes esta nas pecas desenhadas do
+    projeto de contencao (JETsj), nao nesta figura.
+    """
+    import numpy as np
+    esc = np.asarray(esc, dtype=float)
+    n = len(esc)
+    ex, ey = esc[:, 0], esc[:, 1]
+
+    # 1) VIGA DE COROAMENTO / DISTRIBUICAO — anel no topo (cota real)
+    zc = float(zex(coroamento))
+    fig.add_trace(go.Scatter3d(
+        x=list(ex) + [ex[0]], y=list(ey) + [ey[0]], z=[zc] * (n + 1),
+        mode="lines", line=dict(color="#3a3a3a", width=6),
+        name="Viga de coroamento/distribuicao (esquematico)",
+        hovertemplate="Viga de coroamento (esquematico)<br>"
+                      f"cota {coroamento:.2f} m<extra></extra>"))
+
+    # 2) BANDAS DE LAJE — aneis perimetrais interiores as cotas dos pisos reais
+    c = esc.mean(axis=0)
+    interior = c + (esc - c) * 0.90   # contorno encolhido 10% (faixa perimetral)
+    ix, iy = interior[:, 0], interior[:, 1]
+    for nome, cota in cotas_pisos:
+        if not (fundo < cota < coroamento):
+            continue                    # so as que ficam dentro do vao escavado
+        zp = float(zex(cota))
+        wx, wy, wz, wi, wj, wk = [], [], [], [], [], []
+        for i in range(n - 1):
+            b = len(wx)
+            wx += [ex[i], ex[i+1], ix[i+1], ix[i]]
+            wy += [ey[i], ey[i+1], iy[i+1], iy[i]]
+            wz += [zp, zp, zp, zp]
+            wi += [b, b]; wj += [b + 1, b + 2]; wk += [b + 2, b + 3]
+        fig.add_trace(go.Mesh3d(
+            x=wx, y=wy, z=wz, i=wi, j=wj, k=wk,
+            color="#8c9bab", opacity=0.5, flatshading=True,
+            name=f"Banda de laje ~{nome} (esquematico)",
+            hovertext=f"Banda de laje ~{nome} (esquematico) — cota {cota:.2f} m",
+            hoverinfo="text"))
+
+    # 3) ESCORAMENTOS DE CANTO — diagonais nos cantos, a meia altura
+    #    (100% ILUSTRATIVO: existencia, posicao e cota assumidas)
+    cantos = _detetar_cantos_contorno(esc, 4)
+    passo = np.linalg.norm(np.diff(esc, axis=0), axis=1).mean()
+    noff = max(int(8 / passo), 2)
+    z_escora = float(zex((coroamento + fundo) / 2))
+    xs, ys, zs = [], [], []
+    for cc in cantos:
+        p1 = esc[(cc - noff) % n]; p2 = esc[(cc + noff) % n]
+        xs += [p1[0], p2[0], None]; ys += [p1[1], p2[1], None]
+        zs += [z_escora, z_escora, None]
+    fig.add_trace(go.Scatter3d(
+        x=xs, y=ys, z=zs, mode="lines", line=dict(color="#8B0000", width=7),
+        name="Escoramento de canto (esquematico/ilustrativo)",
+        hovertemplate="Escoramento de canto<br>ILUSTRATIVO (nao consta do "
+                      "projeto nos dados)<extra></extra>"))
+
+
 def separador_terreno_alvos_3d(dados):
     """
     SEPARADOR FUNDIDO: terreno real (MDT) + alvos com movimento drapejados
@@ -2758,6 +2849,15 @@ def separador_terreno_alvos_3d(dados):
                                     key="fus_casas")
         identificar_edif = st.checkbox("Identificar edificios", value=True,
                                        key="fus_idedif")
+        mostrar_contencao = st.checkbox(
+            "Elementos de contencao (esquematico)", value=False,
+            key="fus_contencao",
+            help="Desenha, de forma ESQUEMATICA e ILUSTRATIVA, a viga de "
+                 "coroamento, as bandas de laje (as cotas reais dos pisos) e "
+                 "os escoramentos de canto. A geometria de projeto destes "
+                 "elementos nao consta dos dados — a forma e assumida, so as "
+                 "cotas das lajes/viga sao reais. Os escoramentos sao "
+                 "totalmente ilustrativos.")
     with col_c:
         destacar_alarmes = st.checkbox("Destacar alarmes/alertas", value=True,
                                        key="fus_alarmes")
@@ -2829,6 +2929,12 @@ def separador_terreno_alvos_3d(dados):
             x=list(ex), y=list(ey), z=list(ztopo), mode="lines",
             line=dict(color="rgba(139,69,19,0.6)", width=2),
             showlegend=False, hoverinfo="skip"))
+
+    # ---- elementos de contencao periferica (ESQUEMATICOS) ----
+    if mostrar_contencao and esc:
+        _elementos_contencao_esquematicos(
+            fig, np.array([[p[0], p[1]] for p in esc]), _zex,
+            COTAS_PISOS, COTA_COROAMENTO_PADRAO, z_fundo)
 
     # ---- curvas de nivel ----
     if mostrar_curvas:
@@ -2963,6 +3069,15 @@ def separador_terreno_alvos_3d(dados):
         f"referenciais diferentes) — para leitura tendencial do movimento sobre "
         f"o relevo, nao metrica. A medicao precisa esta no separador Alvos (2D). "
         f"Se algum alvo cair no lado errado, usa o 'Ajuste fino do alinhamento'.")
+    if mostrar_contencao:
+        st.warning(
+            "⚠ Os elementos de contencao (viga de coroamento, bandas de laje, "
+            "escoramentos) sao ESQUEMATICOS E ILUSTRATIVOS. A geometria de "
+            "projeto nao consta dos dados da app: as cotas das lajes e da viga "
+            "sao reais (cotas dos pisos/coroamento), mas a forma e assumida e "
+            "os escoramentos de canto sao inteiramente ilustrativos (posicao, "
+            "cota e existencia assumidas). A representacao rigorosa esta nas "
+            "pecas desenhadas do projeto de contencao (JETsj).")
 
 
 def separador_sintese(dados):
