@@ -2795,21 +2795,40 @@ def separador_terreno_alvos_3d(dados):
         colorbar=dict(title="Cota (m)"), name="Terreno",
         hovertemplate="Cota: %{intensity:.1f} m<extra></extra>"))
 
-    # ---- volume de escavacao ----
+    # ---- volume de escavacao (paredes SOLIDAS que encaixam no terreno) ----
     esc = terreno.get("escavacao", [])
     if esc and mostrar_escav:
-        ex = [p[0] for p in esc]; ey = [p[1] for p in esc]
+        ex = np.array([p[0] for p in esc], dtype=float)
+        ey = np.array([p[1] for p in esc], dtype=float)
         zf = float(_zex(cota_escav_fase))
+        # topo de cada ponto do contorno = cota REAL do terreno ali (para a
+        # parede encaixar na superficie em vez de partir de uma cota unica).
+        ztopo = _cota_terreno_em(ex, ey, pts_xy, pts_z)
+        ztopo = _zex(ztopo)
+        # parede como faixa continua de triangulos (Mesh3d): para cada par de
+        # pontos consecutivos, um quad (2 triangulos) do topo ate ao fundo.
+        n = len(ex)
+        wx, wy, wz, wi, wj, wk = [], [], [], [], [], []
+        for idx in range(n - 1):
+            b = len(wx)
+            wx += [ex[idx], ex[idx+1], ex[idx+1], ex[idx]]
+            wy += [ey[idx], ey[idx+1], ey[idx+1], ey[idx]]
+            wz += [ztopo[idx], ztopo[idx+1], zf, zf]
+            wi += [b + 0, b + 0]; wj += [b + 1, b + 2]; wk += [b + 2, b + 3]
+        fig.add_trace(go.Mesh3d(
+            x=wx, y=wy, z=wz, i=wi, j=wj, k=wk,
+            color="#b45309", opacity=0.45, flatshading=True,
+            name="Paredes de escavacao", hoverinfo="skip"))
+        # contorno do fundo (linha fechada, cota de fundo)
         fig.add_trace(go.Scatter3d(
-            x=ex, y=ey, z=[zf] * len(ex), mode="lines",
-            line=dict(color="#b45309", width=4),
-            name=f"Escavacao (fundo {cota_escav_fase:.2f} m)"))
-        for idx in range(0, len(esc) - 1, 3):
-            fig.add_trace(go.Scatter3d(
-                x=[ex[idx], ex[idx]], y=[ey[idx], ey[idx]],
-                z=[float(_zex(z_max_terreno)), zf], mode="lines",
-                line=dict(color="rgba(180,83,9,0.25)", width=1),
-                showlegend=False, hoverinfo="skip"))
+            x=list(ex) + [ex[0]], y=list(ey) + [ey[0]], z=[zf] * (n + 1),
+            mode="lines", line=dict(color="#8B4513", width=4),
+            name=f"Fundo de escavacao ({cota_escav_fase:.2f} m)"))
+        # aresta de topo (onde a escavacao corta a superficie)
+        fig.add_trace(go.Scatter3d(
+            x=list(ex), y=list(ey), z=list(ztopo), mode="lines",
+            line=dict(color="rgba(139,69,19,0.6)", width=2),
+            showlegend=False, hoverinfo="skip"))
 
     # ---- curvas de nivel ----
     if mostrar_curvas:
