@@ -405,13 +405,45 @@ FASES_COMPARACAO = [
 ]
 
 
-def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True):
+def _atribuir_sublinhas(fases):
+    """Interval partitioning: distribui as fases por sub-linhas de modo que
+    dentro de cada sub-linha nenhuma se sobreponha no tempo. Recebe tuplos
+    (t0, t1, nome, cor, n) ordenados por t0; devolve (lista com +li, n_linhas)."""
+    linhas = []
+    resultado = []
+    for item in fases:
+        t0, t1 = item[0], item[1]
+        colocada = False
+        for li, ocup in enumerate(linhas):
+            if all(t1 <= o0 or t0 >= o1 for o0, o1 in ocup):
+                ocup.append((t0, t1))
+                resultado.append(item + (li,))
+                colocada = True
+                break
+        if not colocada:
+            linhas.append([(t0, t1)])
+            resultado.append(item + (len(linhas) - 1,))
+    return resultado, len(linhas)
+
+
+def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True,
+                         barra_topo=True):
     """
-    Sobrepoe as fases da obra a um grafico com o tempo no eixo X: faixas de
-    fundo coloridas + um NUMERO por fase (no topo, no inicio da fase). O nome
-    completo aparece no hover e numa legenda compacta por baixo do grafico
-    (ver legenda_fases). Numeros curtos NAO colidem, ao contrario dos nomes
-    longos — resolve a sobreposicao de forma definitiva.
+    Sobrepoe as fases da obra a um grafico com o tempo no eixo X.
+
+    barra_topo=True (por omissao): BARRA DE FASEAMENTO (tipo Gantt) numa banda
+    no topo do proprio grafico — cada fase e um segmento de COR SOLIDA (sem
+    faixas de fundo translucidas, que se misturavam onde as fases se
+    sobrepunham), com o seu NUMERO fixo. Fases sobrepostas sao empilhadas em
+    sub-linhas para nao se misturarem. O eixo Y dos dados e encolhido (domain)
+    para abrir espaco; a Gantt partilha o eixo X e alinha automaticamente.
+    NAO usar com eixos Y duplos (overlaying) — o domain so afeta um eixo.
+
+    barra_topo=False: modo legado para graficos de eixo Y duplo (ex. Sintese)
+    — faixas de fundo translucidas + numero no inicio de cada fase, SEM tocar
+    no domain do eixo Y.
+
+    O nome completo esta na legenda a direita (trace fantasma) e no hover.
     Devolve a lista de fases visiveis (para a legenda).
     """
     dt_min = pd.to_datetime(dt_min)
@@ -424,70 +456,80 @@ def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True):
         if t1 < dt_min - margem or t0 > dt_max + margem:
             continue
         # numero FIXO global (posicao em FASES_OBRA, base 1): a fase X tem
-        # sempre o mesmo numero em toda a app, independentemente do intervalo
-        # de datas do grafico. Pode haver saltos (1, 3, 5) se faltarem fases.
+        # sempre o mesmo numero em toda a app, com saltos (1, 3, 5) se faltarem.
         num_fixo = i + 1
         visiveis.append((t0, t1, nome, CORES_FASES[i % len(CORES_FASES)], num_fixo))
+    if not visiveis:
+        return visiveis
     visiveis.sort(key=lambda v: v[0])
 
+    # entradas de legenda (trace fantasma, cor SOLIDA = igual ao segmento Gantt)
     for t0, t1, nome, cor, n in visiveis:
-        vt0 = max(t0, dt_min - margem)
-        vt1 = min(t1, dt_max + margem)
-        if faixas:
-            fig.add_vrect(x0=vt0, x1=vt1, fillcolor=cor, opacity=0.15,
-                          line_width=0, layer="below")
-            # entrada de legenda para a faixa (trace fantasma: x/y None -> nao
-            # desenha nada, so serve para dar cara e clique a faixa na legenda).
-            # marker semi-transparente + contorno para bater certo com a faixa
-            # real (opacity 0.15), evitando que a legenda pareca mais forte.
-            fig.add_trace(go.Scatter(
-                x=[None], y=[None], mode="markers",
-                name=f"{n}. {nome}", legendgroup="fases",
-                legendgrouptitle_text="Fases da obra",
-                marker=dict(size=13, symbol="square",
-                            color=cor, opacity=0.35,
-                            line=dict(color=cor, width=1.5)),
-                hoverinfo="skip", showlegend=True))
-    # --- marcadores numerados no topo ---
-    # Cada algarismo fica por cima da SUA faixa de cor: no centro da parte
-    # visivel da faixa. Como as fases se sobrepoem no tempo, os centros podem
-    # coincidir — por isso aplica-se um desencontro horizontal MINIMO: os
-    # numeros que ficariam demasiado juntos sao empurrados para a direita o
-    # estritamente necessario para nao colidirem, mantendo-se sobre a sua faixa.
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None], mode="markers",
+            name=f"{n}. {nome}", legendgroup="fases",
+            legendgrouptitle_text="Fases da obra",
+            marker=dict(size=13, symbol="square", color=cor,
+                        line=dict(color="white", width=1)),
+            hoverinfo="skip", showlegend=True))
+
+    if not faixas:
+        return visiveis
+
     lim_esq = dt_min - margem
     lim_dir = dt_max + margem
-    span = (lim_dir - lim_esq)
-    dist_min = span * 0.038  # folga minima entre numeros (~ largura de um badge)
 
-    # 1) calcular centro da parte visivel de cada faixa
-    marcadores = []
-    for t0, t1, nome, cor, n in sorted(visiveis, key=lambda v: v[0]):
-        if marcos and lim_esq <= t0 <= lim_dir:
-            fig.add_vline(x=t0, line=dict(color=cor, width=1.2, dash="dot"))
-        vt0 = max(t0, lim_esq)
-        vt1 = min(t1, lim_dir)
-        centro = vt0 + (vt1 - vt0) / 2
-        marcadores.append([centro, nome, cor, n])
+    # --- modo legado (eixo Y duplo): faixas translucidas + numero, sem domain
+    if not barra_topo:
+        for t0, t1, nome, cor, n in visiveis:
+            vt0 = max(t0, lim_esq)
+            vt1 = min(t1, lim_dir)
+            fig.add_vrect(x0=vt0, x1=vt1, fillcolor=cor, opacity=0.13,
+                          line_width=0, layer="below")
+            if marcos and lim_esq <= t0 <= lim_dir:
+                fig.add_vline(x=t0, line=dict(color=cor, width=1, dash="dot"))
+            xc = vt0 + (vt1 - vt0) / 2
+            fig.add_annotation(
+                x=xc, y=0.99, yref="paper", xref="x", text=f"<b>{n}</b>",
+                showarrow=False, xanchor="center", yanchor="top",
+                font=dict(size=11, color="white"),
+                bgcolor=cor, borderpad=3, opacity=0.95, hovertext=nome)
+        return visiveis
 
-    # 2) desencontro: percorrer por ordem de centro e empurrar para a direita
-    #    quem estiver a menos de dist_min do anterior
-    marcadores.sort(key=lambda m: m[0])
-    for i in range(1, len(marcadores)):
-        if marcadores[i][0] - marcadores[i - 1][0] < dist_min:
-            marcadores[i][0] = marcadores[i - 1][0] + dist_min
-    # nao deixar sair pela direita: se o ultimo passou do limite, recuar todos
-    if marcadores and marcadores[-1][0] > lim_dir:
-        desvio = marcadores[-1][0] - lim_dir
-        for m in marcadores:
-            m[0] -= desvio
+    # --- modo barra no topo (Gantt) ---
+    # segmentos clampados a janela visivel e empilhados em sub-linhas
+    clamp = [(max(t0, lim_esq), min(t1, lim_dir), nome, cor, n)
+             for t0, t1, nome, cor, n in visiveis]
+    res, n_lin = _atribuir_sublinhas(clamp)
 
-    # 3) desenhar
-    for centro, nome, cor, n in marcadores:
+    # reservar banda no topo: dados passam a ocupar [0, ytop] do eixo Y
+    frac_por_linha = 0.055
+    banda = min(0.42, frac_por_linha * n_lin + 0.02)
+    ytop = 1 - banda
+    fig.update_yaxes(domain=[0, ytop])
+
+    # desenhar cada segmento como retangulo SOLIDO na sua sub-linha (paper-y),
+    # com o numero centrado. Linha 0 fica em cima; sublinhas descem.
+    gap = 0.012
+    alt = (banda - gap) / n_lin
+    for t0, t1, nome, cor, n, li in res:
+        y1 = 1 - li * alt
+        y0 = y1 - alt * 0.82
+        fig.add_shape(
+            type="rect", xref="x", yref="paper",
+            x0=t0, x1=t1, y0=y0, y1=y1,
+            fillcolor=cor, opacity=1.0,
+            line=dict(color="white", width=1), layer="above")
+        xc = t0 + (t1 - t0) / 2
+        yc = (y0 + y1) / 2
         fig.add_annotation(
-            x=centro, y=0.99, yref="paper", xref="x", text=f"<b>{n}</b>",
-            showarrow=False, xanchor="center", yanchor="top",
-            font=dict(size=11, color="white"),
-            bgcolor=cor, borderpad=3, opacity=0.95, hovertext=nome)
+            x=xc, y=yc, xref="x", yref="paper", text=f"<b>{n}</b>",
+            showarrow=False, xanchor="center", yanchor="middle",
+            font=dict(size=11, color="white"), hovertext=nome)
+        # linha ponteada de inicio real da fase (se cair na janela)
+        if marcos and lim_esq <= t0 <= lim_dir:
+            fig.add_vline(x=t0, line=dict(color=cor, width=1, dash="dot"),
+                          layer="below")
     return visiveis
 
 
@@ -1217,16 +1259,16 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
         fig2.update_xaxes(title="Data")
         fig2.update_yaxes(title="Deslocamento (mm)")
         fig2.update_layout(
-            height=700,
+            height=780,
             legend=dict(title="Serie / fases", orientation="v",
                         yanchor="top", y=1, xanchor="left", x=1.02,
                         font=dict(size=11)),
             margin=dict(r=60, t=60, b=40))
         st.plotly_chart(fig2, use_container_width=True)
         if fases_vis_inc:
-            st.caption("Os numeros no topo do grafico correspondem as fases da "
-                       "obra (ver legenda a direita). Repara se a aceleracao do "
-                       "deslocamento coincide com o avanco de uma fase.")
+            st.caption("A barra no topo mostra o faseamento da obra (cada fase "
+                       "com o seu numero e cor, ver legenda a direita). Repara "
+                       "se a aceleracao do deslocamento coincide com uma fase.")
 
     st.divider()
     st.subheader("Velocidade e sinais precursores")
@@ -1503,7 +1545,7 @@ def separador_alvos_2d(dados):
         configurar_eixo_tempo(fig, granul)
         obra_on = st.session_state.get("mostrar_obra")
         fig.update_layout(
-            height=700,
+            height=780,
             margin=dict(r=60, t=60, b=40),
             legend=dict(orientation="v", yanchor="top", y=1,
                         xanchor="left", x=1.02, font=dict(size=11)))
@@ -1533,7 +1575,7 @@ def separador_alvos_2d(dados):
         configurar_eixo_tempo(fig2, granul)
         obra_on2 = st.session_state.get("mostrar_obra")
         fig2.update_layout(
-            height=700,
+            height=780,
             margin=dict(r=60, t=60, b=40),
             legend=dict(orientation="v", yanchor="top", y=1,
                         xanchor="left", x=1.02, font=dict(size=11)))
@@ -1643,13 +1685,13 @@ def separador_piezometros(dados):
     fig.update_yaxes(title="Cota (m)")
     obra_on_pz = st.session_state.get("mostrar_obra") and fases_vis_pz
     fig.update_layout(
-        height=580 if obra_on_pz else 520,
-        margin=dict(r=140, t=40, b=110 if obra_on_pz else 40),
-        legend=dict(orientation="h", yanchor="top", y=-0.18,
-                    xanchor="left", x=0, font=dict(size=10)))
+        height=760 if obra_on_pz else 560,
+        margin=dict(r=180, t=40, b=40),
+        legend=dict(orientation="v", yanchor="top", y=1,
+                    xanchor="left", x=1.01, font=dict(size=10)))
     st.plotly_chart(fig, use_container_width=True)
-    if fases_vis_pz:
-        legenda_fases(fases_vis_pz)
+    # nota: o faseamento aparece na barra no topo do grafico e na legenda a
+    # direita; a caption redundante foi removida.
 
     # leitura cruzada quantitativa
     if len(sub):
@@ -2605,7 +2647,7 @@ def separador_sintese(dados):
     if df_agua is not None and not df_agua.empty:
         dt_min = min(dt_min, df_agua[COLS["data"]].min())
         dt_max = max(dt_max, df_agua[COLS["data"]].max())
-    fases_vis = adicionar_fases_obra(fig, dt_min, dt_max)
+    fases_vis = adicionar_fases_obra(fig, dt_min, dt_max, barra_topo=False)
 
     # marcos de escavacao por cota (datas reais) — linha vertical + etiqueta
     # CURTA (E1, E2...) no fundo. O rotulo completo (cota + data) vai numa
