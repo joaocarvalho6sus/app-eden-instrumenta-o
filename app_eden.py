@@ -318,6 +318,19 @@ COTA_COROAMENTO_PADRAO = 20.85       # coroamento da cortina (alcados correntes)
 COTA_COROAMENTO_ALTA = 24.65         # coroamento na zona alta (piso 2)
 COTA_MURO_SCML = 22.50               # muro tradicional na fronteira com a Santa Casa
 
+# Cores oficiais das bandas de laje por espessura, lidas da legenda das pecas
+# desenhadas do projeto de contencao (JETsj, EDN-JET-...-DR-U-0021 e seg.).
+# Usadas para dar as bandas de laje esquematicas as cores reais do projeto.
+CORES_LAJE_PROJETO = {
+    0.25: "#d9d9d9",   # cinza claro
+    0.30: "#1a7a1a",   # verde escuro
+    0.35: "#c8721a",   # laranja/castanho
+    0.38: "#22dd22",   # verde vivo
+    0.45: "#1f78d1",   # azul
+    0.60: "#7a1fa0",   # roxo
+    0.75: "#e020c0",   # magenta
+}
+
 # Nivel freatico de REPOUSO medido nos piezometros das sondagens
 # (ENGGEO, Quadro III, leitura de 24/11/2022). Cota da agua, em metros.
 NF_REPOUSO = [
@@ -2719,39 +2732,45 @@ def _detetar_cantos_contorno(pts, n_cantos=4):
 def _elementos_contencao_esquematicos(fig, esc, zex, cotas_pisos,
                                       coroamento, fundo):
     """
-    Desenha, de forma ESQUEMATICA E ILUSTRATIVA, as solucoes de contencao
-    periferica sobre o contorno da escavacao: viga de coroamento/distribuicao,
-    bandas de laje e escoramentos de canto.
+    Desenha, de forma ESQUEMATICA mas INFORMADA PELO PROJETO, as solucoes de
+    contencao periferica: viga de coroamento/distribuicao, bandas de laje e
+    escoramentos. Baseado nas pecas desenhadas da JETsj (EDN-JET-ZZ-ZZ-DR-U-
+    0021..0027): cotas dos pisos confirmadas com o projeto, cores das lajes
+    conforme a legenda oficial, e escoras HORIZONTAIS entre lados opostos as
+    cotas dos pisos (como nos cortes tipo), nao diagonais de canto.
 
-    ATENCAO — HONESTIDADE: a geometria de projeto destes elementos NAO consta
-    dos dados da app. As COTAS das bandas de laje e da viga assentam em cotas
-    reais de projeto (COTAS_PISOS / coroamento); a FORMA, largura e seccao sao
-    esquematicas. Os ESCORAMENTOS sao totalmente ilustrativos (posicao, cota e
-    existencia assumidas). Tudo vem rotulado como '(esquematico)' na legenda e
-    no hover; a leitura rigorosa das solucoes esta nas pecas desenhadas do
-    projeto de contencao (JETsj), nao nesta figura.
+    ATENCAO — HONESTIDADE: a FORMA em planta (o contorno curvo real, a geometria
+    exata de cada banda) nao foi extraida do PDF — a sua reproducao vetorial nao
+    era fiavel. Por isso as bandas sao aneis perimetrais aproximados sobre o
+    contorno disponivel, e as escoras sao troços representativos. As COTAS e as
+    CORES sao reais; a forma e esquematica. A representacao rigorosa esta nas
+    pecas desenhadas do projeto e nas VISTAS 3D do projeto (mostradas no fim
+    deste separador).
     """
     import numpy as np
     esc = np.asarray(esc, dtype=float)
     n = len(esc)
     ex, ey = esc[:, 0], esc[:, 1]
+    cx, cy = ex.mean(), ey.mean()
 
     # 1) VIGA DE COROAMENTO / DISTRIBUICAO — anel no topo (cota real)
     zc = float(zex(coroamento))
     fig.add_trace(go.Scatter3d(
         x=list(ex) + [ex[0]], y=list(ey) + [ey[0]], z=[zc] * (n + 1),
         mode="lines", line=dict(color="#3a3a3a", width=6),
-        name="Viga de coroamento/distribuicao (esquematico)",
-        hovertemplate="Viga de coroamento (esquematico)<br>"
-                      f"cota {coroamento:.2f} m<extra></extra>"))
+        name="Viga de coroamento/distribuicao (projeto: cota real)",
+        hovertemplate="Viga de coroamento/distribuicao<br>"
+                      f"cota {coroamento:.2f} m (projeto JETsj)<extra></extra>"))
 
-    # 2) BANDAS DE LAJE — aneis perimetrais interiores as cotas dos pisos reais
-    c = esc.mean(axis=0)
-    interior = c + (esc - c) * 0.90   # contorno encolhido 10% (faixa perimetral)
+    # 2) BANDAS DE LAJE — aneis perimetrais as cotas reais dos pisos, com as
+    #    CORES OFICIAIS do projeto (ciclo pelas cores da legenda, ja que o
+    #    mapeamento exato piso->espessura consta das pecas desenhadas).
+    interior = np.column_stack([cx + (ex - cx) * 0.90, cy + (ey - cy) * 0.90])
     ix, iy = interior[:, 0], interior[:, 1]
-    for nome, cota in cotas_pisos:
-        if not (fundo < cota < coroamento):
-            continue                    # so as que ficam dentro do vao escavado
+    cores_laje = list(CORES_LAJE_PROJETO.values())
+    pisos_dentro = [(nm, ct) for nm, ct in cotas_pisos if fundo < ct < coroamento]
+    for idx_p, (nome, cota) in enumerate(pisos_dentro):
+        cor = cores_laje[idx_p % len(cores_laje)]
         zp = float(zex(cota))
         wx, wy, wz, wi, wj, wk = [], [], [], [], [], []
         for i in range(n - 1):
@@ -2762,27 +2781,40 @@ def _elementos_contencao_esquematicos(fig, esc, zex, cotas_pisos,
             wi += [b, b]; wj += [b + 1, b + 2]; wk += [b + 2, b + 3]
         fig.add_trace(go.Mesh3d(
             x=wx, y=wy, z=wz, i=wi, j=wj, k=wk,
-            color="#8c9bab", opacity=0.5, flatshading=True,
-            name=f"Banda de laje ~{nome} (esquematico)",
-            hovertext=f"Banda de laje ~{nome} (esquematico) — cota {cota:.2f} m",
+            color=cor, opacity=0.55, flatshading=True,
+            name=f"Banda de laje {nome} (cor do projeto)",
+            hovertext=f"Banda de laje {nome} — cota {cota:.2f} m "
+                      f"(cor conforme legenda do projeto)",
             hoverinfo="text"))
 
-    # 3) ESCORAMENTOS DE CANTO — diagonais nos cantos, a meia altura
-    #    (100% ILUSTRATIVO: existencia, posicao e cota assumidas)
-    cantos = _detetar_cantos_contorno(esc, 4)
-    passo = np.linalg.norm(np.diff(esc, axis=0), axis=1).mean()
-    noff = max(int(8 / passo), 2)
-    z_escora = float(zex((coroamento + fundo) / 2))
+    # 3) ESCORAMENTOS METALICOS PROVISORIOS — HORIZONTAIS entre lados opostos,
+    #    as cotas dos pisos (como nos cortes tipo do projeto). Esquematico na
+    #    posicao (nº e vao representativos), fiel no tipo (horizontal, a verde).
+    #    Ligam cada ponto de um lado ao ponto oposto (atravessando o recinto).
+    ang = np.arctan2(ey - cy, ex - cx)
+    ordem = np.argsort(ang)
+    escora_verde = "#1f9e2f"
     xs, ys, zs = [], [], []
-    for cc in cantos:
-        p1 = esc[(cc - noff) % n]; p2 = esc[(cc + noff) % n]
-        xs += [p1[0], p2[0], None]; ys += [p1[1], p2[1], None]
-        zs += [z_escora, z_escora, None]
+    # 2 cotas representativas para nao poluir: pisos -1 e -3 (intermedios)
+    cotas_escora = [ct for nm, ct in pisos_dentro
+                    if any(t in nm for t in ("-1", "-3"))]
+    if not cotas_escora and pisos_dentro:
+        cotas_escora = [pisos_dentro[len(pisos_dentro) // 2][1]]
+    for cota in cotas_escora:
+        ze = float(zex(cota))
+        # 4 escoras a atravessar, ligando pontos opostos do contorno
+        for f in np.linspace(0.15, 0.85, 4):
+            a = ordem[int(f * (n - 1))]
+            b = ordem[int(((f + 0.5) % 1.0) * (n - 1))]
+            xs += [ex[a], ex[b], None]
+            ys += [ey[a], ey[b], None]
+            zs += [ze, ze, None]
     fig.add_trace(go.Scatter3d(
-        x=xs, y=ys, z=zs, mode="lines", line=dict(color="#8B0000", width=7),
-        name="Escoramento de canto (esquematico/ilustrativo)",
-        hovertemplate="Escoramento de canto<br>ILUSTRATIVO (nao consta do "
-                      "projeto nos dados)<extra></extra>"))
+        x=xs, y=ys, z=zs, mode="lines",
+        line=dict(color=escora_verde, width=5),
+        name="Escoras metalicas provisorias (esquematico)",
+        hovertemplate="Escora metalica provisoria (horizontal)<br>"
+                      "posicao esquematica<extra></extra>"))
 
 
 def separador_terreno_alvos_3d(dados):
@@ -3071,13 +3103,43 @@ def separador_terreno_alvos_3d(dados):
         f"Se algum alvo cair no lado errado, usa o 'Ajuste fino do alinhamento'.")
     if mostrar_contencao:
         st.warning(
-            "⚠ Os elementos de contencao (viga de coroamento, bandas de laje, "
-            "escoramentos) sao ESQUEMATICOS E ILUSTRATIVOS. A geometria de "
-            "projeto nao consta dos dados da app: as cotas das lajes e da viga "
-            "sao reais (cotas dos pisos/coroamento), mas a forma e assumida e "
-            "os escoramentos de canto sao inteiramente ilustrativos (posicao, "
-            "cota e existencia assumidas). A representacao rigorosa esta nas "
-            "pecas desenhadas do projeto de contencao (JETsj).")
+            "⚠ Os elementos de contencao (viga de coroamento/distribuicao, "
+            "bandas de laje, escoras metalicas) sao ESQUEMATICOS mas INFORMADOS "
+            "PELO PROJETO: as cotas dos pisos e as cores das lajes seguem as "
+            "pecas desenhadas da JETsj (EDN-JET-ZZ-ZZ-DR-U-0021..0027), e as "
+            "escoras sao horizontais entre lados (como nos cortes tipo). A FORMA "
+            "em planta (contorno curvo, geometria exata de cada banda) e "
+            "aproximada — nao foi extraida do projeto. Para a representacao "
+            "rigorosa, ver as Vistas 3D do projeto no fim deste separador.")
+
+    # ---- Vistas 3D do proprio projeto (referencia fiel, JETsj) ----
+    with st.expander("📐 Vistas 3D do projeto de contencao (JETsj) — referencia"):
+        st.caption("Imagens das pecas desenhadas do projeto de contencao "
+                   "periferica (JETsj, pranchas EDN-JET-ZZ-ZZ-DR-U-0002 a 0005). "
+                   "Sao a representacao AUTORITATIVA e rigorosa da solucao — "
+                   "cortina de estacas, bandas de laje por cota, ancoragens, "
+                   "escoras metalicas e faseamento. O 3D interativo acima e uma "
+                   "leitura do movimento dos alvos; estas vistas sao a geometria "
+                   "de projeto.")
+        base_dir = Path(__file__).resolve().parent
+        vistas = [
+            ("vista3d_1de4.jpg", "Vistas 3D (1/4) — vista global"),
+            ("vista3d_2de4.jpg", "Vistas 3D (2/4)"),
+            ("vista3d_3de4.jpg", "Vistas 3D (3/4)"),
+            ("vista3d_4de4.jpg", "Vista 3D (4/4)"),
+        ]
+        alguma = False
+        for fich, legenda in vistas:
+            fp = base_dir / "projeto_vistas" / fich
+            if not fp.exists():
+                fp = Path("projeto_vistas") / fich
+            if fp.exists():
+                st.image(str(fp), caption=legenda, use_container_width=True)
+                alguma = True
+        if not alguma:
+            st.info("Imagens das vistas 3D do projeto nao encontradas "
+                    "(pasta 'projeto_vistas/'). Verifica que foi publicada "
+                    "junto com a app.")
 
 
 def separador_sintese(dados):
