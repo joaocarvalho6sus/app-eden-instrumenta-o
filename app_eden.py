@@ -494,13 +494,23 @@ def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True,
 
     # --- modo legado (eixo Y duplo): faixas translucidas + numero, sem domain
     if not barra_topo:
+        # IMPORTANTE: com eixo Y secundario (overlaying="y"), o add_vrect ancora
+        # as faixas ao dominio do eixo primario ("y domain"), o que entra em
+        # conflito com o eixo sobreposto e FAZ AS SERIES DE DADOS DESAPARECEREM
+        # no browser. Por isso desenhamos as faixas/linhas com yref="paper"
+        # (independentes de qualquer eixo Y).
         for t0, t1, nome, cor, n in visiveis:
             vt0 = max(t0, lim_esq)
             vt1 = min(t1, lim_dir)
-            fig.add_vrect(x0=vt0, x1=vt1, fillcolor=cor, opacity=0.13,
-                          line_width=0, layer="below")
+            fig.add_shape(
+                type="rect", xref="x", yref="paper",
+                x0=vt0, x1=vt1, y0=0, y1=1,
+                fillcolor=cor, opacity=0.13, line_width=0, layer="below")
             if marcos and lim_esq <= t0 <= lim_dir:
-                fig.add_vline(x=t0, line=dict(color=cor, width=1, dash="dot"))
+                fig.add_shape(
+                    type="line", xref="x", yref="paper",
+                    x0=t0, x1=t0, y0=0, y1=1,
+                    line=dict(color=cor, width=1, dash="dot"), layer="below")
             xc = vt0 + (vt1 - vt0) / 2
             fig.add_annotation(
                 x=xc, y=0.99, yref="paper", xref="x", text=f"<b>{n}</b>",
@@ -3231,7 +3241,10 @@ def separador_sintese(dados):
                      if dt_min <= pd.to_datetime(fim) <= dt_max]
         na_janela.sort()
         for k, (t, rotulo, cota) in enumerate(na_janela, start=1):
-            fig.add_vline(x=t, line=dict(color="#8B4513", width=1, dash="dash"))
+            fig.add_shape(
+                type="line", xref="x", yref="paper",
+                x0=t, x1=t, y0=0, y1=1,
+                line=dict(color="#8B4513", width=1, dash="dash"), layer="below")
             fig.add_annotation(
                 x=t, y=-0.02, yref="paper", text=f"E{k}",
                 showarrow=False, xanchor="center", yanchor="top",
