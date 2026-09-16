@@ -152,6 +152,21 @@ DEFORM_PROJETO = {
     "nascente_sul": 10.0,   # mm (cortina nascente/sul)
 }
 
+# Mapeamento CONFIRMADO (nao inferido) da zona de projeto para os edificios
+# vizinhos, com base na orientacao real verificada em planta/mapa:
+#   - Santa Casa: noroeste (poente + norte)  -> poente/norte (20 mm)
+#   - Cimas:      nordeste (nascente + norte) -> poente/norte (20 mm), pela
+#                 regra do projeto "poente OU norte = 20 mm"
+#   - Clinica:    nascente + norte            -> poente/norte (20 mm)
+# O referencial (M,P) dos alvos esta rodado face ao norte real, por isso a
+# inferencia geometrica NAO e fiavel; estes tres sao fixados a mao.
+ZONA_FIXA_GRUPO = {
+    "Santa Casa": "poente_norte",
+    "Cimas": "poente_norte",
+    "Clínica": "poente_norte",
+    "Clinica": "poente_norte",
+}
+
 ALCADOS_24M = {"FG", "GH", "JK", "KL", "MNO", "OP"}
 ALCADOS_17M = {"AB", "CD", "BF", "PQ"}
 ALCADOS_A_CONFIRMAR = {"DE"}         # sem deslocamento -> grupo nao distinguivel
@@ -3370,36 +3385,44 @@ def separador_analise(dados):
         "PROJETO (memoria descritiva JETsj: ~20 mm na cortina poente/norte, "
         "~10 mm na nascente/sul — valor de CALCULO para a ultima fase de "
         "escavacao, nao um limite) e com os criterios de alerta/alarme. "
-        "IMPORTANTE: a estimativa de projeto refere-se a CORTINA de contencao; "
-        "a associacao de cada grupo de alvos a orientacao (poente/norte vs. "
-        "nascente/sul) e INFERIDA das coordenadas dos alvos e deve ser "
-        "confirmada com a planta do projeto. Os alvos de edificios vizinhos "
-        "(ex.: Santa Casa) medem o movimento do edificio, relacionado mas nao "
-        "identico a deformacao da propria cortina.")
+        "A coluna «Origem zona» distingue: «confirmada» = orientacao verificada "
+        "em planta (edificios vizinhos Santa Casa, Cimas e Clinica, todos com "
+        "componente poente ou norte -> 20 mm); «inferida» = deduzida da "
+        "geometria dos alvos, A CONFIRMAR, pois o referencial (M,P) esta rodado "
+        "face ao norte real. Nota: os alvos de edificios vizinhos medem o "
+        "movimento do EDIFICIO, relacionado mas nao identico a deformacao da "
+        "propria cortina.")
 
     Mc = ult[COLS["M0"]].mean()
     Pc = ult[COLS["P0"]].mean()
     linhas = []
     for chave, grp in ult.groupby(COLS["edificio"]):
-        M = grp[COLS["M0"]].mean()
-        P = grp[COLS["P0"]].mean()
-        # orientacao inferida: poente = M abaixo do centro; norte = P acima
-        poente = M < Mc
-        norte = P > Pc
-        orient = "poente/norte" if (poente or norte) else "nascente/sul"
-        # a regra do projeto agrupa poente E norte juntos (20mm); nascente E
-        # sul juntos (10mm). Um alvo conta como poente/norte se for poente OU
-        # norte; so e nascente/sul se for nascente E sul.
-        if poente or norte:
-            prev = DEFORM_PROJETO["poente_norte"]; zona = "poente/norte"
-        else:
-            prev = DEFORM_PROJETO["nascente_sul"]; zona = "nascente/sul"
+        # 1) tentar mapeamento CONFIRMADO (edificios vizinhos) por nome
+        zona_key = None
+        origem = "inferida"
+        for alvo_nome, zk in ZONA_FIXA_GRUPO.items():
+            if isinstance(chave, str) and alvo_nome.lower() in chave.lower():
+                zona_key = zk
+                origem = "confirmada"
+                break
+        # 2) se nao for conhecido, inferir pela geometria (a confirmar).
+        #    NOTA: o referencial (M,P) esta rodado face ao norte real, por isso
+        #    esta inferencia so vale como aproximacao inicial para os alcados.
+        if zona_key is None:
+            M = grp[COLS["M0"]].mean()
+            P = grp[COLS["P0"]].mean()
+            poente = M < Mc
+            norte = P > Pc
+            zona_key = "poente_norte" if (poente or norte) else "nascente_sul"
+        prev = DEFORM_PROJETO[zona_key]
+        zona = "poente/norte" if zona_key == "poente_norte" else "nascente/sul"
         obs = grp[COLS["desl_h"]].max()
         dif = obs - prev
         pct = (dif / prev * 100) if prev else float("nan")
         linhas.append({
             "Grupo": chave,
-            "Zona (inferida)": zona,
+            "Zona": zona,
+            "Origem zona": origem,
             "Previsto (mm)": prev,
             "Observado max (mm)": round(obs, 1),
             "Diferenca (mm)": round(dif, 1),
@@ -3434,7 +3457,8 @@ def separador_analise(dados):
     st.caption(
         f"O grupo com maior excedencia e «{pior['Grupo']}»: observado "
         f"{pior['Observado max (mm)']:.1f} mm vs. previsto "
-        f"{pior['Previsto (mm)']:.0f} mm (zona {pior['Zona (inferida)']}) — "
+        f"{pior['Previsto (mm)']:.0f} mm (zona {pior['Zona']}, "
+        f"origem {pior['Origem zona']}) — "
         f"cerca de {pior['Excesso (%)']:.0f}% acima da estimativa de projeto. "
         f"Nota para a interpretacao: uma excedencia desta ordem face ao "
         f"CALCULO de projeto e o ponto de partida da discussao — se reflete a "
