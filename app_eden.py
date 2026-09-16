@@ -3275,8 +3275,8 @@ def separador_sintese(dados):
             line=dict(color="#2563eb", width=2, dash="dot")))
 
     fig.update_layout(
-        height=520,
-        margin=dict(t=60, b=70),
+        height=560,
+        margin=dict(t=60, b=130),
         # type="date" EXPLICITO: o primeiro trace da figura e um trace fantasma
         # das fases (x=[None], de adicionar_fases_obra em modo barra_topo=False).
         # Sem o tipo forcado, o Plotly.js infere o eixo X a partir desse primeiro
@@ -3289,7 +3289,10 @@ def separador_sintese(dados):
         yaxis2=dict(title=dict(text="Cota da agua (m)", font=dict(color="#2563eb")),
                     tickfont=dict(color="#2563eb"),
                     overlaying="y", side="right", anchor="x"),
-        legend=dict(orientation="h", yanchor="bottom", y=-0.25))
+        # legenda mais abaixo (y=-0.38) para nao colidir com o titulo "Data"
+        # do eixo X; a margem inferior (b=130) abre o espaco necessario.
+        legend=dict(orientation="h", yanchor="top", y=-0.38,
+                    xanchor="center", x=0.5))
     st.plotly_chart(fig, use_container_width=True)
     legenda_fases(fases_vis)
     # legenda dos marcos de escavacao (E1, E2...) -> cota + data
