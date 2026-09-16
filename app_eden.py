@@ -138,6 +138,20 @@ CRIT_VIZINHOS   = (15, 25, 10, 20)   # edificios adjacentes (OFICIAL)
 CRIT_CONT_17    = (20, 40, 10, 15)   # contencao 17 m
 CRIT_CONT_24    = (30, 40, 10, 15)   # contencao 24 m
 
+# -------------------------------------------------------------------------
+# ESTIMATIVA DE DEFORMACAO DE PROJETO (memoria descritiva JETsj)
+# -------------------------------------------------------------------------
+# Valor de CALCULO (nao limite): "estima-se para a ultima fase de escavacao
+# uma deformacao horizontal acumulada de cerca de 20mm na cortina poente/norte
+# e 10mm na cortina nascente/sul" (corresponde a deformacao relativa > H/500).
+# Usado para a analise OBSERVADO vs. PREVISTO. E uma estimativa de cortina —
+# a associacao de cada grupo de alvos a orientacao e INFERIDA das coordenadas
+# (a confirmar com a planta do projeto).
+DEFORM_PROJETO = {
+    "poente_norte": 20.0,   # mm (cortina poente/norte)
+    "nascente_sul": 10.0,   # mm (cortina nascente/sul)
+}
+
 ALCADOS_24M = {"FG", "GH", "JK", "KL", "MNO", "OP"}
 ALCADOS_17M = {"AB", "CD", "BF", "PQ"}
 ALCADOS_A_CONFIRMAR = {"DE"}         # sem deslocamento -> grupo nao distinguivel
@@ -637,7 +651,12 @@ st.set_page_config(page_title="IMS — Instrumentation Monitoring System",
 # CARREGAMENTO
 # =========================================================================
 @st.cache_data(show_spinner="A carregar o Excel...")
-def carregar_dados(fonte):
+def _carregar_dados_cached(fonte, _versao):
+    # _versao (mtime+tamanho do ficheiro) entra na chave de cache: quando o
+    # Excel e substituido no repositorio, _versao muda e o Streamlit REle os
+    # dados em vez de devolver a versao antiga em cache. O prefixo _ impede o
+    # Streamlit de tentar fazer hash do proprio valor (basta que participe na
+    # chave). Sem isto, trocar o Excel no GitHub nao atualizava a app.
     excel = pd.ExcelFile(fonte)
     dados = {}
     for chave, folha in FOLHAS.items():
@@ -649,6 +668,23 @@ def carregar_dados(fonte):
             df[COLS["data"]] = pd.to_datetime(df[COLS["data"]], errors="coerce")
         dados[chave] = df
     return dados
+
+
+def carregar_dados(fonte):
+    # calcular uma "versao" do ficheiro para a chave de cache. Para um caminho
+    # no disco (caso do deploy), usa mtime+tamanho — muda quando o Excel muda.
+    # Para um upload manual, usa nome+tamanho do objeto carregado.
+    versao = None
+    try:
+        import os
+        if hasattr(fonte, "size") and hasattr(fonte, "name"):
+            versao = f"upload:{fonte.name}:{fonte.size}"
+        else:
+            stt = os.stat(str(fonte))
+            versao = f"path:{stt.st_mtime_ns}:{stt.st_size}"
+    except Exception:
+        versao = "sem-versao"
+    return _carregar_dados_cached(fonte, versao)
 
 
 def validar_colunas(df, nomes, contexto):
@@ -3325,6 +3361,86 @@ def separador_analise(dados):
                 "com o perfil geologico e a cota de escavacao.")
     else:
         st.info("Sem dados de inclinometros para o perfil de profundidade.")
+
+    # ============ (5) OBSERVADO vs. PREVISTO ============
+    st.divider()
+    st.markdown("#### 5. Observado vs. Previsto — comparacao com o projeto")
+    st.caption(
+        "Compara o deslocamento horizontal OBSERVADO com a ESTIMATIVA DE "
+        "PROJETO (memoria descritiva JETsj: ~20 mm na cortina poente/norte, "
+        "~10 mm na nascente/sul — valor de CALCULO para a ultima fase de "
+        "escavacao, nao um limite) e com os criterios de alerta/alarme. "
+        "IMPORTANTE: a estimativa de projeto refere-se a CORTINA de contencao; "
+        "a associacao de cada grupo de alvos a orientacao (poente/norte vs. "
+        "nascente/sul) e INFERIDA das coordenadas dos alvos e deve ser "
+        "confirmada com a planta do projeto. Os alvos de edificios vizinhos "
+        "(ex.: Santa Casa) medem o movimento do edificio, relacionado mas nao "
+        "identico a deformacao da propria cortina.")
+
+    Mc = ult[COLS["M0"]].mean()
+    Pc = ult[COLS["P0"]].mean()
+    linhas = []
+    for chave, grp in ult.groupby(COLS["edificio"]):
+        M = grp[COLS["M0"]].mean()
+        P = grp[COLS["P0"]].mean()
+        # orientacao inferida: poente = M abaixo do centro; norte = P acima
+        poente = M < Mc
+        norte = P > Pc
+        orient = "poente/norte" if (poente or norte) else "nascente/sul"
+        # a regra do projeto agrupa poente E norte juntos (20mm); nascente E
+        # sul juntos (10mm). Um alvo conta como poente/norte se for poente OU
+        # norte; so e nascente/sul se for nascente E sul.
+        if poente or norte:
+            prev = DEFORM_PROJETO["poente_norte"]; zona = "poente/norte"
+        else:
+            prev = DEFORM_PROJETO["nascente_sul"]; zona = "nascente/sul"
+        obs = grp[COLS["desl_h"]].max()
+        dif = obs - prev
+        pct = (dif / prev * 100) if prev else float("nan")
+        linhas.append({
+            "Grupo": chave,
+            "Zona (inferida)": zona,
+            "Previsto (mm)": prev,
+            "Observado max (mm)": round(obs, 1),
+            "Diferenca (mm)": round(dif, 1),
+            "Excesso (%)": round(pct, 0),
+        })
+    df5 = pd.DataFrame(linhas).sort_values("Observado max (mm)", ascending=False)
+    st.dataframe(df5, use_container_width=True, hide_index=True)
+
+    # grafico previsto vs observado (top por observado)
+    top5 = df5.head(12)
+    fig5 = go.Figure()
+    fig5.add_trace(go.Bar(
+        y=top5["Grupo"], x=top5["Previsto (mm)"], orientation="h",
+        name="Previsto (projeto)", marker=dict(color="#9aa7b5")))
+    fig5.add_trace(go.Bar(
+        y=top5["Grupo"], x=top5["Observado max (mm)"], orientation="h",
+        name="Observado (max)", marker=dict(color="#c0140f")))
+    # linhas de referencia dos criterios da contencao
+    for xval, txt, cor in [(40, "Alarme contencao (40)", "#8B0000")]:
+        fig5.add_vline(x=xval, line=dict(color=cor, width=1, dash="dash"),
+                       annotation_text=txt, annotation_position="top")
+    fig5.update_layout(
+        height=460, barmode="group",
+        xaxis=dict(title="Desl. horizontal (mm)"),
+        yaxis=dict(autorange="reversed"),
+        margin=dict(l=10, r=10, t=40, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02))
+    st.plotly_chart(fig5, use_container_width=True)
+
+    # destaque factual do caso critico, sem afirmar causa
+    pior = df5.iloc[0]
+    st.caption(
+        f"O grupo com maior excedencia e «{pior['Grupo']}»: observado "
+        f"{pior['Observado max (mm)']:.1f} mm vs. previsto "
+        f"{pior['Previsto (mm)']:.0f} mm (zona {pior['Zona (inferida)']}) — "
+        f"cerca de {pior['Excesso (%)']:.0f}% acima da estimativa de projeto. "
+        f"Nota para a interpretacao: uma excedencia desta ordem face ao "
+        f"CALCULO de projeto e o ponto de partida da discussao — se reflete a "
+        f"geologia real, o faseamento, a execucao ou o dimensionamento e uma "
+        f"interpretacao a fundamentar no texto (a memoria descritiva ressalva "
+        f"que os proprios criterios ficam 'a confirmar em fase de obra').")
 
     st.divider()
     st.info(
