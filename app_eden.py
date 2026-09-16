@@ -3152,6 +3152,189 @@ def separador_terreno_alvos_3d(dados):
                     "junto com a app.")
 
 
+def separador_analise(dados):
+    """
+    ANALISE DESCRITIVA das principais movimentacoes observadas. Quantifica o
+    QUE aconteceu (quanto, onde, quando/a que ritmo, a que profundidade), de
+    forma a servir de base defensavel para a interpretacao do PORQUE (feita
+    pelo autor no texto da tese, nao pela app).
+
+    Principio: a app organiza e quantifica a evidencia; NAO afirma causas. As
+    notas orientadoras apontam o que cruzar (faseamento, geologia, agua), mas a
+    conclusao causal e do autor.
+    """
+    import numpy as np
+    st.subheader("Analise — principais movimentacoes observadas")
+    st.caption("Quantificacao das movimentacoes medidas pela instrumentacao, "
+               "para fundamentar a interpretacao. Esta seccao descreve O QUE "
+               "aconteceu (quanto, onde, a que ritmo, a que profundidade); a "
+               "interpretacao do PORQUE (geologia, faseamento, dimensionamento) "
+               "e do autor, apoiada nesta evidencia e nos outros separadores.")
+
+    alvos = dados.get("alvos")
+    if alvos is None or alvos.empty:
+        st.info("Sem dados de alvos.")
+        return
+    alvos = alvos.copy()
+    alvos[COLS["data"]] = pd.to_datetime(alvos[COLS["data"]], errors="coerce")
+    ult_data = alvos[COLS["data"]].max()
+    ult = anexar_estado_calculado(alvos[alvos[COLS["data"]] == ult_data].copy())
+
+    # ============ (a) QUANTO ============
+    st.markdown("#### 1. Quanto — magnitude das movimentacoes")
+    n_alarme = int((ult["Estado calculado"] == "Alarme").sum())
+    n_alerta = int((ult["Estado calculado"] == "Alerta").sum())
+    dh = ult[COLS["desl_h"]]
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Alvos monitorizados", ult[COLS["alvo"]].nunique())
+    c2.metric("Desl. H maximo (mm)", f"{dh.max():.1f}")
+    c3.metric("Em alarme", n_alarme)
+    c4.metric("Em alerta", n_alerta)
+
+    top = ult.nlargest(10, COLS["desl_h"])[
+        [COLS["alvo"], COLS["edificio"], COLS["desl_h"], COLS["dZ"],
+         "Estado calculado"]].copy()
+    top.columns = ["Alvo", "Edificio / elemento", "Desl. H (mm)",
+                   "Desl. V ΔZ (mm)", "Estado"]
+    top["Desl. H (mm)"] = top["Desl. H (mm)"].round(1)
+    top["Desl. V ΔZ (mm)"] = top["Desl. V ΔZ (mm)"].round(1)
+    st.markdown("**Ranking dos 10 alvos mais deslocados** (ultima campanha, "
+                f"{ult_data.strftime('%d/%m/%Y')}):")
+    st.dataframe(top, use_container_width=True, hide_index=True)
+
+    top1 = top.iloc[0]
+    st.caption(
+        f"O maior deslocamento horizontal e do alvo {top1['Alvo']} "
+        f"({top1['Desl. H (mm)']:.1f} mm), no elemento «{top1['Edificio / elemento']}». "
+        f"Nota para a interpretacao: verifique se os alvos no topo do ranking "
+        f"pertencem ao mesmo elemento/zona — isso indica movimentacao "
+        f"concentrada, nao dispersa.")
+
+    # ============ (b) ONDE ============
+    st.divider()
+    st.markdown("#### 2. Onde — concentracao espacial")
+    g = ult.groupby(COLS["edificio"])[COLS["desl_h"]].agg(
+        media="mean", maximo="max", n="count").reset_index()
+    g = g.sort_values("maximo", ascending=False)
+    g_plot = g.head(12)
+    fig_b = go.Figure()
+    fig_b.add_trace(go.Bar(
+        y=g_plot[COLS["edificio"]], x=g_plot["maximo"].round(1),
+        orientation="h", name="Maximo",
+        marker=dict(color="#c0140f"),
+        text=g_plot["maximo"].round(1), textposition="auto"))
+    fig_b.add_trace(go.Bar(
+        y=g_plot[COLS["edificio"]], x=g_plot["media"].round(1),
+        orientation="h", name="Media",
+        marker=dict(color="#f0a080")))
+    fig_b.update_layout(
+        height=460, barmode="overlay",
+        xaxis=dict(title="Desl. horizontal (mm)"),
+        yaxis=dict(autorange="reversed"),
+        margin=dict(l=10, r=10, t=30, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02))
+    st.plotly_chart(fig_b, use_container_width=True)
+
+    lider = g.iloc[0]
+    seg = g.iloc[1] if len(g) > 1 else None
+    txt_onde = (f"O elemento com maior movimentacao e «{lider[COLS['edificio']]}» "
+                f"(max {lider['maximo']:.1f} mm, media {lider['media']:.1f} mm).")
+    if seg is not None:
+        racio = lider["maximo"] / seg["maximo"] if seg["maximo"] else float("nan")
+        txt_onde += (f" O segundo é «{seg[COLS['edificio']]}» (max "
+                     f"{seg['maximo']:.1f} mm) — o líder move-se {racio:.1f}x "
+                     f"mais, o que indica concentracao espacial e nao "
+                     f"movimento uniforme do recinto.")
+    st.caption(txt_onde + " Nota para a interpretacao: cruze a zona critica "
+               "com a geologia (separador Geologia) e com a orientacao face "
+               "a escavacao (a fachada voltada para a escavacao move mais).")
+
+    # ============ (c) QUANDO / RITMO ============
+    st.divider()
+    st.markdown("#### 3. Quando e a que ritmo — velocidade de movimentacao")
+    st.caption("O deslocamento total nao distingue um movimento lento e "
+               "continuo de um surto rapido. A velocidade (mm/dia entre "
+               "campanhas) revela QUANDO o movimento acelerou — o momento a "
+               "cruzar com o avanco da obra.")
+    alvos_disp = sorted(ult.nlargest(15, COLS["desl_h"])[COLS["alvo"]]
+                        .astype(str).tolist())
+    alvo_sel = st.selectbox("Alvo a analisar (velocidade)", alvos_disp,
+                            key="an_alvo_vel")
+    s = alvos[alvos[COLS["alvo"]].astype(str) == alvo_sel].sort_values(
+        COLS["data"])[[COLS["data"], COLS["desl_h"]]].dropna()
+    s["dias"] = (s[COLS["data"]] - s[COLS["data"]].shift()).dt.days
+    s["dincr"] = s[COLS["desl_h"]].diff()
+    s["vel"] = s["dincr"] / s["dias"]
+    s_v = s.dropna(subset=["vel"])
+    if not s_v.empty:
+        fig_c = go.Figure()
+        fig_c.add_trace(go.Bar(
+            x=[pd.to_datetime(v) for v in s_v[COLS["data"]].tolist()],
+            y=[float(v) for v in s_v["vel"].tolist()],
+            name="Velocidade (mm/dia)", marker=dict(color="#1f78d1")))
+        fig_c.update_layout(
+            height=340, xaxis=dict(title="Data", type="date"),
+            yaxis=dict(title="Velocidade (mm/dia)"),
+            margin=dict(t=30, b=40),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02))
+        st.plotly_chart(fig_c, use_container_width=True)
+        pico = s_v.loc[s_v["vel"].idxmax()]
+        st.caption(
+            f"O alvo {alvo_sel} teve velocidade maxima de {pico['vel']:.2f} "
+            f"mm/dia no intervalo terminado a "
+            f"{pico[COLS['data']].strftime('%d/%m/%Y')}. Nota para a "
+            f"interpretacao: veja no separador Sintese o que a obra estava a "
+            f"fazer nessa data (fase, cota de escavacao atingida, nivel de "
+            f"agua) — a coincidencia temporal e a base do argumento causal.")
+
+    # ============ (d) PROFUNDIDADE ============
+    st.divider()
+    st.markdown("#### 4. A que profundidade — perfil inclinometrico")
+    st.caption("A profundidade do deslocamento maximo indica o mecanismo: um "
+               "maximo perto da superficie sugere um comportamento diferente "
+               "de um maximo em profundidade (junto ao pe da cortina ou a uma "
+               "camada especifica).")
+    res = dados.get("resumo")
+    if res is not None and not res.empty:
+        res = res.copy()
+        res[COLS["data"]] = pd.to_datetime(res[COLS["data"]], errors="coerce")
+        linhas = []
+        for inc in sorted(res[COLS["inclinometro"]].dropna().unique()):
+            si = res[res[COLS["inclinometro"]] == inc].sort_values(
+                COLS["data"]).iloc[-1]
+            linhas.append({
+                "Inclinometro": inc,
+                "Desl. max (mm)": round(float(si[COLS["desl_max_global"]]), 1),
+                "Profundidade do max (m)": round(float(si[COLS["prof_do_max"]]), 1),
+            })
+        df_d = pd.DataFrame(linhas)
+        st.dataframe(df_d, use_container_width=True, hide_index=True)
+        # comentario neutro sobre a dispersao das profundidades
+        profs = df_d["Profundidade do max (m)"]
+        if profs.max() - profs.min() > 5:
+            st.caption(
+                "Nota para a interpretacao: os inclinometros apresentam o "
+                "maximo a profundidades diferentes — o mecanismo de deformacao "
+                "nao e o mesmo em todo o recinto. Cruze cada profundidade com "
+                "o perfil geologico local (separador Geologia) e com a cota de "
+                "escavacao para distinguir os mecanismos.")
+        else:
+            st.caption(
+                "Nota para a interpretacao: os maximos ocorrem a profundidades "
+                "semelhantes — sugere um mecanismo de deformacao comum. Cruze "
+                "com o perfil geologico e a cota de escavacao.")
+    else:
+        st.info("Sem dados de inclinometros para o perfil de profundidade.")
+
+    st.divider()
+    st.info(
+        "Esta analise quantifica as movimentacoes observadas. O passo seguinte "
+        "— interpretar as causas (geologia, faseamento, dimensionamento) e, se "
+        "aplicavel, comparar com os valores previstos em projeto — e "
+        "desenvolvido no texto da tese, usando esta evidencia. A app apoia o "
+        "raciocinio; nao substitui a interpretacao do autor.")
+
+
 def separador_sintese(dados):
     """
     Sintese do back-analysis: num unico eixo temporal, cruza a DEFORMACAO
@@ -3528,12 +3711,15 @@ def main():
         with tplan:
             separador_planta(dados)
     else:
-        thome, t3d, tsint, tpress = st.tabs(
-            ["Inicio", "Terreno + Alvos 3D", "Sintese", "Pressupostos"])
+        thome, t3d, tanal, tsint, tpress = st.tabs(
+            ["Inicio", "Terreno + Alvos 3D", "Analise", "Sintese",
+             "Pressupostos"])
         with thome:
             separador_home(dados)
         with t3d:
             separador_terreno_alvos_3d(dados)
+        with tanal:
+            separador_analise(dados)
         with tsint:
             separador_sintese(dados)
         with tpress:
