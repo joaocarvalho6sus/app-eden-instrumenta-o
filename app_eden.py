@@ -3254,13 +3254,23 @@ def separador_sintese(dados):
             escav_visiveis.append((k, rotulo, t, cota))
 
     # deformacao (eixo Y esquerdo)
+    # NOTA: converter para listas Python puras (list()) em vez de deixar passar
+    # arrays numpy/pandas. Com numpy, o Plotly recente serializa os valores em
+    # base64 ("bdata"), o que — em combinacao com o eixo Y duplo (overlaying)
+    # desta figura — faz as series NAO renderizarem no Plotly.js do Streamlit
+    # Cloud (grafico aparecia em branco). As listas puras evitam essa
+    # codificacao. Isto e local a Sintese; os outros graficos nao sao afetados.
     fig.add_trace(go.Scatter(
-        x=df_def[COLS["data"]], y=df_def["def"], mode="lines+markers",
+        x=[pd.to_datetime(v) for v in df_def[COLS["data"]].tolist()],
+        y=[float(v) for v in df_def["def"].tolist()],
+        mode="lines+markers",
         name=lbl_def, line=dict(color="#c0140f", width=2)))
     # agua (eixo Y direito)
     if df_agua is not None and not df_agua.empty:
         fig.add_trace(go.Scatter(
-            x=df_agua[COLS["data"]], y=df_agua["agua"], mode="lines+markers",
+            x=[pd.to_datetime(v) for v in df_agua[COLS["data"]].tolist()],
+            y=[float(v) for v in df_agua["agua"].tolist()],
+            mode="lines+markers",
             name=f"Cota da agua {pz_sel} (m)", yaxis="y2",
             line=dict(color="#2563eb", width=2, dash="dot")))
 
@@ -3272,7 +3282,7 @@ def separador_sintese(dados):
                    tickfont=dict(color="#c0140f")),
         yaxis2=dict(title=dict(text="Cota da agua (m)", font=dict(color="#2563eb")),
                     tickfont=dict(color="#2563eb"),
-                    overlaying="y", side="right"),
+                    overlaying="y", side="right", anchor="x"),
         legend=dict(orientation="h", yanchor="bottom", y=-0.25))
     st.plotly_chart(fig, use_container_width=True)
     legenda_fases(fases_vis)
