@@ -3559,12 +3559,98 @@ def separador_analise(dados):
     else:
         st.info("Alvo sem leituras suficientes para a analise temporal.")
 
+    # ============ (7) CELULAS DE CARGA x MOVIMENTO ============
+    st.divider()
+    st.markdown("#### 7. Cargas nas ancoragens × Movimento")
+    st.caption(
+        "Cruza a CARGA medida numa celula de carga (ancoragem) com o MOVIMENTO "
+        "de um alvo, no mesmo eixo de tempo. Responde a: a ancoragem ganhou "
+        "carga (o terreno continuou a empurrar) enquanto o alvo se movia? "
+        "Carga acima da blocagem indica que a ancoragem esta a ser solicitada "
+        "acima do valor de instalacao. Criterio das celulas: +15% (alerta), "
+        "+25% (alarme) sobre a carga. IMPORTANTE: a leitura conjunta e "
+        "evidencia sobre o comportamento da contencao; a conclusao sobre "
+        "dimensionamento e do autor.")
+
+    cc = dados.get("celulas")
+    if cc is None or cc.empty:
+        st.info("Sem dados de celulas de carga.")
+    else:
+        cc = cc.copy()
+        cc[COLS["data"]] = pd.to_datetime(cc[COLS["data"]], errors="coerce")
+        c7a, c7b = st.columns(2)
+        with c7a:
+            cel_sel = st.selectbox(
+                "Celula de carga", sorted(cc[COLS["celula"]].dropna().unique()),
+                key="an_celula")
+        with c7b:
+            alvo7 = st.selectbox(
+                "Alvo a sobrepor", alvos_disp2, key="an_alvo_celula")
+
+        sc = cc[cc[COLS["celula"]] == cel_sel].sort_values(COLS["data"])
+        bloc = float(sc[COLS["blocagem"]].iloc[0])
+        anc = sc[COLS["ancoragem"]].iloc[0]
+        sa = alvos[alvos[COLS["alvo"]].astype(str) == alvo7].sort_values(
+            COLS["data"])[[COLS["data"], COLS["desl_h"]]].dropna()
+
+        fig7 = go.Figure()
+        # carga (eixo esquerdo)
+        fig7.add_trace(go.Scatter(
+            x=[pd.to_datetime(v) for v in sc[COLS["data"]].tolist()],
+            y=[float(v) for v in sc[COLS["carga_atual"]].tolist()],
+            mode="lines+markers", name=f"Carga {cel_sel} (kN)",
+            line=dict(color="#7a1fa0", width=2)))
+        # movimento do alvo (eixo direito)
+        fig7.add_trace(go.Scatter(
+            x=[pd.to_datetime(v) for v in sa[COLS["data"]].tolist()],
+            y=[float(v) for v in sa[COLS["desl_h"]].tolist()],
+            mode="lines+markers", name=f"Desl. H {alvo7} (mm)", yaxis="y2",
+            line=dict(color="#c0140f", width=2, dash="dot")))
+        # linhas de blocagem e limiares 15%/25% (em kN), yref ao eixo esquerdo
+        for mult, txt, cor in [(1.0, "Blocagem", "#999"),
+                               (1.15, "+15% alerta", "#e67e00"),
+                               (1.25, "+25% alarme", "#c0140f")]:
+            fig7.add_hline(y=bloc * mult, line=dict(color=cor, width=1, dash="dash"),
+                           annotation_text=txt, annotation_position="right")
+        fig7.update_layout(
+            height=460,
+            xaxis=dict(title="Data", type="date"),
+            yaxis=dict(title=dict(text=f"Carga (kN) — bloc. {bloc:.0f}",
+                                  font=dict(color="#7a1fa0")),
+                       tickfont=dict(color="#7a1fa0")),
+            yaxis2=dict(title=dict(text="Desl. horizontal (mm)",
+                                   font=dict(color="#c0140f")),
+                        tickfont=dict(color="#c0140f"),
+                        overlaying="y", side="right", anchor="x"),
+            margin=dict(t=40, b=90),
+            legend=dict(orientation="h", yanchor="top", y=-0.2,
+                        xanchor="center", x=0.5))
+        st.plotly_chart(fig7, use_container_width=True)
+
+        # leitura factual: a carga cresceu? em que estado terminou?
+        c0 = float(sc[COLS["carga_atual"]].iloc[0])
+        c1 = float(sc[COLS["carga_atual"]].iloc[-1])
+        pct_fim = (c1 / bloc - 1) * 100
+        estado_fim = sc["Estado"].iloc[-1] if "Estado" in sc.columns else "?"
+        cresceu = c1 > c0
+        st.caption(
+            f"A ancoragem {anc} (celula {cel_sel}) "
+            f"{'ganhou' if cresceu else 'perdeu'} carga: {c0:.0f} → {c1:.0f} kN "
+            f"({(c1/c0-1)*100:+.0f}%), terminando a {pct_fim:+.0f}% da blocagem "
+            f"({estado_fim}). Nota para a interpretacao: se a carga na ancoragem "
+            f"sobe ao mesmo tempo que o alvo se move, o terreno esta a solicitar "
+            f"a contencao acima do previsto nessa zona — evidencia relevante "
+            f"para discutir o dimensionamento e uma eventual solucao alternativa "
+            f"(ex.: mais ancoragens ou ancoragens mais precoces na zona critica). "
+            f"A conclusao e do autor.")
+
     st.divider()
     st.info(
-        "Esta analise quantifica as movimentacoes observadas e alinha-as com o "
-        "faseamento. A interpretacao das causas (mecanismo geologico, sequencia "
-        "construtiva, dimensionamento) e desenvolvida no texto da tese, usando "
-        "esta evidencia. A app organiza e quantifica; nao substitui a "
+        "Esta analise quantifica as movimentacoes e cruza-as com o faseamento e "
+        "as cargas nas ancoragens. A interpretacao das causas (mecanismo "
+        "geologico, sequencia construtiva, dimensionamento) e a eventual "
+        "proposta de solucao alternativa sao desenvolvidas no texto da tese, "
+        "usando esta evidencia. A app organiza e quantifica; nao substitui a "
         "interpretacao do autor.")
 
 
