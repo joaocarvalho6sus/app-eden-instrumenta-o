@@ -3466,13 +3466,106 @@ def separador_analise(dados):
         f"interpretacao a fundamentar no texto (a memoria descritiva ressalva "
         f"que os proprios criterios ficam 'a confirmar em fase de obra').")
 
+    # ============ (6) MOVIMENTO x FASEAMENTO ============
+    st.divider()
+    st.markdown("#### 6. Movimento × Faseamento — coincidencia temporal")
+    st.caption(
+        "Alinha a evolucao do movimento de um alvo com as datas REAIS em que a "
+        "escavacao atingiu cada cota (marcos E1-E8). Para cada janela entre "
+        "marcos, calcula quanto o alvo se moveu e a que velocidade. Se a "
+        "velocidade aumenta a medida que a escavacao desce, ha uma coincidencia "
+        "temporal entre o aprofundamento da escavacao e a aceleracao do "
+        "movimento. IMPORTANTE: coincidencia temporal e EVIDENCIA para o "
+        "argumento causal, nao a sua prova — a interpretacao do mecanismo "
+        "(desconfinamento, geologia, faseamento) e do autor.")
+
+    alvos_disp2 = sorted(ult.nlargest(15, COLS["desl_h"])[COLS["alvo"]]
+                         .astype(str).tolist())
+    alvo6 = st.selectbox("Alvo a analisar (movimento vs. escavacao)",
+                         alvos_disp2, key="an_alvo_fase")
+    s6 = alvos[alvos[COLS["alvo"]].astype(str) == alvo6].sort_values(
+        COLS["data"])[[COLS["data"], COLS["desl_h"]]].dropna()
+    if len(s6) >= 2:
+        # interpolacao do desl acumulado numa data (escala de datas consistente)
+        xd = s6[COLS["data"]].values.astype("datetime64[ns]").astype("int64")
+        yv = s6[COLS["desl_h"]].to_numpy()
+
+        def _desl_em(d):
+            dv = pd.to_datetime(d).to_datetime64().astype(
+                "datetime64[ns]").astype("int64")
+            return float(np.interp(dv, xd, yv))
+
+        dmin = s6[COLS["data"]].min()
+        dmax = s6[COLS["data"]].max()
+        # marcos de escavacao dentro da janela de leituras do alvo
+        marcos = []
+        for rot, cota, ini, fim in ESCAVACAO_COTAS:
+            t = pd.to_datetime(fim)
+            if dmin <= t <= dmax:
+                marcos.append((t, rot, cota))
+        marcos.sort()
+        # pontos: inicio -> cada marco -> ultima leitura
+        pts = [(dmin, "inicio", None)] + marcos + [(dmax, "ultima leitura", None)]
+        linhas6 = []
+        for i in range(1, len(pts)):
+            d0, r0, c0 = pts[i - 1]
+            d1, r1, c1 = pts[i]
+            if d1 <= d0:
+                continue
+            v0 = _desl_em(d0); v1 = _desl_em(d1)
+            dias = (d1 - d0).days
+            dv = v1 - v0
+            vel = dv / dias if dias else 0.0
+            linhas6.append({
+                "Ate": d1.strftime("%d/%m/%Y"),
+                "Marco (cota escavada)": (f"{r1} (cota {c1:.1f})"
+                                          if c1 is not None else r1),
+                "Movimento na janela (mm)": round(dv, 1),
+                "Dias": dias,
+                "Velocidade (mm/dia)": round(vel, 3),
+            })
+        df6 = pd.DataFrame(linhas6)
+        st.dataframe(df6, use_container_width=True, hide_index=True)
+
+        # grafico: velocidade por janela (barras) alinhado ao avanco da cota
+        fig6 = go.Figure()
+        fig6.add_trace(go.Bar(
+            x=df6["Ate"], y=df6["Velocidade (mm/dia)"],
+            marker=dict(color="#1f78d1"), name="Velocidade (mm/dia)"))
+        fig6.update_layout(
+            height=340, xaxis=dict(title="Fim da janela de escavacao"),
+            yaxis=dict(title="Velocidade (mm/dia)"),
+            margin=dict(t=30, b=60),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02))
+        st.plotly_chart(fig6, use_container_width=True)
+
+        # leitura factual da tendencia (sem afirmar causa)
+        if len(df6) >= 3:
+            v_ini = df6["Velocidade (mm/dia)"].iloc[0]
+            v_fim = df6["Velocidade (mm/dia)"].iloc[-1]
+            cresce = v_fim > v_ini
+            racio = (v_fim / v_ini) if v_ini > 0 else float("nan")
+            tend = ("AUMENTA" if cresce else "diminui")
+            txt = (f"A velocidade do alvo {alvo6} {tend} da primeira janela "
+                   f"({v_ini:.2f} mm/dia) para a ultima ({v_fim:.2f} mm/dia)")
+            if cresce and v_ini > 0 and racio == racio:
+                txt += f" — cerca de {racio:.0f}x mais rapido"
+            txt += (". Nota para a interpretacao: um aumento de velocidade "
+                    "conforme a escavacao aprofunda e coerente com um efeito de "
+                    "desconfinamento progressivo, MAS a confirmacao do mecanismo "
+                    "exige cruzar com a geologia local e a sequencia construtiva "
+                    "— e argumento do autor, nao conclusao automatica da app.")
+            st.caption(txt)
+    else:
+        st.info("Alvo sem leituras suficientes para a analise temporal.")
+
     st.divider()
     st.info(
-        "Esta analise quantifica as movimentacoes observadas. O passo seguinte "
-        "— interpretar as causas (geologia, faseamento, dimensionamento) e, se "
-        "aplicavel, comparar com os valores previstos em projeto — e "
-        "desenvolvido no texto da tese, usando esta evidencia. A app apoia o "
-        "raciocinio; nao substitui a interpretacao do autor.")
+        "Esta analise quantifica as movimentacoes observadas e alinha-as com o "
+        "faseamento. A interpretacao das causas (mecanismo geologico, sequencia "
+        "construtiva, dimensionamento) e desenvolvida no texto da tese, usando "
+        "esta evidencia. A app organiza e quantifica; nao substitui a "
+        "interpretacao do autor.")
 
 
 def separador_sintese(dados):
