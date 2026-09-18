@@ -167,6 +167,39 @@ ZONA_FIXA_GRUPO = {
     "Clinica": "poente_norte",
 }
 
+# Localizacao das CELULAS DE CARGA (alcado/zona onde esta a ancoragem).
+# So faz sentido cruzar a carga de uma celula com o movimento de alvos do
+# MESMO alcado/zona. CONFIRMADO em planta e modelo 3D do projeto: ambas as
+# celulas estao na cortina sob o edificio da Santa Casa (lado poente, ZG2,
+# junto a ancoragem A26). Por isso cruzam validamente com os alvos da Santa
+# Casa (A1-A8...). Cada entrada: (rotulo da zona, filtro de grupo de alvos).
+#   - CC 2501796 / A26: cortina da Santa Casa (Piso -1, cota 15,90)
+#   - CC 200792  / DE : cortina da Santa Casa (proxima da A26)
+LOCALIZACAO_CELULAS = {
+    "CC 2501796": ("Cortina sob a Santa Casa — ZG2, Piso -1 (cota 15,90), junto a A26", "Santa Casa"),
+    "CC 200792":  ("Cortina sob a Santa Casa — ZG2, Piso -2 (cota 12,45), perto da A26", "Santa Casa"),
+}
+
+# Imagens de localizacao de cada celula (planta/alcado do projeto + contexto).
+# Ficheiros em fotos_celulas/ (ao lado do script). Cada entrada: lista de
+# (ficheiro, legenda). A "planta_geral" e partilhada como contexto do recinto.
+IMAGENS_CELULAS = {
+    "CC 2501796": [
+        ("cc_2501796_planta.jpg",
+         "Planta de localizacao das celulas — A26, Piso -1 (cota 15,90), ZG2"),
+        ("planta_geral.jpg",
+         "Planta de localizacao geral (recinto) — celula assinalada a poente"),
+    ],
+    "CC 200792": [
+        ("cc_200792_alcado.jpg",
+         "Alcado D-E — ancoragem DE, Piso -2 (cota 12,45), ZG2"),
+        ("cc_200792_3d.jpg",
+         "Modelo 3D do projeto — localizacao da celula (lado da Santa Casa)"),
+        ("planta_geral.jpg",
+         "Planta de localizacao geral (recinto) — celula assinalada a poente"),
+    ],
+}
+
 ALCADOS_24M = {"FG", "GH", "JK", "KL", "MNO", "OP"}
 ALCADOS_17M = {"AB", "CD", "BF", "PQ"}
 ALCADOS_A_CONFIRMAR = {"DE"}         # sem deslocamento -> grupo nao distinguivel
@@ -3578,18 +3611,65 @@ def separador_analise(dados):
     else:
         cc = cc.copy()
         cc[COLS["data"]] = pd.to_datetime(cc[COLS["data"]], errors="coerce")
-        c7a, c7b = st.columns(2)
-        with c7a:
-            cel_sel = st.selectbox(
-                "Celula de carga", sorted(cc[COLS["celula"]].dropna().unique()),
-                key="an_celula")
-        with c7b:
-            alvo7 = st.selectbox(
-                "Alvo a sobrepor", alvos_disp2, key="an_alvo_celula")
+        # escolher a celula primeiro; o filtro de alvos depende da sua zona
+        cel_sel = st.selectbox(
+            "Celula de carga", sorted(cc[COLS["celula"]].dropna().unique()),
+            key="an_celula")
+        loc_cel = LOCALIZACAO_CELULAS.get(cel_sel)
+        rotulo_zona = loc_cel[0] if loc_cel else None
+        filtro_grupo = loc_cel[1] if loc_cel else None
 
         sc = cc[cc[COLS["celula"]] == cel_sel].sort_values(COLS["data"])
         bloc = float(sc[COLS["blocagem"]].iloc[0])
         anc = sc[COLS["ancoragem"]].iloc[0]
+
+        # RESTRICAO FISICA: se a zona da celula e conhecida, so oferecer alvos
+        # do grupo correspondente (mesmo alcado). Caso contrario, todos, com
+        # aviso de que o par pode nao ser valido.
+        if filtro_grupo:
+            alvos_validos = sorted(
+                ult[ult[COLS["edificio"]].astype(str)
+                    .str.contains(filtro_grupo, case=False, na=False)]
+                [COLS["alvo"]].astype(str).unique())
+            if not alvos_validos:
+                alvos_validos = alvos_disp2   # salvaguarda
+            st.success(
+                f"✓ Localizacao confirmada: a celula {cel_sel} (ancoragem "
+                f"{anc}) esta na **{rotulo_zona}**. O seletor de alvos abaixo "
+                f"esta restrito aos alvos dessa zona — o cruzamento carga vs. "
+                f"movimento e, assim, fisicamente valido.")
+        else:
+            alvos_validos = alvos_disp2
+            st.warning(
+                f"⚠ A localizacao da celula {cel_sel} (ancoragem {anc}) nao "
+                f"esta confirmada. O cruzamento so tera significado fisico se o "
+                f"alvo pertencer ao mesmo alcado da ancoragem — confirme na "
+                f"planta antes de tirar conclusoes.")
+
+        alvo7 = st.selectbox("Alvo a sobrepor (mesma zona da celula)",
+                             alvos_validos, key="an_alvo_celula")
+
+        # imagens de localizacao da celula (planta/alcado/3D do projeto)
+        imgs = IMAGENS_CELULAS.get(cel_sel, [])
+        if imgs:
+            with st.expander(f"📍 Ver localizacao da celula {cel_sel} "
+                             f"(pecas do projeto)"):
+                base_dir = Path(__file__).resolve().parent
+                mostrou = False
+                for fich, legenda in imgs:
+                    fp = base_dir / "fotos_celulas" / fich
+                    if not fp.exists():
+                        fp = Path("fotos_celulas") / fich
+                    if fp.exists():
+                        st.image(str(fp), caption=legenda,
+                                 use_container_width=True)
+                        mostrou = True
+                if not mostrou:
+                    st.info("Imagens de localizacao nao encontradas (pasta "
+                            "'fotos_celulas/'). Verifica que foram publicadas "
+                            "com a app.")
+                st.caption("Imagens das pecas desenhadas do projeto de "
+                           "contencao (JETsj), para situar a celula na cortina.")
         sa = alvos[alvos[COLS["alvo"]].astype(str) == alvo7].sort_values(
             COLS["data"])[[COLS["data"], COLS["desl_h"]]].dropna()
 
