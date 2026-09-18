@@ -1695,6 +1695,31 @@ def separador_alvos_2d(dados):
 # =========================================================================
 # SEPARADOR 4 — CELULAS DE CARGA
 # =========================================================================
+def _mostrar_imagens_celula(cel_sel, key_suffix=""):
+    """Mostra, num expander, as imagens de localizacao da celula (pecas do
+    projeto). Reutilizada no separador Celulas (Inputs) e na Analise."""
+    imgs = IMAGENS_CELULAS.get(cel_sel, [])
+    if not imgs:
+        return
+    with st.expander(f"📍 Ver localizacao da celula {cel_sel} (pecas do projeto)"):
+        base_dir = Path(__file__).resolve().parent
+        mostrou = False
+        for fich, legenda in imgs:
+            fp = base_dir / "fotos_celulas" / fich
+            if not fp.exists():
+                fp = Path("fotos_celulas") / fich
+            if fp.exists():
+                st.image(str(fp), caption=legenda, use_container_width=True)
+                mostrou = True
+        if not mostrou:
+            st.info("Imagens de localizacao nao encontradas (pasta "
+                    "'fotos_celulas/'). Verifica que foram publicadas com a app.")
+        loc = LOCALIZACAO_CELULAS.get(cel_sel)
+        if loc:
+            st.caption(f"Localizacao: {loc[0]}. Imagens das pecas desenhadas do "
+                       f"projeto de contencao (JETsj).")
+
+
 def separador_celulas(dados):
     cc = dados["celulas"]
     if not validar_colunas(cc, [COLS["data"], COLS["celula"], COLS["carga_atual"],
@@ -1703,6 +1728,7 @@ def separador_celulas(dados):
     cc = cc.sort_values(COLS["data"])
     st.subheader("Celulas de carga")
     cel = st.selectbox("Celula", sorted(cc[COLS["celula"]].dropna().unique()))
+    _mostrar_imagens_celula(cel, key_suffix="_inputs")
     sub = cc[cc[COLS["celula"]] == cel].sort_values(COLS["data"])
     col1, col2 = st.columns(2)
     with col1:
@@ -3650,26 +3676,7 @@ def separador_analise(dados):
                              alvos_validos, key="an_alvo_celula")
 
         # imagens de localizacao da celula (planta/alcado/3D do projeto)
-        imgs = IMAGENS_CELULAS.get(cel_sel, [])
-        if imgs:
-            with st.expander(f"📍 Ver localizacao da celula {cel_sel} "
-                             f"(pecas do projeto)"):
-                base_dir = Path(__file__).resolve().parent
-                mostrou = False
-                for fich, legenda in imgs:
-                    fp = base_dir / "fotos_celulas" / fich
-                    if not fp.exists():
-                        fp = Path("fotos_celulas") / fich
-                    if fp.exists():
-                        st.image(str(fp), caption=legenda,
-                                 use_container_width=True)
-                        mostrou = True
-                if not mostrou:
-                    st.info("Imagens de localizacao nao encontradas (pasta "
-                            "'fotos_celulas/'). Verifica que foram publicadas "
-                            "com a app.")
-                st.caption("Imagens das pecas desenhadas do projeto de "
-                           "contencao (JETsj), para situar a celula na cortina.")
+        _mostrar_imagens_celula(cel_sel, key_suffix="_analise")
         sa = alvos[alvos[COLS["alvo"]].astype(str) == alvo7].sort_values(
             COLS["data"])[[COLS["data"], COLS["desl_h"]]].dropna()
 
