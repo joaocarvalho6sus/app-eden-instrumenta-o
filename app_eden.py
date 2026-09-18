@@ -185,18 +185,17 @@ LOCALIZACAO_CELULAS = {
 # (ficheiro, legenda). A "planta_geral" e partilhada como contexto do recinto.
 IMAGENS_CELULAS = {
     "CC 2501796": [
-        ("cc_2501796_planta.jpg",
-         "Planta de localizacao das celulas — A26, Piso -1 (cota 15,90), ZG2"),
+        ("cc_2501796_3d.jpg",
+         "Modelo 3D do projeto — localizacao da celula A26 (Piso -1, cota 15,90); "
+         "Santa Casa assinalada"),
         ("planta_geral.jpg",
-         "Planta de localizacao geral (recinto) — celula assinalada a poente"),
+         "Planta de localizacao geral (recinto) — celula a poente, sob a Santa Casa"),
     ],
     "CC 200792": [
         ("cc_200792_alcado.jpg",
-         "Alcado D-E — ancoragem DE, Piso -2 (cota 12,45), ZG2"),
-        ("cc_200792_3d.jpg",
-         "Modelo 3D do projeto — localizacao da celula (lado da Santa Casa)"),
+         "Alcado D-E — ancoragem DE (Piso -2, cota 12,45), ZG2"),
         ("planta_geral.jpg",
-         "Planta de localizacao geral (recinto) — celula assinalada a poente"),
+         "Planta de localizacao geral (recinto) — celula a poente, sob a Santa Casa"),
     ],
 }
 
