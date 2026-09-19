@@ -3744,6 +3744,160 @@ def separador_analise(dados):
             f"(ex.: mais ancoragens ou ancoragens mais precoces na zona critica). "
             f"A conclusao e do autor.")
 
+        # --- comparacao lado-a-lado de TODAS as celulas ---
+        st.markdown("**Comparacao entre celulas (ancoragens)**")
+        linhas_cmp = []
+        for cl in sorted(cc[COLS["celula"]].dropna().unique()):
+            s = cc[cc[COLS["celula"]] == cl].sort_values(COLS["data"])
+            bl = float(s[COLS["blocagem"]].iloc[0])
+            v_ini = float(s[COLS["carga_atual"]].iloc[0])
+            v_fim = float(s[COLS["carga_atual"]].iloc[-1])
+            v_max = float(s[COLS["carga_atual"]].max())
+            loc = LOCALIZACAO_CELULAS.get(cl)
+            linhas_cmp.append({
+                "Celula": cl,
+                "Ancoragem": s[COLS["ancoragem"]].iloc[0],
+                "Localizacao": (loc[0].split("—")[-1].strip() if loc else "?"),
+                "Periodo": (f"{s[COLS['data']].min().strftime('%d/%m/%y')}–"
+                            f"{s[COLS['data']].max().strftime('%d/%m/%y')}"),
+                "Blocagem (kN)": round(bl),
+                "Carga fim (kN)": round(v_fim),
+                "Variacao (%)": round((v_fim / v_ini - 1) * 100, 1),
+                "Max vs bloc. (%)": round((v_max / bl - 1) * 100, 1),
+                "Estado": (s["Estado"].iloc[-1] if "Estado" in s.columns else "?"),
+            })
+        df_cmp = pd.DataFrame(linhas_cmp)
+        st.dataframe(df_cmp, use_container_width=True, hide_index=True)
+
+        # aviso metodologico: periodos de medicao diferentes
+        periodos = cc.groupby(COLS["celula"])[COLS["data"]].min()
+        if periodos.nunique() > 1:
+            mais_cedo = periodos.idxmin()
+            mais_tarde = periodos.idxmax()
+            dias_dif = (periodos.max() - periodos.min()).days
+            st.warning(
+                f"⚠ Cuidado na comparacao: as celulas NAO comecaram a medir na "
+                f"mesma data. A {mais_tarde} comecou ~{dias_dif} dias depois da "
+                f"{mais_cedo}, por isso perdeu a fase inicial de carregamento. "
+                f"Uma variacao menor pode refletir esse arranque tardio, e nao "
+                f"apenas menor solicitacao — a comparacao das variacoes (%) entre "
+                f"celulas com periodos diferentes deve ser lida com esta "
+                f"ressalva. A comparacao justa e em % da blocagem no periodo "
+                f"comum.")
+        st.caption(
+            "Nota para a interpretacao: se as celulas estao na mesma cortina mas "
+            "a cotas diferentes, uma carga que sobe so na ancoragem superior "
+            "(enquanto a inferior fica estavel) e coerente com deformacao "
+            "concentrada no topo (tipo consola) — cruze com o perfil dos "
+            "inclinometros (seccao 4) para confirmar a forma da deformada. A "
+            "leitura do mecanismo e do autor.")
+
+    # ============ (8) MECANISMO: DEFORMADA NO TEMPO + VETORES ============
+    st.divider()
+    st.markdown("#### 8. Mecanismo de deformacao — forma e direcao do movimento")
+    st.caption("Duas leituras do MECANISMO: como a deformada da cortina evolui "
+               "em profundidade ao longo do tempo, e como os alvos de um "
+               "edificio se movem (horizontal vs. vertical). Ajudam a "
+               "caracterizar o tipo de movimento; a interpretacao e do autor.")
+
+    import numpy as np
+    perfis = dados.get("perfis")
+
+    # ---- 8a: deformada do inclinometro em varias campanhas ----
+    st.markdown("**8a. Deformada do inclinometro ao longo do tempo**")
+    if perfis is not None and not perfis.empty:
+        perfis = perfis.copy()
+        perfis[COLS["data"]] = pd.to_datetime(perfis[COLS["data"]], errors="coerce")
+        incs = sorted(perfis[COLS["inclinometro"]].dropna().unique())
+        inc_sel = st.selectbox("Inclinometro", incs, key="an_inc_deformada")
+        pi = perfis[perfis[COLS["inclinometro"]] == inc_sel]
+        datas_i = sorted(pi[COLS["data"]].dropna().unique())
+        # escolher ate 6 campanhas espacadas (da 1a a ultima) para nao poluir
+        if len(datas_i) > 6:
+            idx = np.linspace(0, len(datas_i) - 1, 6).astype(int)
+            datas_plot = [datas_i[i] for i in idx]
+        else:
+            datas_plot = datas_i
+        fig8 = go.Figure()
+        n = len(datas_plot)
+        for k, d in enumerate(datas_plot):
+            s = pi[pi[COLS["data"]] == d].sort_values(COLS["profundidade"])
+            # cor da mais antiga (clara) a mais recente (escura/vermelha)
+            frac = k / max(n - 1, 1)
+            cor = f"rgb({int(150+105*frac)},{int(180-150*frac)},{int(200-150*frac)})"
+            fig8.add_trace(go.Scatter(
+                x=[float(v) for v in s[COLS["desl_total"]].tolist()],
+                y=[float(v) for v in s[COLS["profundidade"]].tolist()],
+                mode="lines+markers", name=pd.to_datetime(d).strftime("%d/%m/%Y"),
+                line=dict(color=cor, width=2), marker=dict(size=3)))
+        fig8.update_layout(
+            height=560,
+            xaxis=dict(title="Deslocamento acumulado (mm)"),
+            yaxis=dict(title="Profundidade (m)", autorange="reversed"),
+            margin=dict(t=30, b=40),
+            legend=dict(title="Campanha", orientation="v", x=1.02, y=1))
+        st.plotly_chart(fig8, use_container_width=True)
+        # racio topo/base ao longo do tempo (quantifica a "abertura" da consola)
+        linhas_r = []
+        for d in datas_i:
+            s = pi[pi[COLS["data"]] == d]
+            topo = s[s[COLS["profundidade"]] <= 7][COLS["desl_total"]].max()
+            base = s[s[COLS["profundidade"]] >= 16][COLS["desl_total"]].max()
+            if pd.notna(topo) and pd.notna(base) and base > 0.5:
+                linhas_r.append((pd.to_datetime(d), topo / base))
+        if len(linhas_r) >= 2:
+            r0 = linhas_r[0][1]; r1 = linhas_r[-1][1]
+            st.caption(
+                f"Nota para a interpretacao: no {inc_sel}, o racio "
+                f"deslocamento-topo / deslocamento-base evoluiu de {r0:.1f} para "
+                f"{r1:.1f} entre a primeira e a ultima campanha. Um racio "
+                f"crescente indica que a deformada se concentra cada vez mais no "
+                f"topo (comportamento tipo consola a acentuar-se com a "
+                f"escavacao). A leitura do mecanismo e do autor.")
+    else:
+        st.info("Sem perfis de inclinometro para a deformada no tempo.")
+
+    # ---- 8b: vetores de movimento (H vs V) de um edificio ----
+    st.markdown("**8b. Direcao do movimento — horizontal vs. vertical**")
+    edificios = sorted(ult[COLS["edificio"]].astype(str).unique())
+    # por defeito, o edificio critico (Santa Casa) se existir
+    idx_def = next((i for i, e in enumerate(edificios) if "Santa Casa" in e), 0)
+    edi_sel = st.selectbox("Edificio / elemento", edificios, index=idx_def,
+                           key="an_edi_vetor")
+    sub_e = ult[ult[COLS["edificio"]].astype(str) == edi_sel].copy()
+    if not sub_e.empty:
+        fig8b = go.Figure()
+        H = sub_e[COLS["desl_h"]].to_numpy()
+        V = sub_e[COLS["dZ"]].to_numpy()
+        nomes = sub_e[COLS["alvo"]].astype(str).to_numpy()
+        # cada alvo: um ponto (H, V) + rotulo; V negativo = assentamento
+        fig8b.add_trace(go.Scatter(
+            x=[float(v) for v in H], y=[float(v) for v in V],
+            mode="markers+text", text=list(nomes), textposition="top center",
+            marker=dict(size=10, color="#c0140f"),
+            name="Alvos"))
+        fig8b.add_hline(y=0, line=dict(color="#888", width=1))
+        fig8b.update_layout(
+            height=460,
+            xaxis=dict(title="Deslocamento horizontal (mm)"),
+            yaxis=dict(title="Deslocamento vertical ΔZ (mm) — negativo = assenta"),
+            margin=dict(t=30, b=40), showlegend=False)
+        st.plotly_chart(fig8b, use_container_width=True)
+        # leitura factual da razao V/H
+        vh = np.divide(np.abs(V), H, out=np.zeros_like(V, dtype=float), where=H > 0)
+        if len(vh):
+            st.caption(
+                f"Cada ponto e um alvo de «{edi_sel}»: posicao horizontal = "
+                f"deslocamento H, vertical = ΔZ (abaixo de zero = assentamento). "
+                f"A razao V/H varia entre {vh.min():.2f} e {vh.max():.2f} neste "
+                f"edificio. Nota para a interpretacao: se os alvos superiores "
+                f"tem V/H baixo (movem-se sobretudo na horizontal) e os "
+                f"inferiores V/H alto (assentam mais), a fachada RODA/INCLINA "
+                f"em vez de transladar em bloco — cruze com a posicao vertical "
+                f"de cada alvo. A leitura do mecanismo e do autor.")
+    else:
+        st.info("Sem alvos para este edificio.")
+
     st.divider()
     st.info(
         "Esta analise quantifica as movimentacoes e cruza-as com o faseamento e "
