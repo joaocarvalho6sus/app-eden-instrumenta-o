@@ -3675,6 +3675,21 @@ def separador_analise(dados):
 
         # imagens de localizacao da celula (planta/alcado/3D do projeto)
         _mostrar_imagens_celula(cel_sel, key_suffix="_analise")
+
+        # localizacao do ALVO escolhido (foto do edificio, como no separador
+        # Alvos) — para situar o alvo a par da celula com que e comparado.
+        alvos_edi = alvos[(alvos[COLS["data"]] == ult_data) &
+                          (alvos[COLS["edificio"]].astype(str)
+                           .str.contains("Santa Casa", case=False, na=False))]
+        if not alvos_edi.empty:
+            edi_nome = alvos_edi[COLS["edificio"]].iloc[0]
+            with st.expander(f"📍 Ver localizacao do alvo {alvo7} "
+                             f"(no edificio Santa Casa)"):
+                COR_ESTADO_LOC = {"Alarme": "#c0140f", "Alerta": "#e67e00",
+                                  "Regular": "#1f9e55"}
+                mostrar_localizacao_alvo(alvos_edi, edi_nome, [alvo7],
+                                         COR_ESTADO_LOC)
+
         sa = alvos[alvos[COLS["alvo"]].astype(str) == alvo7].sort_values(
             COLS["data"])[[COLS["data"], COLS["desl_h"]]].dropna()
 
