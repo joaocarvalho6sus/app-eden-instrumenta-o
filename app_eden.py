@@ -3857,46 +3857,56 @@ def separador_analise(dados):
     else:
         st.info("Sem perfis de inclinometro para a deformada no tempo.")
 
-    # ---- 8b: vetores de movimento (H vs V) de um edificio ----
-    st.markdown("**8b. Direcao do movimento — horizontal vs. vertical**")
+    # ---- 8b: componentes H e V do movimento, por alvo ----
+    st.markdown("**8b. Componentes do movimento (horizontal e vertical) por alvo**")
     edificios = sorted(ult[COLS["edificio"]].astype(str).unique())
-    # por defeito, o edificio critico (Santa Casa) se existir
     idx_def = next((i for i, e in enumerate(edificios) if "Santa Casa" in e), 0)
     edi_sel = st.selectbox("Edificio / elemento", edificios, index=idx_def,
                            key="an_edi_vetor")
     sub_e = ult[ult[COLS["edificio"]].astype(str) == edi_sel].copy()
+    sub_e = sub_e.dropna(subset=[COLS["desl_h"], COLS["dZ"]])
     if not sub_e.empty:
+        sub_e = sub_e.sort_values(COLS["desl_h"], ascending=False)
+        nomes = sub_e[COLS["alvo"]].astype(str).tolist()
+        H = [float(v) for v in sub_e[COLS["desl_h"]].tolist()]
+        # assentamento como valor positivo para a barra (magnitude), rotulado
+        Vmag = [abs(float(v)) for v in sub_e[COLS["dZ"]].tolist()]
         fig8b = go.Figure()
-        H = sub_e[COLS["desl_h"]].to_numpy()
-        V = sub_e[COLS["dZ"]].to_numpy()
-        nomes = sub_e[COLS["alvo"]].astype(str).to_numpy()
-        # cada alvo: um ponto (H, V) + rotulo; V negativo = assentamento
-        fig8b.add_trace(go.Scatter(
-            x=[float(v) for v in H], y=[float(v) for v in V],
-            mode="markers+text", text=list(nomes), textposition="top center",
-            marker=dict(size=10, color="#c0140f"),
-            name="Alvos"))
-        fig8b.add_hline(y=0, line=dict(color="#888", width=1))
+        fig8b.add_trace(go.Bar(x=nomes, y=H, name="Deslocamento horizontal (mm)",
+                               marker=dict(color="#c0140f")))
+        fig8b.add_trace(go.Bar(x=nomes, y=Vmag,
+                               name="Assentamento |ΔZ| (mm)",
+                               marker=dict(color="#2563eb")))
         fig8b.update_layout(
-            height=460,
-            xaxis=dict(title="Deslocamento horizontal (mm)"),
-            yaxis=dict(title="Deslocamento vertical ΔZ (mm) — negativo = assenta"),
-            margin=dict(t=30, b=40), showlegend=False)
+            height=430, barmode="group",
+            xaxis=dict(title="Alvo"),
+            yaxis=dict(title="Movimento (mm)"),
+            margin=dict(t=30, b=40),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02))
         st.plotly_chart(fig8b, use_container_width=True)
-        # leitura factual da razao V/H
-        vh = np.divide(np.abs(V), H, out=np.zeros_like(V, dtype=float), where=H > 0)
-        if len(vh):
-            st.caption(
-                f"Cada ponto e um alvo de «{edi_sel}»: posicao horizontal = "
-                f"deslocamento H, vertical = ΔZ (abaixo de zero = assentamento). "
-                f"A razao V/H varia entre {vh.min():.2f} e {vh.max():.2f} neste "
-                f"edificio. Nota para a interpretacao: se os alvos superiores "
-                f"tem V/H baixo (movem-se sobretudo na horizontal) e os "
-                f"inferiores V/H alto (assentam mais), a fachada RODA/INCLINA "
-                f"em vez de transladar em bloco — cruze com a posicao vertical "
-                f"de cada alvo. A leitura do mecanismo e do autor.")
+        # leitura factual, SEM afirmar rotacao em altura (os alvos deste
+        # edificio estao ~a mesma cota; a variacao e ao longo da fachada)
+        vh = [Vmag[i] / H[i] if H[i] > 0 else 0 for i in range(len(H))]
+        Z = sub_e[COLS["Z0"]] if COLS.get("Z0") in sub_e.columns else None
+        amplitude_z = (float(sub_e[COLS["Z0"]].max() - sub_e[COLS["Z0"]].min())
+                       if COLS.get("Z0") in sub_e.columns else None)
+        txt = (f"Para cada alvo de «{edi_sel}»: a barra vermelha e o "
+               f"deslocamento horizontal, a azul o assentamento (|ΔZ|). A razao "
+               f"assentamento/horizontal (V/H) varia entre {min(vh):.2f} e "
+               f"{max(vh):.2f} entre alvos.")
+        if amplitude_z is not None and amplitude_z < 3:
+            txt += (f" ATENCAO: neste edificio os alvos estao quase todos a mesma "
+                    f"cota (variacao de so ~{amplitude_z:.1f} m em altura), por "
+                    f"isso esta variacao de V/H reflete diferencas AO LONGO da "
+                    f"fachada, NAO uma rotacao em altura — para avaliar rotacao "
+                    f"vertical seriam precisos alvos a cotas diferentes. A "
+                    f"leitura do mecanismo e do autor.")
+        else:
+            txt += (" Cruze o V/H com a cota de cada alvo para avaliar se ha "
+                    "rotacao. A leitura do mecanismo e do autor.")
+        st.caption(txt)
     else:
-        st.info("Sem alvos para este edificio.")
+        st.info("Sem alvos com H e V para este edificio.")
 
     st.divider()
     st.info(
