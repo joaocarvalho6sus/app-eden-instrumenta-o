@@ -1357,23 +1357,15 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
                                   mode="lines+markers", name="Maximo global"))
         fig2.add_trace(go.Scatter(x=s_fix[COLS["data"]], y=s_fix[COLS["desl_total"]],
                                   mode="lines+markers", name=f"A {prof_fixa:.1f} m"))
-        fases_vis_inc = None
-        if st.session_state.get("mostrar_obra") and len(s_max):
-            fases_vis_inc = adicionar_fases_obra(fig2, s_max[COLS["data"]].min(),
-                                                 s_max[COLS["data"]].max())
         fig2.update_xaxes(title="Data")
         fig2.update_yaxes(title="Deslocamento (mm)")
         fig2.update_layout(
             height=780,
-            legend=dict(title="Serie / fases", orientation="v",
+            legend=dict(title="Serie", orientation="v",
                         yanchor="top", y=1, xanchor="left", x=1.02,
                         font=dict(size=11)),
             margin=dict(r=60, t=60, b=40))
         st.plotly_chart(fig2, use_container_width=True)
-        if fases_vis_inc:
-            st.caption("A barra no topo mostra o faseamento da obra (cada fase "
-                       "com o seu numero e cor, ver legenda a direita). Repara "
-                       "se a aceleracao do deslocamento coincide com uma fase.")
 
     st.divider()
     st.subheader("Velocidade e sinais precursores")
@@ -1634,10 +1626,6 @@ def separador_alvos_2d(dados):
             s = sub[sub[COLS["alvo"]] == a].sort_values(COLS["data"])
             fig.add_trace(go.Scatter(x=s[COLS["data"]], y=s[COLS["desl_h"]],
                                      mode="lines+markers", name=a))
-        fases_vis_alv = None
-        if st.session_state.get("mostrar_obra") and len(sub):
-            fases_vis_alv = adicionar_fases_obra(fig, sub[COLS["data"]].min(),
-                                                 sub[COLS["data"]].max())
         fig.add_hline(y=Ha, line_dash="dash", line_color="orange",
                       annotation_text=f"Alerta {Ha}", annotation_position="right")
         fig.add_hline(y=Hm, line_dash="dash", line_color="red",
@@ -1648,7 +1636,6 @@ def separador_alvos_2d(dados):
         fig.update_xaxes(title="Data")
         fig.update_yaxes(title="Desl. horizontal (mm)")
         configurar_eixo_tempo(fig, granul)
-        obra_on = st.session_state.get("mostrar_obra")
         fig.update_layout(
             height=780,
             margin=dict(r=60, t=60, b=40),
@@ -1665,8 +1652,6 @@ def separador_alvos_2d(dados):
             s = sub[sub[COLS["alvo"]] == a].sort_values(COLS["data"])
             fig2.add_trace(go.Scatter(x=s[COLS["data"]], y=s[COLS["dZ"]],
                                       mode="lines+markers", name=a))
-        if st.session_state.get("mostrar_obra") and len(sub):
-            adicionar_fases_obra(fig2, sub[COLS["data"]].min(), sub[COLS["data"]].max())
         # limiares verticais: o assentamento e negativo -> desenhar em -Va e -Vm
         fig2.add_hline(y=-Va, line_dash="dash", line_color="orange",
                        annotation_text=f"Alerta -{Va}", annotation_position="right")
@@ -1678,7 +1663,6 @@ def separador_alvos_2d(dados):
         fig2.update_xaxes(title="Data")
         fig2.update_yaxes(title="ΔZ (mm)")
         configurar_eixo_tempo(fig2, granul)
-        obra_on2 = st.session_state.get("mostrar_obra")
         fig2.update_layout(
             height=780,
             margin=dict(r=60, t=60, b=40),
@@ -1808,21 +1792,14 @@ def separador_piezometros(dados):
     fig.add_trace(go.Scatter(x=sub[COLS["data"]], y=sub[COLS["cota_agua"]],
                              mode="lines+markers", name="Cota da agua (PZ)",
                              line=dict(color="#2563eb", width=2)))
-    fases_vis_pz = []
-    if st.session_state.get("mostrar_obra") and len(sub):
-        fases_vis_pz = adicionar_fases_obra(fig, sub[COLS["data"]].min(),
-                                            sub[COLS["data"]].max())
     fig.update_xaxes(title="Data")
     fig.update_yaxes(title="Cota (m)")
-    obra_on_pz = st.session_state.get("mostrar_obra") and fases_vis_pz
     fig.update_layout(
-        height=760 if obra_on_pz else 560,
+        height=560,
         margin=dict(r=180, t=40, b=40),
         legend=dict(orientation="v", yanchor="top", y=1,
                     xanchor="left", x=1.01, font=dict(size=10)))
     st.plotly_chart(fig, use_container_width=True)
-    # nota: o faseamento aparece na barra no topo do grafico e na legenda a
-    # direita; a caption redundante foi removida.
 
     # leitura cruzada quantitativa
     if len(sub):
@@ -4242,14 +4219,6 @@ def main():
     fator_acel = st.sidebar.slider("Fator de aceleracao (x)", 1.2, 3.0,
                                    FATOR_ACEL_DEFEITO, 0.1)
 
-    st.sidebar.divider()
-    st.sidebar.subheader("Sequencia da obra")
-    mostrar_obra = st.sidebar.checkbox(
-        "Sobrepor fases da obra aos graficos temporais", value=True,
-        help="Mostra, nos graficos com data no eixo, as fases do plano de "
-             "trabalhos (Alves Ribeiro). Datas PREVISTAS — nao as reais.")
-    st.session_state["mostrar_obra"] = mostrar_obra
-
     if not TEM_SCIPY:
         st.sidebar.info("Instala 'scipy' para ativar a superficie 3D interpolada.")
 
@@ -4267,13 +4236,13 @@ def main():
     st.sidebar.subheader("Navegacao")
     frente = st.sidebar.radio(
         "Componente",
-        ["Inputs — instrumentacao, geologia e planeamento",
-         "Outputs — analise de resultados"],
-        help="Inputs: os dados que alimentam a analise (cada instrumento, a "
-             "geologia e o planeamento da obra). Outputs: a analise e avaliacao "
+        ["Dados — instrumentacao, geologia e planeamento",
+         "Analise — analise de resultados"],
+        help="Dados: os dados que alimentam a analise (cada instrumento, a "
+             "geologia e o planeamento da obra). Analise: a analise e avaliacao "
              "de resultados e o comportamento no espaco.")
 
-    if frente.startswith("Inputs"):
+    if frente.startswith("Dados"):
         thome, tinc, talv, tcc, tpz, tgeo, tobra, tplan = st.tabs(
             ["Inicio", "Inclinometros", "Alvos (2D)", "Celulas de carga",
              "Piezometros", "Geologia", "Obra", "Planta (DXF)"])
