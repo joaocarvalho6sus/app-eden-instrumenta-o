@@ -512,7 +512,7 @@ def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True,
     para abrir espaco; a Gantt partilha o eixo X e alinha automaticamente.
     NAO usar com eixos Y duplos (overlaying) — o domain so afeta um eixo.
 
-    barra_topo=False: modo legado para graficos de eixo Y duplo (ex. Sintese)
+    barra_topo=False: modo legado para graficos de eixo Y duplo (ex. Correlacoes)
     — faixas de fundo translucidas + numero no inicio de cada fase, SEM tocar
     no domain do eixo Y.
 
@@ -1602,8 +1602,8 @@ def separador_alvos_2d(dados):
         granul = st.selectbox("Detalhe do eixo temporal",
                               ["Automatico", "Mensal", "Quinzenal", "Semanal"],
                               index=0,
-                              help="Marcas mais finas ajudam a ler o faseamento "
-                                   "da obra (as campanhas sao ~8 em 8 dias).")
+                              help="Marcas mais finas ajudam a ler as "
+                                   "campanhas (~8 em 8 dias).")
     with cz2:
         # janela de datas para focar um periodo (ex. onde os deslocamentos disparam)
         d_min = pd.to_datetime(sub[COLS["data"]].min()).date()
@@ -1670,16 +1670,13 @@ def separador_alvos_2d(dados):
                         xanchor="left", x=1.02, font=dict(size=11)))
         st.plotly_chart(fig2, use_container_width=True)
 
-    # nota: as fases aparecem agora na legenda a direita de cada grafico
-    # (uma entrada por faixa), por isso a caption redundante foi removida.
-
 
 # =========================================================================
 # SEPARADOR 4 — CELULAS DE CARGA
 # =========================================================================
 def _mostrar_imagens_celula(cel_sel, key_suffix=""):
     """Mostra, num expander, as imagens de localizacao da celula (pecas do
-    projeto). Reutilizada no separador Celulas (Inputs) e na Analise."""
+    projeto). Reutilizada no separador Celulas (Dados) e na Analise."""
     imgs = IMAGENS_CELULAS.get(cel_sel, [])
     if not imgs:
         return
@@ -1800,6 +1797,8 @@ def separador_piezometros(dados):
         legend=dict(orientation="v", yanchor="top", y=1,
                     xanchor="left", x=1.01, font=dict(size=10)))
     st.plotly_chart(fig, use_container_width=True)
+    # nota: o faseamento aparece na barra no topo do grafico e na legenda a
+    # direita; a caption redundante foi removida.
 
     # leitura cruzada quantitativa
     if len(sub):
@@ -1813,13 +1812,10 @@ def separador_piezometros(dados):
             f"O fundo de escavacao (**{COTA_FUNDO_ESCAVACAO:.2f} m**) fica "
             f"{c_fim - COTA_FUNDO_ESCAVACAO:.1f} m abaixo da agua atual e "
             f"~{nf_med - COTA_FUNDO_ESCAVACAO:.0f} m abaixo do nivel freatico "
-            f"de repouso de 2022 (~{nf_med:.0f} m). A descida acompanha o "
-            f"avanco da escavacao — coerente com rebaixamento induzido.")
+            f"de repouso de 2022 (~{nf_med:.0f} m).")
     st.caption("Cotas de projeto: escavacao e contencao periferica (JETsj, "
                "PRO/2023/368). NF de repouso: piezometros das sondagens "
-               "(ENGGEO, Quadro III, 24/11/2022). Possivel melhoria: sobrepor "
-               "precipitacao diaria para separar a resposta a pluviosidade do "
-               "efeito da escavacao.")
+               "(ENGGEO, Quadro III, 24/11/2022).")
 
 
 # =========================================================================
@@ -3237,24 +3233,20 @@ def separador_terreno_alvos_3d(dados):
                     "junto com a app.")
 
 
-def separador_analise(dados):
+def separador_resultados(dados):
     """
-    ANALISE DESCRITIVA das principais movimentacoes observadas. Quantifica o
-    QUE aconteceu (quanto, onde, quando/a que ritmo, a que profundidade), de
-    forma a servir de base defensavel para a interpretacao do PORQUE (feita
-    pelo autor no texto da tese, nao pela app).
-
-    Principio: a app organiza e quantifica a evidencia; NAO afirma causas. As
-    notas orientadoras apontam o que cruzar (faseamento, geologia, agua), mas a
-    conclusao causal e do autor.
+    RESULTADOS — quantificacao factual das movimentacoes observadas pela
+    instrumentacao. Magnitude, distribuicao espacial, ritmo, profundidade e
+    comparacao com a estimativa de projeto. Sao ILUSTRACOES DOS RESULTADOS,
+    sem interpretacao de causas: a correlacao entre instrumentos esta no
+    separador Correlacoes; a interpretacao do PORQUE e do autor no texto.
     """
     import numpy as np
-    st.subheader("Analise — principais movimentacoes observadas")
-    st.caption("Quantificacao das movimentacoes medidas pela instrumentacao, "
-               "para fundamentar a interpretacao. Esta seccao descreve O QUE "
-               "aconteceu (quanto, onde, a que ritmo, a que profundidade); a "
-               "interpretacao do PORQUE (geologia, faseamento, dimensionamento) "
-               "e do autor, apoiada nesta evidencia e nos outros separadores.")
+    st.subheader("Resultados — movimentacoes observadas")
+    st.caption("Quantificacao factual do que a instrumentacao mediu: quanto, "
+               "onde, a que ritmo e a que profundidade, e como se compara com a "
+               "estimativa de projeto. Ilustracao de resultados, sem "
+               "interpretacao de causas.")
 
     alvos = dados.get("alvos")
     if alvos is None or alvos.empty:
@@ -3265,7 +3257,7 @@ def separador_analise(dados):
     ult_data = alvos[COLS["data"]].max()
     ult = anexar_estado_calculado(alvos[alvos[COLS["data"]] == ult_data].copy())
 
-    # ============ (a) QUANTO ============
+    # ---- 1. QUANTO ----
     st.markdown("#### 1. Quanto — magnitude das movimentacoes")
     n_alarme = int((ult["Estado calculado"] == "Alarme").sum())
     n_alerta = int((ult["Estado calculado"] == "Alerta").sum())
@@ -3286,18 +3278,14 @@ def separador_analise(dados):
     st.markdown("**Ranking dos 10 alvos mais deslocados** (ultima campanha, "
                 f"{ult_data.strftime('%d/%m/%Y')}):")
     st.dataframe(top, use_container_width=True, hide_index=True)
-
     top1 = top.iloc[0]
-    st.caption(
-        f"O maior deslocamento horizontal e do alvo {top1['Alvo']} "
-        f"({top1['Desl. H (mm)']:.1f} mm), no elemento «{top1['Edificio / elemento']}». "
-        f"Nota para a interpretacao: verifique se os alvos no topo do ranking "
-        f"pertencem ao mesmo elemento/zona — isso indica movimentacao "
-        f"concentrada, nao dispersa.")
+    st.caption(f"Maior deslocamento horizontal: alvo {top1['Alvo']} "
+               f"({top1['Desl. H (mm)']:.1f} mm), no elemento "
+               f"«{top1['Edificio / elemento']}».")
 
-    # ============ (b) ONDE ============
+    # ---- 2. ONDE ----
     st.divider()
-    st.markdown("#### 2. Onde — concentracao espacial")
+    st.markdown("#### 2. Onde — distribuicao espacial")
     g = ult.groupby(COLS["edificio"])[COLS["desl_h"]].agg(
         media="mean", maximo="max", n="count").reset_index()
     g = g.sort_values("maximo", ascending=False)
@@ -3319,32 +3307,26 @@ def separador_analise(dados):
         margin=dict(l=10, r=10, t=30, b=40),
         legend=dict(orientation="h", yanchor="bottom", y=1.02))
     st.plotly_chart(fig_b, use_container_width=True)
-
     lider = g.iloc[0]
     seg = g.iloc[1] if len(g) > 1 else None
-    txt_onde = (f"O elemento com maior movimentacao e «{lider[COLS['edificio']]}» "
+    txt_onde = (f"Elemento com maior movimentacao: «{lider[COLS['edificio']]}» "
                 f"(max {lider['maximo']:.1f} mm, media {lider['media']:.1f} mm).")
     if seg is not None:
         racio = lider["maximo"] / seg["maximo"] if seg["maximo"] else float("nan")
-        txt_onde += (f" O segundo é «{seg[COLS['edificio']]}» (max "
-                     f"{seg['maximo']:.1f} mm) — o líder move-se {racio:.1f}x "
-                     f"mais, o que indica concentracao espacial e nao "
-                     f"movimento uniforme do recinto.")
-    st.caption(txt_onde + " Nota para a interpretacao: cruze a zona critica "
-               "com a geologia (separador Geologia) e com a orientacao face "
-               "a escavacao (a fachada voltada para a escavacao move mais).")
+        txt_onde += (f" O segundo e «{seg[COLS['edificio']]}» (max "
+                     f"{seg['maximo']:.1f} mm) — o primeiro move-se "
+                     f"{racio:.1f}x mais.")
+    st.caption(txt_onde)
 
-    # ============ (c) QUANDO / RITMO ============
+    # ---- 3. QUANDO / RITMO ----
     st.divider()
     st.markdown("#### 3. Quando e a que ritmo — velocidade de movimentacao")
-    st.caption("O deslocamento total nao distingue um movimento lento e "
-               "continuo de um surto rapido. A velocidade (mm/dia entre "
-               "campanhas) revela QUANDO o movimento acelerou — o momento a "
-               "cruzar com o avanco da obra.")
+    st.caption("Velocidade (mm/dia entre campanhas) do deslocamento horizontal "
+               "de um alvo. Mostra quando o movimento acelerou.")
     alvos_disp = sorted(ult.nlargest(15, COLS["desl_h"])[COLS["alvo"]]
                         .astype(str).tolist())
     alvo_sel = st.selectbox("Alvo a analisar (velocidade)", alvos_disp,
-                            key="an_alvo_vel")
+                            key="res_alvo_vel")
     s = alvos[alvos[COLS["alvo"]].astype(str) == alvo_sel].sort_values(
         COLS["data"])[[COLS["data"], COLS["desl_h"]]].dropna()
     s["dias"] = (s[COLS["data"]] - s[COLS["data"]].shift()).dt.days
@@ -3364,21 +3346,15 @@ def separador_analise(dados):
             legend=dict(orientation="h", yanchor="bottom", y=1.02))
         st.plotly_chart(fig_c, use_container_width=True)
         pico = s_v.loc[s_v["vel"].idxmax()]
-        st.caption(
-            f"O alvo {alvo_sel} teve velocidade maxima de {pico['vel']:.2f} "
-            f"mm/dia no intervalo terminado a "
-            f"{pico[COLS['data']].strftime('%d/%m/%Y')}. Nota para a "
-            f"interpretacao: veja no separador Sintese o que a obra estava a "
-            f"fazer nessa data (fase, cota de escavacao atingida, nivel de "
-            f"agua) — a coincidencia temporal e a base do argumento causal.")
+        st.caption(f"Velocidade maxima do alvo {alvo_sel}: {pico['vel']:.2f} "
+                   f"mm/dia, no intervalo terminado a "
+                   f"{pico[COLS['data']].strftime('%d/%m/%Y')}.")
 
-    # ============ (d) PROFUNDIDADE ============
+    # ---- 4. PROFUNDIDADE ----
     st.divider()
     st.markdown("#### 4. A que profundidade — perfil inclinometrico")
-    st.caption("A profundidade do deslocamento maximo indica o mecanismo: um "
-               "maximo perto da superficie sugere um comportamento diferente "
-               "de um maximo em profundidade (junto ao pe da cortina ou a uma "
-               "camada especifica).")
+    st.caption("Profundidade do deslocamento maximo de cada inclinometro e "
+               "evolucao da deformada ao longo do tempo.")
     res = dados.get("resumo")
     if res is not None and not res.empty:
         res = res.copy()
@@ -3394,44 +3370,59 @@ def separador_analise(dados):
             })
         df_d = pd.DataFrame(linhas)
         st.dataframe(df_d, use_container_width=True, hide_index=True)
-        # comentario neutro sobre a dispersao das profundidades
-        profs = df_d["Profundidade do max (m)"]
-        if profs.max() - profs.min() > 5:
-            st.caption(
-                "Nota para a interpretacao: os inclinometros apresentam o "
-                "maximo a profundidades diferentes — o mecanismo de deformacao "
-                "nao e o mesmo em todo o recinto. Cruze cada profundidade com "
-                "o perfil geologico local (separador Geologia) e com a cota de "
-                "escavacao para distinguir os mecanismos.")
-        else:
-            st.caption(
-                "Nota para a interpretacao: os maximos ocorrem a profundidades "
-                "semelhantes — sugere um mecanismo de deformacao comum. Cruze "
-                "com o perfil geologico e a cota de escavacao.")
     else:
         st.info("Sem dados de inclinometros para o perfil de profundidade.")
 
-    # ============ (5) OBSERVADO vs. PREVISTO ============
+    # deformada do inclinometro ao longo do tempo (ilustracao do resultado)
+    perfis = dados.get("perfis")
+    if perfis is not None and not perfis.empty:
+        perfis = perfis.copy()
+        perfis[COLS["data"]] = pd.to_datetime(perfis[COLS["data"]], errors="coerce")
+        incs = sorted(perfis[COLS["inclinometro"]].dropna().unique())
+        inc_sel = st.selectbox("Inclinometro (deformada no tempo)", incs,
+                               key="res_inc_deformada")
+        pi = perfis[perfis[COLS["inclinometro"]] == inc_sel]
+        datas_i = sorted(pi[COLS["data"]].dropna().unique())
+        if len(datas_i) > 6:
+            idx = np.linspace(0, len(datas_i) - 1, 6).astype(int)
+            datas_plot = [datas_i[i] for i in idx]
+        else:
+            datas_plot = datas_i
+        fig8 = go.Figure()
+        n = len(datas_plot)
+        for k, d in enumerate(datas_plot):
+            sp = pi[pi[COLS["data"]] == d].sort_values(COLS["profundidade"])
+            frac = k / max(n - 1, 1)
+            cor = f"rgb({int(150+105*frac)},{int(180-150*frac)},{int(200-150*frac)})"
+            fig8.add_trace(go.Scatter(
+                x=[float(v) for v in sp[COLS["desl_total"]].tolist()],
+                y=[float(v) for v in sp[COLS["profundidade"]].tolist()],
+                mode="lines+markers", name=pd.to_datetime(d).strftime("%d/%m/%Y"),
+                line=dict(color=cor, width=2), marker=dict(size=3)))
+        fig8.update_layout(
+            height=560,
+            xaxis=dict(title="Deslocamento acumulado (mm)"),
+            yaxis=dict(title="Profundidade (m)", autorange="reversed"),
+            margin=dict(t=30, b=40),
+            legend=dict(title="Campanha", orientation="v", x=1.02, y=1))
+        st.plotly_chart(fig8, use_container_width=True)
+        st.caption(f"Deformada do {inc_sel} em varias campanhas (cor mais clara "
+                   f"= mais antiga; mais escura = mais recente).")
+
+    # ---- 5. OBSERVADO vs PREVISTO ----
     st.divider()
     st.markdown("#### 5. Observado vs. Previsto — comparacao com o projeto")
     st.caption(
-        "Compara o deslocamento horizontal OBSERVADO com a ESTIMATIVA DE "
-        "PROJETO (memoria descritiva JETsj: ~20 mm na cortina poente/norte, "
-        "~10 mm na nascente/sul — valor de CALCULO para a ultima fase de "
-        "escavacao, nao um limite) e com os criterios de alerta/alarme. "
-        "A coluna «Origem zona» distingue: «confirmada» = orientacao verificada "
-        "em planta (edificios vizinhos Santa Casa, Cimas e Clinica, todos com "
-        "componente poente ou norte -> 20 mm); «inferida» = deduzida da "
-        "geometria dos alvos, A CONFIRMAR, pois o referencial (M,P) esta rodado "
-        "face ao norte real. Nota: os alvos de edificios vizinhos medem o "
-        "movimento do EDIFICIO, relacionado mas nao identico a deformacao da "
-        "propria cortina.")
-
+        "Deslocamento horizontal OBSERVADO vs. ESTIMATIVA DE PROJETO (memoria "
+        "descritiva JETsj: ~20 mm na cortina poente/norte, ~10 mm na "
+        "nascente/sul — valor de CALCULO para a ultima fase de escavacao). "
+        "«Origem zona»: «confirmada» = orientacao verificada em planta; "
+        "«inferida» = deduzida da geometria (a confirmar — referencial (M,P) "
+        "rodado face ao norte real).")
     Mc = ult[COLS["M0"]].mean()
     Pc = ult[COLS["P0"]].mean()
     linhas = []
     for chave, grp in ult.groupby(COLS["edificio"]):
-        # 1) tentar mapeamento CONFIRMADO (edificios vizinhos) por nome
         zona_key = None
         origem = "inferida"
         for alvo_nome, zk in ZONA_FIXA_GRUPO.items():
@@ -3439,9 +3430,6 @@ def separador_analise(dados):
                 zona_key = zk
                 origem = "confirmada"
                 break
-        # 2) se nao for conhecido, inferir pela geometria (a confirmar).
-        #    NOTA: o referencial (M,P) esta rodado face ao norte real, por isso
-        #    esta inferencia so vale como aproximacao inicial para os alcados.
         if zona_key is None:
             M = grp[COLS["M0"]].mean()
             P = grp[COLS["P0"]].mean()
@@ -3454,18 +3442,12 @@ def separador_analise(dados):
         dif = obs - prev
         pct = (dif / prev * 100) if prev else float("nan")
         linhas.append({
-            "Grupo": chave,
-            "Zona": zona,
-            "Origem zona": origem,
-            "Previsto (mm)": prev,
-            "Observado max (mm)": round(obs, 1),
-            "Diferenca (mm)": round(dif, 1),
-            "Excesso (%)": round(pct, 0),
+            "Grupo": chave, "Zona": zona, "Origem zona": origem,
+            "Previsto (mm)": prev, "Observado max (mm)": round(obs, 1),
+            "Diferenca (mm)": round(dif, 1), "Excesso (%)": round(pct, 0),
         })
     df5 = pd.DataFrame(linhas).sort_values("Observado max (mm)", ascending=False)
     st.dataframe(df5, use_container_width=True, hide_index=True)
-
-    # grafico previsto vs observado (top por observado)
     top5 = df5.head(12)
     fig5 = go.Figure()
     fig5.add_trace(go.Bar(
@@ -3474,10 +3456,9 @@ def separador_analise(dados):
     fig5.add_trace(go.Bar(
         y=top5["Grupo"], x=top5["Observado max (mm)"], orientation="h",
         name="Observado (max)", marker=dict(color="#c0140f")))
-    # linhas de referencia dos criterios da contencao
-    for xval, txt, cor in [(40, "Alarme contencao (40)", "#8B0000")]:
-        fig5.add_vline(x=xval, line=dict(color=cor, width=1, dash="dash"),
-                       annotation_text=txt, annotation_position="top")
+    fig5.add_vline(x=40, line=dict(color="#8B0000", width=1, dash="dash"),
+                   annotation_text="Alarme contencao (40)",
+                   annotation_position="top")
     fig5.update_layout(
         height=460, barmode="group",
         xaxis=dict(title="Desl. horizontal (mm)"),
@@ -3485,126 +3466,188 @@ def separador_analise(dados):
         margin=dict(l=10, r=10, t=40, b=40),
         legend=dict(orientation="h", yanchor="bottom", y=1.02))
     st.plotly_chart(fig5, use_container_width=True)
-
-    # destaque factual do caso critico, sem afirmar causa
     pior = df5.iloc[0]
     st.caption(
-        f"O grupo com maior excedencia e «{pior['Grupo']}»: observado "
+        f"Maior excedencia: «{pior['Grupo']}» — observado "
         f"{pior['Observado max (mm)']:.1f} mm vs. previsto "
-        f"{pior['Previsto (mm)']:.0f} mm (zona {pior['Zona']}, "
-        f"origem {pior['Origem zona']}) — "
-        f"cerca de {pior['Excesso (%)']:.0f}% acima da estimativa de projeto. "
-        f"Nota para a interpretacao: uma excedencia desta ordem face ao "
-        f"CALCULO de projeto e o ponto de partida da discussao — se reflete a "
-        f"geologia real, o faseamento, a execucao ou o dimensionamento e uma "
-        f"interpretacao a fundamentar no texto (a memoria descritiva ressalva "
-        f"que os proprios criterios ficam 'a confirmar em fase de obra').")
+        f"{pior['Previsto (mm)']:.0f} mm (zona {pior['Zona']}, origem "
+        f"{pior['Origem zona']}), ~{pior['Excesso (%)']:.0f}% acima da "
+        f"estimativa de projeto.")
 
-    # ============ (6) MOVIMENTO x FASEAMENTO ============
-    st.divider()
-    st.markdown("#### 6. Movimento × Faseamento — coincidencia temporal")
-    st.caption(
-        "Alinha a evolucao do movimento de um alvo com as datas REAIS em que a "
-        "escavacao atingiu cada cota (marcos E1-E8). Para cada janela entre "
-        "marcos, calcula quanto o alvo se moveu e a que velocidade. Se a "
-        "velocidade aumenta a medida que a escavacao desce, ha uma coincidencia "
-        "temporal entre o aprofundamento da escavacao e a aceleracao do "
-        "movimento. IMPORTANTE: coincidencia temporal e EVIDENCIA para o "
-        "argumento causal, nao a sua prova — a interpretacao do mecanismo "
-        "(desconfinamento, geologia, faseamento) e do autor.")
 
-    alvos_disp2 = sorted(ult.nlargest(15, COLS["desl_h"])[COLS["alvo"]]
-                         .astype(str).tolist())
-    alvo6 = st.selectbox("Alvo a analisar (movimento vs. escavacao)",
-                         alvos_disp2, key="an_alvo_fase")
-    s6 = alvos[alvos[COLS["alvo"]].astype(str) == alvo6].sort_values(
-        COLS["data"])[[COLS["data"], COLS["desl_h"]]].dropna()
-    if len(s6) >= 2:
-        # interpolacao do desl acumulado numa data (escala de datas consistente)
-        xd = s6[COLS["data"]].values.astype("datetime64[ns]").astype("int64")
-        yv = s6[COLS["desl_h"]].to_numpy()
+def separador_correlacoes(dados):
+    """
+    CORRELACOES — graficos de interacao entre instrumentos. Cruzam, num eixo de
+    tempo comum (ou num diagrama XY), varias series da instrumentacao para
+    ILUSTRAR a correlacao entre os dados introduzidos (agua, escavacao,
+    faseamento, carga nas ancoragens) e as movimentacoes medidas. O objetivo e
+    DEMONSTRAR a correlacao — nao explicar a causa, que e do autor no texto.
+    """
+    import numpy as np
+    st.subheader("Correlacoes — interacao entre instrumentos")
+    st.caption("Graficos que cruzam varias series da instrumentacao para "
+               "mostrar como os movimentos acentuados acompanham os outros "
+               "dados (agua, escavacao, faseamento, carga nas ancoragens). "
+               "Demonstram a correlacao entre os dados; a interpretacao das "
+               "causas e do autor.")
 
-        def _desl_em(d):
-            dv = pd.to_datetime(d).to_datetime64().astype(
-                "datetime64[ns]").astype("int64")
-            return float(np.interp(dv, xd, yv))
+    # =====================================================================
+    # 1. DEFORMACAO x AGUA x ESCAVACAO x FASEAMENTO  (eixo de tempo comum)
+    # =====================================================================
+    st.markdown("#### 1. Deformacao × Agua × Escavacao × Faseamento")
+    st.caption("Num so eixo de tempo: a deformacao medida (esquerda), a cota da "
+               "agua subterranea (direita), os marcos reais de escavacao "
+               "(E1-E..., no fundo) e as fases da obra (faixas de cor). "
+               "Permite ver a deformacao a acelerar enquanto a agua e "
+               "rebaixada e a escavacao avanca.")
 
-        dmin = s6[COLS["data"]].min()
-        dmax = s6[COLS["data"]].max()
-        # marcos de escavacao dentro da janela de leituras do alvo
-        marcos = []
-        for rot, cota, ini, fim in ESCAVACAO_COTAS:
-            t = pd.to_datetime(fim)
-            if dmin <= t <= dmax:
-                marcos.append((t, rot, cota))
-        marcos.sort()
-        # pontos: inicio -> cada marco -> ultima leitura
-        pts = [(dmin, "inicio", None)] + marcos + [(dmax, "ultima leitura", None)]
-        linhas6 = []
-        for i in range(1, len(pts)):
-            d0, r0, c0 = pts[i - 1]
-            d1, r1, c1 = pts[i]
-            if d1 <= d0:
-                continue
-            v0 = _desl_em(d0); v1 = _desl_em(d1)
-            dias = (d1 - d0).days
-            dv = v1 - v0
-            vel = dv / dias if dias else 0.0
-            linhas6.append({
-                "Ate": d1.strftime("%d/%m/%Y"),
-                "Marco (cota escavada)": (f"{r1} (cota {c1:.1f})"
-                                          if c1 is not None else r1),
-                "Movimento na janela (mm)": round(dv, 1),
-                "Dias": dias,
-                "Velocidade (mm/dia)": round(vel, 3),
-            })
-        df6 = pd.DataFrame(linhas6)
-        st.dataframe(df6, use_container_width=True, hide_index=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        tipo = st.radio("Serie de deformacao", ["Inclinometro", "Alvo"],
+                        horizontal=True, key="corr_tipo")
+        st.checkbox("Marcos de escavacao por cota (datas reais)", value=True,
+                    key="corr_escav",
+                    help="Linhas verticais nas datas reais em que a escavacao "
+                         "atingiu cada cota (do plano de trabalhos impactado).")
+    # --- serie de deformacao escolhida ---
+    df_def = None
+    lbl_def = ""
+    with c2:
+        if tipo == "Inclinometro":
+            res = dados.get("resumo")
+            if res is not None and COLS["data"] in res.columns:
+                res = res.copy()
+                res[COLS["data"]] = pd.to_datetime(res[COLS["data"]], errors="coerce")
+                col_inc = "Inclinómetro"
+                incs = sorted(res[col_inc].dropna().unique())
+                sel = st.selectbox("Inclinometro", incs, key="corr_inc")
+                s = res[res[col_inc] == sel].sort_values(COLS["data"])
+                df_def = s[[COLS["data"], "Máx. desloc. acumulado total (mm)"]].rename(
+                    columns={"Máx. desloc. acumulado total (mm)": "def"})
+                lbl_def = f"Desl. max. {sel} (mm)"
+        else:
+            alv = dados["alvos"].copy()
+            alv[COLS["data"]] = pd.to_datetime(alv[COLS["data"]], errors="coerce")
+            alvos = sorted(alv[COLS["alvo"]].dropna().unique())
+            idx = alvos.index("A3") if "A3" in alvos else 0
+            sel = st.selectbox("Alvo", alvos, index=idx, key="corr_alvo")
+            s = alv[alv[COLS["alvo"]] == sel].sort_values(COLS["data"])
+            df_def = s[[COLS["data"], COLS["desl_h"]]].rename(
+                columns={COLS["desl_h"]: "def"})
+            lbl_def = f"Desl. horizontal {sel} (mm)"
 
-        # grafico: velocidade por janela (barras) alinhado ao avanco da cota
-        fig6 = go.Figure()
-        fig6.add_trace(go.Bar(
-            x=df6["Ate"], y=df6["Velocidade (mm/dia)"],
-            marker=dict(color="#1f78d1"), name="Velocidade (mm/dia)"))
-        fig6.update_layout(
-            height=340, xaxis=dict(title="Fim da janela de escavacao"),
-            yaxis=dict(title="Velocidade (mm/dia)"),
-            margin=dict(t=30, b=60),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02))
-        st.plotly_chart(fig6, use_container_width=True)
+    # --- serie da agua (piezometro) ---
+    pz = dados["piezo"].copy()
+    pz[COLS["data"]] = pd.to_datetime(pz[COLS["data"]], errors="coerce")
+    pzs = sorted(pz[COLS["piezometro"]].dropna().unique())
+    pz_sel = pzs[0] if pzs else None
+    df_agua = None
+    if pz_sel:
+        sa = pz[pz[COLS["piezometro"]] == pz_sel].sort_values(COLS["data"])
+        df_agua = sa[[COLS["data"], COLS["cota_agua"]]].rename(
+            columns={COLS["cota_agua"]: "agua"})
 
-        # leitura factual da tendencia (sem afirmar causa)
-        if len(df6) >= 3:
-            v_ini = df6["Velocidade (mm/dia)"].iloc[0]
-            v_fim = df6["Velocidade (mm/dia)"].iloc[-1]
-            cresce = v_fim > v_ini
-            racio = (v_fim / v_ini) if v_ini > 0 else float("nan")
-            tend = ("AUMENTA" if cresce else "diminui")
-            txt = (f"A velocidade do alvo {alvo6} {tend} da primeira janela "
-                   f"({v_ini:.2f} mm/dia) para a ultima ({v_fim:.2f} mm/dia)")
-            if cresce and v_ini > 0 and racio == racio:
-                txt += f" — cerca de {racio:.0f}x mais rapido"
-            txt += (". Nota para a interpretacao: um aumento de velocidade "
-                    "conforme a escavacao aprofunda e coerente com um efeito de "
-                    "desconfinamento progressivo, MAS a confirmacao do mecanismo "
-                    "exige cruzar com a geologia local e a sequencia construtiva "
-                    "— e argumento do autor, nao conclusao automatica da app.")
-            st.caption(txt)
+    if df_def is None or df_def.empty:
+        st.info("Sem dados de deformacao para a serie escolhida.")
     else:
-        st.info("Alvo sem leituras suficientes para a analise temporal.")
+        fig = go.Figure()
+        dt_min = df_def[COLS["data"]].min()
+        dt_max = df_def[COLS["data"]].max()
+        if df_agua is not None and not df_agua.empty:
+            dt_min = min(dt_min, df_agua[COLS["data"]].min())
+            dt_max = max(dt_max, df_agua[COLS["data"]].max())
+        fases_vis = adicionar_fases_obra(fig, dt_min, dt_max, barra_topo=False)
 
-    # ============ (7) CELULAS DE CARGA x MOVIMENTO ============
+        # marcos de escavacao por cota (datas reais) — linha vertical + E1,E2...
+        mostrar_escav = st.session_state.get("corr_escav", True)
+        escav_visiveis = []
+        if mostrar_escav:
+            na_janela = [(pd.to_datetime(fim), rotulo, cota)
+                         for rotulo, cota, ini, fim in ESCAVACAO_COTAS
+                         if dt_min <= pd.to_datetime(fim) <= dt_max]
+            na_janela.sort()
+            for k, (t, rotulo, cota) in enumerate(na_janela, start=1):
+                fig.add_shape(
+                    type="line", xref="x", yref="paper",
+                    x0=t, x1=t, y0=0, y1=1,
+                    line=dict(color="#8B4513", width=1, dash="dash"),
+                    layer="below")
+                fig.add_annotation(
+                    x=t, y=-0.02, yref="paper", text=f"E{k}",
+                    showarrow=False, xanchor="center", yanchor="top",
+                    font=dict(size=9, color="white"),
+                    bgcolor="#8B4513", borderpad=2,
+                    hovertext=f"{rotulo} — {t.strftime('%d/%m/%Y')}")
+                escav_visiveis.append((k, rotulo, t, cota))
+
+        # deformacao (eixo Y esquerdo) — listas Python puras (ver nota abaixo)
+        # NOTA: converter para listas puras evita a serializacao base64 ("bdata")
+        # do Plotly que, com o eixo Y duplo (overlaying), fazia as series NAO
+        # renderizarem no Streamlit Cloud (grafico em branco).
+        fig.add_trace(go.Scatter(
+            x=[pd.to_datetime(v) for v in df_def[COLS["data"]].tolist()],
+            y=[float(v) for v in df_def["def"].tolist()],
+            mode="lines+markers",
+            name=lbl_def, line=dict(color="#c0140f", width=2)))
+        if df_agua is not None and not df_agua.empty:
+            fig.add_trace(go.Scatter(
+                x=[pd.to_datetime(v) for v in df_agua[COLS["data"]].tolist()],
+                y=[float(v) for v in df_agua["agua"].tolist()],
+                mode="lines+markers",
+                name=f"Cota da agua {pz_sel} (m)", yaxis="y2",
+                line=dict(color="#2563eb", width=2, dash="dot")))
+
+        fig.update_layout(
+            height=560,
+            margin=dict(t=60, b=130),
+            # type="date" EXPLICITO: o 1o trace e um trace fantasma das fases
+            # (x=[None]); sem o tipo forcado o eixo X cairia para numerico e as
+            # series de data nao renderizavam.
+            xaxis=dict(title="Data", type="date"),
+            yaxis=dict(title=dict(text=lbl_def, font=dict(color="#c0140f")),
+                       tickfont=dict(color="#c0140f")),
+            yaxis2=dict(title=dict(text="Cota da agua (m)",
+                                   font=dict(color="#2563eb")),
+                        tickfont=dict(color="#2563eb"),
+                        overlaying="y", side="right", anchor="x"),
+            legend=dict(orientation="h", yanchor="top", y=-0.38,
+                        xanchor="center", x=0.5))
+        st.plotly_chart(fig, use_container_width=True)
+        legenda_fases(fases_vis)
+        if escav_visiveis:
+            itens = "  ·  ".join(
+                f"**E{k}** {rotulo} ({t.strftime('%d/%m')})"
+                for k, rotulo, t, cota in escav_visiveis)
+            st.caption("⛏ Escavacao (cota atingida, data real): " + itens)
+
+        if df_agua is not None and len(df_agua) >= 2 and len(df_def) >= 2:
+            d_ini = df_def["def"].iloc[0]
+            d_fim = df_def["def"].iloc[-1]
+            a_ini = df_agua["agua"].iloc[0]
+            a_fim = df_agua["agua"].iloc[-1]
+            st.markdown(
+                f"**Leitura:** no periodo, a deformacao evoluiu de {d_ini:.1f} "
+                f"para **{d_fim:.1f} mm** enquanto a cota da agua desceu de "
+                f"{a_ini:.2f} para **{a_fim:.2f} m** ({a_fim - a_ini:+.2f} m) — "
+                f"as duas series movem-se em sentido oposto ao longo do tempo.")
+
+    # =====================================================================
+    # 2. DEFORMACAO x CARGA NA ANCORAGEM  (mesma zona)
+    # =====================================================================
     st.divider()
-    st.markdown("#### 7. Cargas nas ancoragens × Movimento")
-    st.caption(
-        "Cruza a CARGA medida numa celula de carga (ancoragem) com o MOVIMENTO "
-        "de um alvo, no mesmo eixo de tempo. Responde a: a ancoragem ganhou "
-        "carga (o terreno continuou a empurrar) enquanto o alvo se movia? "
-        "Carga acima da blocagem indica que a ancoragem esta a ser solicitada "
-        "acima do valor de instalacao. Criterio das celulas: +15% (alerta), "
-        "+25% (alarme) sobre a carga. IMPORTANTE: a leitura conjunta e "
-        "evidencia sobre o comportamento da contencao; a conclusao sobre "
-        "dimensionamento e do autor.")
+    st.markdown("#### 2. Deformacao × Carga na ancoragem")
+    st.caption("Cruza a CARGA medida numa celula de carga (ancoragem) com o "
+               "MOVIMENTO de um alvo, no mesmo eixo de tempo. So faz sentido "
+               "cruzar celula e alvo do MESMO alcado/zona. Criterio das "
+               "celulas: +15% (alerta), +25% (alarme) sobre a blocagem.")
+
+    alvos_c = dados.get("alvos")
+    alvos_c = alvos_c.copy()
+    alvos_c[COLS["data"]] = pd.to_datetime(alvos_c[COLS["data"]], errors="coerce")
+    ult_data_c = alvos_c[COLS["data"]].max()
+    ult_c = alvos_c[alvos_c[COLS["data"]] == ult_data_c]
+    alvos_disp2 = sorted(ult_c.nlargest(15, COLS["desl_h"])[COLS["alvo"]]
+                         .astype(str).tolist())
 
     cc = dados.get("celulas")
     if cc is None or cc.empty:
@@ -3612,10 +3655,9 @@ def separador_analise(dados):
     else:
         cc = cc.copy()
         cc[COLS["data"]] = pd.to_datetime(cc[COLS["data"]], errors="coerce")
-        # escolher a celula primeiro; o filtro de alvos depende da sua zona
         cel_sel = st.selectbox(
             "Celula de carga", sorted(cc[COLS["celula"]].dropna().unique()),
-            key="an_celula")
+            key="corr_celula")
         loc_cel = LOCALIZACAO_CELULAS.get(cel_sel)
         rotulo_zona = loc_cel[0] if loc_cel else None
         filtro_grupo = loc_cel[1] if loc_cel else None
@@ -3624,40 +3666,31 @@ def separador_analise(dados):
         bloc = float(sc[COLS["blocagem"]].iloc[0])
         anc = sc[COLS["ancoragem"]].iloc[0]
 
-        # RESTRICAO FISICA: se a zona da celula e conhecida, so oferecer alvos
-        # do grupo correspondente (mesmo alcado). Caso contrario, todos, com
-        # aviso de que o par pode nao ser valido.
         if filtro_grupo:
             alvos_validos = sorted(
-                ult[ult[COLS["edificio"]].astype(str)
-                    .str.contains(filtro_grupo, case=False, na=False)]
+                ult_c[ult_c[COLS["edificio"]].astype(str)
+                      .str.contains(filtro_grupo, case=False, na=False)]
                 [COLS["alvo"]].astype(str).unique())
             if not alvos_validos:
-                alvos_validos = alvos_disp2   # salvaguarda
+                alvos_validos = alvos_disp2
             st.success(
                 f"✓ Localizacao confirmada: a celula {cel_sel} (ancoragem "
                 f"{anc}) esta na **{rotulo_zona}**. O seletor de alvos abaixo "
-                f"esta restrito aos alvos dessa zona — o cruzamento carga vs. "
-                f"movimento e, assim, fisicamente valido.")
+                f"esta restrito a essa zona — o cruzamento e fisicamente valido.")
         else:
             alvos_validos = alvos_disp2
             st.warning(
                 f"⚠ A localizacao da celula {cel_sel} (ancoragem {anc}) nao "
-                f"esta confirmada. O cruzamento so tera significado fisico se o "
-                f"alvo pertencer ao mesmo alcado da ancoragem — confirme na "
-                f"planta antes de tirar conclusoes.")
+                f"esta confirmada. O cruzamento so tem significado fisico se o "
+                f"alvo pertencer ao mesmo alcado da ancoragem.")
 
         alvo7 = st.selectbox("Alvo a sobrepor (mesma zona da celula)",
-                             alvos_validos, key="an_alvo_celula")
+                             alvos_validos, key="corr_alvo_celula")
+        _mostrar_imagens_celula(cel_sel, key_suffix="_corr")
 
-        # imagens de localizacao da celula (planta/alcado/3D do projeto)
-        _mostrar_imagens_celula(cel_sel, key_suffix="_analise")
-
-        # localizacao do ALVO escolhido (foto do edificio, como no separador
-        # Alvos) — para situar o alvo a par da celula com que e comparado.
-        alvos_edi = alvos[(alvos[COLS["data"]] == ult_data) &
-                          (alvos[COLS["edificio"]].astype(str)
-                           .str.contains("Santa Casa", case=False, na=False))]
+        alvos_edi = alvos_c[(alvos_c[COLS["data"]] == ult_data_c) &
+                            (alvos_c[COLS["edificio"]].astype(str)
+                             .str.contains("Santa Casa", case=False, na=False))]
         if not alvos_edi.empty:
             edi_nome = alvos_edi[COLS["edificio"]].iloc[0]
             with st.expander(f"📍 Ver localizacao do alvo {alvo7} "
@@ -3667,23 +3700,20 @@ def separador_analise(dados):
                 mostrar_localizacao_alvo(alvos_edi, edi_nome, [alvo7],
                                          COR_ESTADO_LOC)
 
-        sa = alvos[alvos[COLS["alvo"]].astype(str) == alvo7].sort_values(
+        sa2 = alvos_c[alvos_c[COLS["alvo"]].astype(str) == alvo7].sort_values(
             COLS["data"])[[COLS["data"], COLS["desl_h"]]].dropna()
 
         fig7 = go.Figure()
-        # carga (eixo esquerdo)
         fig7.add_trace(go.Scatter(
             x=[pd.to_datetime(v) for v in sc[COLS["data"]].tolist()],
             y=[float(v) for v in sc[COLS["carga_atual"]].tolist()],
             mode="lines+markers", name=f"Carga {cel_sel} (kN)",
             line=dict(color="#7a1fa0", width=2)))
-        # movimento do alvo (eixo direito)
         fig7.add_trace(go.Scatter(
-            x=[pd.to_datetime(v) for v in sa[COLS["data"]].tolist()],
-            y=[float(v) for v in sa[COLS["desl_h"]].tolist()],
+            x=[pd.to_datetime(v) for v in sa2[COLS["data"]].tolist()],
+            y=[float(v) for v in sa2[COLS["desl_h"]].tolist()],
             mode="lines+markers", name=f"Desl. H {alvo7} (mm)", yaxis="y2",
             line=dict(color="#c0140f", width=2, dash="dot")))
-        # linhas de blocagem e limiares 15%/25% (em kN), yref ao eixo esquerdo
         for mult, txt, cor in [(1.0, "Blocagem", "#999"),
                                (1.15, "+15% alerta", "#e67e00"),
                                (1.25, "+25% alarme", "#c0140f")]:
@@ -3704,24 +3734,17 @@ def separador_analise(dados):
                         xanchor="center", x=0.5))
         st.plotly_chart(fig7, use_container_width=True)
 
-        # leitura factual: a carga cresceu? em que estado terminou?
         c0 = float(sc[COLS["carga_atual"]].iloc[0])
-        c1 = float(sc[COLS["carga_atual"]].iloc[-1])
-        pct_fim = (c1 / bloc - 1) * 100
+        c1v = float(sc[COLS["carga_atual"]].iloc[-1])
+        pct_fim = (c1v / bloc - 1) * 100
         estado_fim = sc["Estado"].iloc[-1] if "Estado" in sc.columns else "?"
-        cresceu = c1 > c0
+        cresceu = c1v > c0
         st.caption(
             f"A ancoragem {anc} (celula {cel_sel}) "
-            f"{'ganhou' if cresceu else 'perdeu'} carga: {c0:.0f} → {c1:.0f} kN "
-            f"({(c1/c0-1)*100:+.0f}%), terminando a {pct_fim:+.0f}% da blocagem "
-            f"({estado_fim}). Nota para a interpretacao: se a carga na ancoragem "
-            f"sobe ao mesmo tempo que o alvo se move, o terreno esta a solicitar "
-            f"a contencao acima do previsto nessa zona — evidencia relevante "
-            f"para discutir o dimensionamento e uma eventual solucao alternativa "
-            f"(ex.: mais ancoragens ou ancoragens mais precoces na zona critica). "
-            f"A conclusao e do autor.")
+            f"{'ganhou' if cresceu else 'perdeu'} carga: {c0:.0f} → {c1v:.0f} kN "
+            f"({(c1v/c0-1)*100:+.0f}%), terminando a {pct_fim:+.0f}% da blocagem "
+            f"({estado_fim}).")
 
-        # --- comparacao lado-a-lado de TODAS as celulas ---
         st.markdown("**Comparacao entre celulas (ancoragens)**")
         linhas_cmp = []
         for cl in sorted(cc[COLS["celula"]].dropna().unique()):
@@ -3746,319 +3769,91 @@ def separador_analise(dados):
         df_cmp = pd.DataFrame(linhas_cmp)
         st.dataframe(df_cmp, use_container_width=True, hide_index=True)
 
-        # aviso metodologico: periodos de medicao diferentes
         periodos = cc.groupby(COLS["celula"])[COLS["data"]].min()
         if periodos.nunique() > 1:
             mais_cedo = periodos.idxmin()
             mais_tarde = periodos.idxmax()
             dias_dif = (periodos.max() - periodos.min()).days
             st.warning(
-                f"⚠ Cuidado na comparacao: as celulas NAO comecaram a medir na "
-                f"mesma data. A {mais_tarde} comecou ~{dias_dif} dias depois da "
-                f"{mais_cedo}, por isso perdeu a fase inicial de carregamento. "
-                f"Uma variacao menor pode refletir esse arranque tardio, e nao "
-                f"apenas menor solicitacao — a comparacao das variacoes (%) entre "
-                f"celulas com periodos diferentes deve ser lida com esta "
-                f"ressalva. A comparacao justa e em % da blocagem no periodo "
-                f"comum.")
-        st.caption(
-            "Nota para a interpretacao: se as celulas estao na mesma cortina mas "
-            "a cotas diferentes, uma carga que sobe so na ancoragem superior "
-            "(enquanto a inferior fica estavel) e coerente com deformacao "
-            "concentrada no topo (tipo consola) — cruze com o perfil dos "
-            "inclinometros (seccao 4) para confirmar a forma da deformada. A "
-            "leitura do mecanismo e do autor.")
+                f"⚠ As celulas NAO comecaram a medir na mesma data: a "
+                f"{mais_tarde} comecou ~{dias_dif} dias depois da {mais_cedo}, "
+                f"por isso perdeu a fase inicial de carregamento. A comparacao "
+                f"das variacoes (%) entre periodos diferentes deve ser lida com "
+                f"esta ressalva.")
 
-    # ============ (8) MECANISMO: DEFORMADA NO TEMPO + VETORES ============
+    # =====================================================================
+    # 3. CORRELACAO DIRETA (XY) — deslocamento vs. cota da agua
+    # =====================================================================
     st.divider()
-    st.markdown("#### 8. Mecanismo de deformacao — forma e direcao do movimento")
-    st.caption("Duas leituras do MECANISMO: como a deformada da cortina evolui "
-               "em profundidade ao longo do tempo, e como os alvos de um "
-               "edificio se movem (horizontal vs. vertical). Ajudam a "
-               "caracterizar o tipo de movimento; a interpretacao e do autor.")
+    st.markdown("#### 3. Correlacao direta — deslocamento vs. cota da agua")
+    st.caption("Cada ponto e uma campanha: no eixo X a cota da agua (interpolada "
+               "a data de cada leitura do alvo), no eixo Y o deslocamento "
+               "horizontal do alvo. Se os pontos alinham numa tendencia, ha "
+               "correlacao. O coeficiente r quantifica a forca da associacao "
+               "estatistica — nao prova a causa.")
+    alv3 = dados["alvos"].copy()
+    alv3[COLS["data"]] = pd.to_datetime(alv3[COLS["data"]], errors="coerce")
+    alvos_xy = sorted(alv3[COLS["alvo"]].dropna().unique())
+    idx_a3 = alvos_xy.index("A3") if "A3" in alvos_xy else 0
+    pz3 = dados["piezo"].copy()
+    pz3[COLS["data"]] = pd.to_datetime(pz3[COLS["data"]], errors="coerce")
+    pzs3 = sorted(pz3[COLS["piezometro"]].dropna().unique())
+    cxy1, cxy2 = st.columns(2)
+    with cxy1:
+        alvo_xy = st.selectbox("Alvo", alvos_xy, index=idx_a3, key="corr_xy_alvo")
+    with cxy2:
+        pz_xy = st.selectbox("Piezometro", pzs3, key="corr_xy_pz") if pzs3 else None
 
-    import numpy as np
-    perfis = dados.get("perfis")
-
-    # ---- 8a: deformada do inclinometro em varias campanhas ----
-    st.markdown("**8a. Deformada do inclinometro ao longo do tempo**")
-    if perfis is not None and not perfis.empty:
-        perfis = perfis.copy()
-        perfis[COLS["data"]] = pd.to_datetime(perfis[COLS["data"]], errors="coerce")
-        incs = sorted(perfis[COLS["inclinometro"]].dropna().unique())
-        inc_sel = st.selectbox("Inclinometro", incs, key="an_inc_deformada")
-        pi = perfis[perfis[COLS["inclinometro"]] == inc_sel]
-        datas_i = sorted(pi[COLS["data"]].dropna().unique())
-        # escolher ate 6 campanhas espacadas (da 1a a ultima) para nao poluir
-        if len(datas_i) > 6:
-            idx = np.linspace(0, len(datas_i) - 1, 6).astype(int)
-            datas_plot = [datas_i[i] for i in idx]
+    if pz_xy is not None:
+        sa3 = alv3[alv3[COLS["alvo"]] == alvo_xy].sort_values(COLS["data"])[
+            [COLS["data"], COLS["desl_h"]]].dropna()
+        sp3 = pz3[pz3[COLS["piezometro"]] == pz_xy].sort_values(COLS["data"])[
+            [COLS["data"], COLS["cota_agua"]]].dropna()
+        if len(sa3) >= 3 and len(sp3) >= 2:
+            xp = sp3[COLS["data"]].values.astype("datetime64[ns]").astype("int64")
+            yp = sp3[COLS["cota_agua"]].to_numpy(dtype=float)
+            xa = sa3[COLS["data"]].values.astype("datetime64[ns]").astype("int64")
+            desl = sa3[COLS["desl_h"]].to_numpy(dtype=float)
+            # so datas do alvo dentro da janela do piezometro (nao extrapolar)
+            mask = (xa >= xp.min()) & (xa <= xp.max())
+            xa_in = xa[mask]
+            desl_in = desl[mask]
+            if len(xa_in) >= 3:
+                agua_in = np.interp(xa_in, xp, yp)
+                r = float(np.corrcoef(agua_in, desl_in)[0, 1])
+                fig_xy = go.Figure()
+                fig_xy.add_trace(go.Scatter(
+                    x=[float(v) for v in agua_in.tolist()],
+                    y=[float(v) for v in desl_in.tolist()],
+                    mode="markers", name="Campanhas",
+                    marker=dict(color="#c0140f", size=9)))
+                b1, b0 = np.polyfit(agua_in, desl_in, 1)
+                xs = np.linspace(float(agua_in.min()), float(agua_in.max()), 20)
+                fig_xy.add_trace(go.Scatter(
+                    x=[float(v) for v in xs.tolist()],
+                    y=[float(b1 * v + b0) for v in xs.tolist()],
+                    mode="lines", name="Tendencia",
+                    line=dict(color="#2563eb", width=1, dash="dash")))
+                fig_xy.update_layout(
+                    height=460,
+                    xaxis=dict(title=f"Cota da agua {pz_xy} (m)"),
+                    yaxis=dict(title=f"Desl. horizontal {alvo_xy} (mm)"),
+                    margin=dict(t=30, b=40),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02))
+                st.plotly_chart(fig_xy, use_container_width=True)
+                forca = ("forte" if abs(r) >= 0.8 else
+                         "moderada" if abs(r) >= 0.5 else "fraca")
+                sentido = "negativa" if r < 0 else "positiva"
+                st.markdown(
+                    f"**Correlacao:** r = **{r:.2f}** ({forca}, {sentido}), "
+                    f"em {len(xa_in)} campanhas. Uma correlacao negativa "
+                    f"significa que o deslocamento sobe a medida que a cota da "
+                    f"agua desce. r mede a associacao estatistica, nao a causa.")
+            else:
+                st.info("Poucos pontos na janela comum ao piezometro para "
+                        "calcular a correlacao.")
         else:
-            datas_plot = datas_i
-        fig8 = go.Figure()
-        n = len(datas_plot)
-        for k, d in enumerate(datas_plot):
-            s = pi[pi[COLS["data"]] == d].sort_values(COLS["profundidade"])
-            # cor da mais antiga (clara) a mais recente (escura/vermelha)
-            frac = k / max(n - 1, 1)
-            cor = f"rgb({int(150+105*frac)},{int(180-150*frac)},{int(200-150*frac)})"
-            fig8.add_trace(go.Scatter(
-                x=[float(v) for v in s[COLS["desl_total"]].tolist()],
-                y=[float(v) for v in s[COLS["profundidade"]].tolist()],
-                mode="lines+markers", name=pd.to_datetime(d).strftime("%d/%m/%Y"),
-                line=dict(color=cor, width=2), marker=dict(size=3)))
-        fig8.update_layout(
-            height=560,
-            xaxis=dict(title="Deslocamento acumulado (mm)"),
-            yaxis=dict(title="Profundidade (m)", autorange="reversed"),
-            margin=dict(t=30, b=40),
-            legend=dict(title="Campanha", orientation="v", x=1.02, y=1))
-        st.plotly_chart(fig8, use_container_width=True)
-        # racio topo/base ao longo do tempo (quantifica a "abertura" da consola)
-        linhas_r = []
-        for d in datas_i:
-            s = pi[pi[COLS["data"]] == d]
-            topo = s[s[COLS["profundidade"]] <= 7][COLS["desl_total"]].max()
-            base = s[s[COLS["profundidade"]] >= 16][COLS["desl_total"]].max()
-            if pd.notna(topo) and pd.notna(base) and base > 0.5:
-                linhas_r.append((pd.to_datetime(d), topo / base))
-        if len(linhas_r) >= 2:
-            r0 = linhas_r[0][1]; r1 = linhas_r[-1][1]
-            st.caption(
-                f"Nota para a interpretacao: no {inc_sel}, o racio "
-                f"deslocamento-topo / deslocamento-base evoluiu de {r0:.1f} para "
-                f"{r1:.1f} entre a primeira e a ultima campanha. Um racio "
-                f"crescente indica que a deformada se concentra cada vez mais no "
-                f"topo (comportamento tipo consola a acentuar-se com a "
-                f"escavacao). A leitura do mecanismo e do autor.")
-    else:
-        st.info("Sem perfis de inclinometro para a deformada no tempo.")
-
-    # ---- 8b: componentes H e V do movimento, por alvo ----
-    st.markdown("**8b. Componentes do movimento (horizontal e vertical) por alvo**")
-    edificios = sorted(ult[COLS["edificio"]].astype(str).unique())
-    idx_def = next((i for i, e in enumerate(edificios) if "Santa Casa" in e), 0)
-    edi_sel = st.selectbox("Edificio / elemento", edificios, index=idx_def,
-                           key="an_edi_vetor")
-    sub_e = ult[ult[COLS["edificio"]].astype(str) == edi_sel].copy()
-    sub_e = sub_e.dropna(subset=[COLS["desl_h"], COLS["dZ"]])
-    if not sub_e.empty:
-        sub_e = sub_e.sort_values(COLS["desl_h"], ascending=False)
-        nomes = sub_e[COLS["alvo"]].astype(str).tolist()
-        H = [float(v) for v in sub_e[COLS["desl_h"]].tolist()]
-        # assentamento como valor positivo para a barra (magnitude), rotulado
-        Vmag = [abs(float(v)) for v in sub_e[COLS["dZ"]].tolist()]
-        fig8b = go.Figure()
-        fig8b.add_trace(go.Bar(x=nomes, y=H, name="Deslocamento horizontal (mm)",
-                               marker=dict(color="#c0140f")))
-        fig8b.add_trace(go.Bar(x=nomes, y=Vmag,
-                               name="Assentamento |ΔZ| (mm)",
-                               marker=dict(color="#2563eb")))
-        fig8b.update_layout(
-            height=430, barmode="group",
-            xaxis=dict(title="Alvo"),
-            yaxis=dict(title="Movimento (mm)"),
-            margin=dict(t=30, b=40),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02))
-        st.plotly_chart(fig8b, use_container_width=True)
-        # leitura factual, SEM afirmar rotacao em altura (os alvos deste
-        # edificio estao ~a mesma cota; a variacao e ao longo da fachada)
-        vh = [Vmag[i] / H[i] if H[i] > 0 else 0 for i in range(len(H))]
-        Z = sub_e[COLS["Z0"]] if COLS.get("Z0") in sub_e.columns else None
-        amplitude_z = (float(sub_e[COLS["Z0"]].max() - sub_e[COLS["Z0"]].min())
-                       if COLS.get("Z0") in sub_e.columns else None)
-        txt = (f"Para cada alvo de «{edi_sel}»: a barra vermelha e o "
-               f"deslocamento horizontal, a azul o assentamento (|ΔZ|). A razao "
-               f"assentamento/horizontal (V/H) varia entre {min(vh):.2f} e "
-               f"{max(vh):.2f} entre alvos.")
-        if amplitude_z is not None and amplitude_z < 3:
-            txt += (f" ATENCAO: neste edificio os alvos estao quase todos a mesma "
-                    f"cota (variacao de so ~{amplitude_z:.1f} m em altura), por "
-                    f"isso esta variacao de V/H reflete diferencas AO LONGO da "
-                    f"fachada, NAO uma rotacao em altura — para avaliar rotacao "
-                    f"vertical seriam precisos alvos a cotas diferentes. A "
-                    f"leitura do mecanismo e do autor.")
-        else:
-            txt += (" Cruze o V/H com a cota de cada alvo para avaliar se ha "
-                    "rotacao. A leitura do mecanismo e do autor.")
-        st.caption(txt)
-    else:
-        st.info("Sem alvos com H e V para este edificio.")
-
-    st.divider()
-    st.info(
-        "Esta analise quantifica as movimentacoes e cruza-as com o faseamento e "
-        "as cargas nas ancoragens. A interpretacao das causas (mecanismo "
-        "geologico, sequencia construtiva, dimensionamento) e a eventual "
-        "proposta de solucao alternativa sao desenvolvidas no texto da tese, "
-        "usando esta evidencia. A app organiza e quantifica; nao substitui a "
-        "interpretacao do autor.")
-
-
-def separador_sintese(dados):
-    """
-    Sintese do back-analysis: num unico eixo temporal, cruza a DEFORMACAO
-    (alvo OU inclinometro, a escolha) com a COTA DA AGUA (piezometro) e o
-    FASEAMENTO da obra. E aqui que a relacao causa-efeito da tese se ve: a
-    agua desce e a deformacao acelera nas datas em que a escavacao avanca.
-    """
-    st.subheader("Sintese — deformacao vs. agua vs. obra")
-    st.caption("Os tres fatores do back-analysis num so eixo de tempo: a "
-               "deformacao medida (esquerda), a cota da agua subterranea "
-               "(direita) e as fases da obra (fundo). Permite ler a "
-               "relacao causa-efeito: o rebaixamento da agua e a aceleracao "
-               "da deformacao acompanham o avanco da escavacao.")
-
-    c1, c2 = st.columns(2)
-    with c1:
-        tipo = st.radio("Serie de deformacao", ["Inclinometro", "Alvo"],
-                        horizontal=True, key="sint_tipo")
-        st.checkbox("Marcos de escavacao por cota (datas reais)", value=True,
-                    key="sint_escav",
-                    help="Linhas verticais nas datas reais em que a escavacao "
-                         "atingiu cada cota (do plano de trabalhos impactado). "
-                         "Permite ver a deformacao acelerar apos cada fase.")
-    # --- serie de deformacao escolhida ---
-    df_def = None
-    lbl_def = ""
-    with c2:
-        if tipo == "Inclinometro":
-            res = dados.get("resumo")
-            if res is not None and COLS["data"] in res.columns:
-                res = res.copy()
-                res[COLS["data"]] = pd.to_datetime(res[COLS["data"]], errors="coerce")
-                col_inc = "Inclinómetro"
-                incs = sorted(res[col_inc].dropna().unique())
-                sel = st.selectbox("Inclinometro", incs, key="sint_inc")
-                s = res[res[col_inc] == sel].sort_values(COLS["data"])
-                df_def = s[[COLS["data"], "Máx. desloc. acumulado total (mm)"]].rename(
-                    columns={"Máx. desloc. acumulado total (mm)": "def"})
-                lbl_def = f"Desl. max. {sel} (mm)"
-        else:
-            alv = dados["alvos"].copy()
-            alv[COLS["data"]] = pd.to_datetime(alv[COLS["data"]], errors="coerce")
-            alvos = sorted(alv[COLS["alvo"]].dropna().unique())
-            # sugerir A3 (o alvo critico) se existir
-            idx = alvos.index("A3") if "A3" in alvos else 0
-            sel = st.selectbox("Alvo", alvos, index=idx, key="sint_alvo")
-            s = alv[alv[COLS["alvo"]] == sel].sort_values(COLS["data"])
-            df_def = s[[COLS["data"], COLS["desl_h"]]].rename(
-                columns={COLS["desl_h"]: "def"})
-            lbl_def = f"Desl. horizontal {sel} (mm)"
-
-    # --- serie da agua (piezometro) ---
-    pz = dados["piezo"].copy()
-    pz[COLS["data"]] = pd.to_datetime(pz[COLS["data"]], errors="coerce")
-    pzs = sorted(pz[COLS["piezometro"]].dropna().unique())
-    pz_sel = pzs[0] if pzs else None
-    df_agua = None
-    if pz_sel:
-        sa = pz[pz[COLS["piezometro"]] == pz_sel].sort_values(COLS["data"])
-        df_agua = sa[[COLS["data"], COLS["cota_agua"]]].rename(
-            columns={COLS["cota_agua"]: "agua"})
-
-    if df_def is None or df_def.empty:
-        st.info("Sem dados de deformacao para a serie escolhida.")
-        return
-
-    # --- grafico de eixo duplo ---
-    fig = go.Figure()
-    # fases da obra (faixas + etiquetas diagonais), na janela dos dados
-    dt_min = df_def[COLS["data"]].min()
-    dt_max = df_def[COLS["data"]].max()
-    if df_agua is not None and not df_agua.empty:
-        dt_min = min(dt_min, df_agua[COLS["data"]].min())
-        dt_max = max(dt_max, df_agua[COLS["data"]].max())
-    fases_vis = adicionar_fases_obra(fig, dt_min, dt_max, barra_topo=False)
-
-    # marcos de escavacao por cota (datas reais) — linha vertical + etiqueta
-    # CURTA (E1, E2...) no fundo. O rotulo completo (cota + data) vai numa
-    # legenda por baixo do grafico. Etiquetas curtas nao colidem, ao
-    # contrario dos rotulos longos com datas proximas.
-    mostrar_escav = st.session_state.get("sint_escav", True)
-    escav_visiveis = []
-    if mostrar_escav:
-        # so os que caem na janela, ordenados por data
-        na_janela = [(pd.to_datetime(fim), rotulo, cota)
-                     for rotulo, cota, ini, fim in ESCAVACAO_COTAS
-                     if dt_min <= pd.to_datetime(fim) <= dt_max]
-        na_janela.sort()
-        for k, (t, rotulo, cota) in enumerate(na_janela, start=1):
-            fig.add_shape(
-                type="line", xref="x", yref="paper",
-                x0=t, x1=t, y0=0, y1=1,
-                line=dict(color="#8B4513", width=1, dash="dash"), layer="below")
-            fig.add_annotation(
-                x=t, y=-0.02, yref="paper", text=f"E{k}",
-                showarrow=False, xanchor="center", yanchor="top",
-                font=dict(size=9, color="white"),
-                bgcolor="#8B4513", borderpad=2,
-                hovertext=f"{rotulo} — {t.strftime('%d/%m/%Y')}")
-            escav_visiveis.append((k, rotulo, t, cota))
-
-    # deformacao (eixo Y esquerdo)
-    # NOTA: converter para listas Python puras (list()) em vez de deixar passar
-    # arrays numpy/pandas. Com numpy, o Plotly recente serializa os valores em
-    # base64 ("bdata"), o que — em combinacao com o eixo Y duplo (overlaying)
-    # desta figura — faz as series NAO renderizarem no Plotly.js do Streamlit
-    # Cloud (grafico aparecia em branco). As listas puras evitam essa
-    # codificacao. Isto e local a Sintese; os outros graficos nao sao afetados.
-    fig.add_trace(go.Scatter(
-        x=[pd.to_datetime(v) for v in df_def[COLS["data"]].tolist()],
-        y=[float(v) for v in df_def["def"].tolist()],
-        mode="lines+markers",
-        name=lbl_def, line=dict(color="#c0140f", width=2)))
-    # agua (eixo Y direito)
-    if df_agua is not None and not df_agua.empty:
-        fig.add_trace(go.Scatter(
-            x=[pd.to_datetime(v) for v in df_agua[COLS["data"]].tolist()],
-            y=[float(v) for v in df_agua["agua"].tolist()],
-            mode="lines+markers",
-            name=f"Cota da agua {pz_sel} (m)", yaxis="y2",
-            line=dict(color="#2563eb", width=2, dash="dot")))
-
-    fig.update_layout(
-        height=560,
-        margin=dict(t=60, b=130),
-        # type="date" EXPLICITO: o primeiro trace da figura e um trace fantasma
-        # das fases (x=[None], de adicionar_fases_obra em modo barra_topo=False).
-        # Sem o tipo forcado, o Plotly.js infere o eixo X a partir desse primeiro
-        # trace nulo, falha, e cai para eixo numerico (1,2,3...) — o que fazia as
-        # series de data NAO renderizarem (grafico em branco). Forcar o tipo
-        # resolve na raiz.
-        xaxis=dict(title="Data", type="date"),
-        yaxis=dict(title=dict(text=lbl_def, font=dict(color="#c0140f")),
-                   tickfont=dict(color="#c0140f")),
-        yaxis2=dict(title=dict(text="Cota da agua (m)", font=dict(color="#2563eb")),
-                    tickfont=dict(color="#2563eb"),
-                    overlaying="y", side="right", anchor="x"),
-        # legenda mais abaixo (y=-0.38) para nao colidir com o titulo "Data"
-        # do eixo X; a margem inferior (b=130) abre o espaco necessario.
-        legend=dict(orientation="h", yanchor="top", y=-0.38,
-                    xanchor="center", x=0.5))
-    st.plotly_chart(fig, use_container_width=True)
-    legenda_fases(fases_vis)
-    # legenda dos marcos de escavacao (E1, E2...) -> cota + data
-    if escav_visiveis:
-        itens = "  ·  ".join(
-            f"**E{k}** {rotulo} ({t.strftime('%d/%m')})"
-            for k, rotulo, t, cota in escav_visiveis)
-        st.caption("⛏ Escavacao (cota atingida, data real): " + itens)
-
-    # leitura automatica da correlacao
-    if df_agua is not None and len(df_agua) >= 2 and len(df_def) >= 2:
-        d_ini = df_def["def"].iloc[0]
-        d_fim = df_def["def"].iloc[-1]
-        a_ini = df_agua["agua"].iloc[0]
-        a_fim = df_agua["agua"].iloc[-1]
-        st.markdown(
-            f"**Leitura:** no periodo, a deformacao evoluiu de {d_ini:.1f} para "
-            f"**{d_fim:.1f} mm** enquanto a cota da agua desceu de {a_ini:.2f} "
-            f"para **{a_fim:.2f} m** ({a_fim - a_ini:+.2f} m). A deformacao "
-            f"cresce a medida que a agua e rebaixada e a escavacao avanca — "
-            f"consistente com o desconfinamento induzido pela escavacao.")
-    st.caption("Deformacao e cota da agua tem escalas independentes (eixos Y "
-               "esquerdo/direito). As fases da obra sao o cronograma previsto.")
+            st.info("Serie insuficiente (alvo ou piezometro) para a correlacao.")
 
 
 def separador_home(dados):
@@ -4133,30 +3928,37 @@ def separador_home(dados):
 
     # ---- cartoes das areas de analise -----------------------------------
     st.markdown("#### O que podes explorar")
-    st.caption("Usa os separadores no topo para navegar. Aqui fica o mapa geral "
-               "de cada area.")
+    st.caption("Ha duas componentes, selecionaveis na barra lateral: **Dados** "
+               "(ilustracao dos resultados de cada instrumento, geologia e "
+               "planeamento, sem analise) e **Analise** (leitura dos resultados "
+               "e correlacao entre instrumentos). Usa os separadores no topo "
+               "para navegar dentro de cada componente.")
 
     cartoes = [
-        ("Sintese", "A relacao causa-efeito num so eixo de tempo: deformacao "
-         "(alvo ou inclinometro) vs. cota da agua vs. fases da obra."),
-        ("Visao geral 3D", "Alvos no espaco com a geometria da obra: contorno do "
-         "recinto, edificios vizinhos e vetores de deslocamento amplificados."),
-        ("Inclinometros", "Perfil deformado em profundidade, evolucao no tempo, "
-         "velocidade e detecao de sinais precursores. Sobreposicao da geologia."),
-        ("Alvos (2D)", "Series temporais de deslocamento horizontal e "
+        ("Dados · Inclinometros", "Perfil deformado em profundidade, evolucao "
+         "no tempo, velocidade e sinais precursores. Sobreposicao da geologia."),
+        ("Dados · Alvos (2D)", "Series temporais de deslocamento horizontal e "
          "assentamento vertical, por edificio e por alvo."),
-        ("Celulas de carga", "Carga nas ancoragens vs. blocagem, com limiares "
-         "de alerta (15%) e alarme (25%)."),
-        ("Piezometros", "Evolucao da cota da agua subterranea, para relacionar "
-         "com a escavacao e a pluviosidade."),
-        ("Geologia", "Colunas litologicas das sondagens, ensaios SPT em "
+        ("Dados · Celulas de carga", "Carga nas ancoragens vs. blocagem, com "
+         "limiares de alerta (15%) e alarme (25%)."),
+        ("Dados · Piezometros", "Evolucao da cota da agua subterranea."),
+        ("Dados · Geologia", "Colunas litologicas das sondagens, ensaios SPT em "
          "profundidade e zonamento geotecnico (ZG1-ZG6)."),
-        ("Obra", "Cronograma do plano de trabalhos, com a janela de "
-         "instrumentacao assinalada. Sobrepoe-se aos graficos temporais."),
-        ("Planta (DXF)", "Leitura de plantas de escavacao em DXF, com opcao de "
-         "alinhamento aos alvos por pontos de referencia."),
-        ("Pressupostos", "O que e medido vs. o que e assumido: inferencias, "
-         "limitacoes e qualidade dos dados, num so sitio."),
+        ("Dados · Obra", "Cronograma do plano de trabalhos (real e contratual), "
+         "com a janela de instrumentacao assinalada."),
+        ("Dados · Planta (DXF)", "Leitura de plantas de escavacao em DXF, com "
+         "opcao de alinhamento aos alvos por pontos de referencia."),
+        ("Analise · Terreno + Alvos 3D", "Alvos no espaco com a geometria da "
+         "obra: contorno do recinto, edificios vizinhos e vetores de "
+         "deslocamento amplificados."),
+        ("Analise · Resultados", "Magnitude, distribuicao espacial, ritmo e "
+         "profundidade das movimentacoes, e observado vs. previsto. Ilustracao "
+         "factual dos resultados, para a escrita da tese."),
+        ("Analise · Correlacoes", "Graficos de interacao entre instrumentos: "
+         "deformacao vs. agua vs. escavacao vs. faseamento; deformacao vs. "
+         "carga na ancoragem; e a correlacao direta (XY) com coeficiente r."),
+        ("Analise · Pressupostos", "O que e medido vs. o que e assumido: "
+         "inferencias, limitacoes e qualidade dos dados."),
     ]
     # desenhar em grelha de 2 colunas
     for i in range(0, len(cartoes), 2):
@@ -4226,11 +4028,15 @@ def main():
         st.sidebar.info("Instala 'ezdxf' para ativar a leitura de plantas DXF.")
 
     # -------------------------------------------------------------------
-    # ORGANIZACAO EM DUAS FRENTES (escolhidas na barra lateral)
-    #   Inputs:  dados que alimentam a analise — instrumentacao, geologia
-    #            e planeamento (obra).
-    #   Outputs: analise e avaliacao de resultados, e comportamento no espaco.
-    # O separador Inicio esta sempre acessivel (primeiro de cada frente).
+    # ORGANIZACAO EM DUAS COMPONENTES (escolhidas na barra lateral)
+    #   Dados:   ilustracao dos resultados — instrumentacao, geologia e
+    #            planeamento (real e teorico). SEM analise.
+    #   Analise: leitura de resultados e correlacao entre instrumentos.
+    #            «Resultados» = magnitude/onde/ritmo/profundidade/observado-vs-
+    #            previsto (factual, para a escrita da tese). «Correlacoes» =
+    #            graficos de interacao entre instrumentos (deformacao x agua x
+    #            escavacao x faseamento; deformacao x carga; correlacao direta).
+    # O separador Inicio esta sempre acessivel (primeiro de cada componente).
     # -------------------------------------------------------------------
     st.sidebar.divider()
     st.sidebar.subheader("Navegacao")
@@ -4238,9 +4044,9 @@ def main():
         "Componente",
         ["Dados — instrumentacao, geologia e planeamento",
          "Analise — analise de resultados"],
-        help="Dados: os dados que alimentam a analise (cada instrumento, a "
-             "geologia e o planeamento da obra). Analise: a analise e avaliacao "
-             "de resultados e o comportamento no espaco.")
+        help="Dados: ilustracao dos resultados (cada instrumento, a geologia e "
+             "o planeamento), sem analise. Analise: leitura dos resultados e "
+             "correlacao entre os dados dos varios instrumentos.")
 
     if frente.startswith("Dados"):
         thome, tinc, talv, tcc, tpz, tgeo, tobra, tplan = st.tabs(
@@ -4263,17 +4069,17 @@ def main():
         with tplan:
             separador_planta(dados)
     else:
-        thome, t3d, tanal, tsint, tpress = st.tabs(
-            ["Inicio", "Terreno + Alvos 3D", "Analise", "Sintese",
+        thome, t3d, tres, tcorr, tpress = st.tabs(
+            ["Inicio", "Terreno + Alvos 3D", "Resultados", "Correlacoes",
              "Pressupostos"])
         with thome:
             separador_home(dados)
         with t3d:
             separador_terreno_alvos_3d(dados)
-        with tanal:
-            separador_analise(dados)
-        with tsint:
-            separador_sintese(dados)
+        with tres:
+            separador_resultados(dados)
+        with tcorr:
+            separador_correlacoes(dados)
         with tpress:
             separador_pressupostos(dados)
 
