@@ -461,6 +461,70 @@ ESCAVACAO_COTAS = [
     ("até cota VD Piso -3",              9.00, "2026-02-10", "2026-02-25"),
 ]
 
+# =========================================================================
+# ESCAVACAO POR ZONA (frente de estacas) — do PLANEAMENTO DETALHADO (MS
+# Project "Planeamento detalhado Eden", ramo "Escavação, bandas de laje,
+# paredes de forro e ancoragens"). Cada zona e uma FRENTE da cortina,
+# identificada no plano pelas estacas e mapeada aos edificios/alvos que lhe
+# ficam em frente (confirmado com a foto aerea e a planta de estacas):
+#   poente_sul  = cortina poente, estacas E8_35–E8_96 + anel E6_C  -> Santa Casa
+#   norte       = cortina norte, alinhamentos IJ/JK/KL, E8_92–E6_11 -> Clinica
+#   nascente_sul= cortina nascente/sul, E8_2–E8_34 + E6_16–E6_21    -> Cimas
+# Datas REAIS (impactadas) transcritas do plano — nada inventado. Cada evento:
+#   (data_iso, tipo, cota_atingida_m|None, rotulo)
+#   tipo: "escavacao" (cota atingida) | "ancoragem" | "banda_laje"
+# =========================================================================
+ESCAVACAO_ZONAS = {
+    "poente_sul": [
+        ("2025-09-05", "escavacao", 23.75, "cota 26,50 -> 23,75"),
+        ("2025-10-06", "ancoragem", None,  "Ancoragens VD Piso 1 (E8_78-E8_87)"),
+        ("2025-11-25", "escavacao", 14.85, "cota 14,85 (-4,95 m)"),
+        ("2025-12-25", "ancoragem", None,  "Ancoragens VD Piso -1 (2 lados)"),
+        ("2026-01-06", "escavacao", 12.45, "VD Piso -2"),
+        ("2026-02-09", "ancoragem", None,  "Ancoragens VD Piso -2 (2 lados)"),
+        ("2026-02-25", "escavacao", 9.00,  "VD Piso -3"),
+        ("2026-03-23", "escavacao", 4.55,  "fundo de escavacao"),
+    ],
+    "norte": [
+        ("2025-09-17", "escavacao", 22.55, "cota 29 -> 22,55"),
+        ("2025-09-22", "escavacao", 18.90, "cota 22,55 -> 18,90"),
+        ("2025-10-24", "escavacao", 19.00, "fundo VD Piso 1 (19,80/19,00)"),
+        ("2025-11-04", "banda_laje", None, "Banda Laje Piso 1 (Fase 2)"),
+        ("2025-12-31", "escavacao", 12.45, "VD Piso -2 + fundo Banda Laje"),
+        ("2026-02-13", "banda_laje", None, "Banda Laje Piso -2 (F2)"),
+        ("2026-04-15", "escavacao", 4.55,  "fundo de escavacao"),
+    ],
+    "nascente_sul": [
+        ("2025-10-27", "banda_laje", None, "Banda Laje Piso 1 (Fase 1)"),
+        ("2025-11-26", "escavacao", 15.90, "VD Piso -1"),
+        ("2025-12-23", "escavacao", 12.45, "VD Piso -2 + fundo Banda Laje"),
+        ("2026-02-04", "banda_laje", None, "Banda Laje Piso -2 (F1)"),
+        ("2026-03-11", "escavacao", 9.00,  "VD Piso -3"),
+        ("2026-04-14", "escavacao", 4.55,  "fundo de escavacao"),
+    ],
+}
+ZONA_ESCAV_NOME = {
+    "poente_sul":   "Poente/Sul — cortina da Santa Casa",
+    "norte":        "Norte — cortina da Clinica",
+    "nascente_sul": "Nascente/Sul — cortina do Cimas",
+}
+
+# Associacao INSTRUMENTACAO -> frente de escavacao (a mesma zona).
+#   Inclinometros: I1 canto SO (poente) / I2 topo N / I3 SE (nascente).
+#   Celulas: ambas na cortina da Santa Casa (poente).
+INC_ZONA = {"I1": "poente_sul", "I2": "norte", "I3": "nascente_sul"}
+CELULA_ZONA = {"CC 2501796": "poente_sul", "CC 200792": "poente_sul"}
+# alcados de contencao -> frente, pela alinhamento das vigas de distribuicao
+# do plano (EF/FG/GH na frente poente; IJ/JK/KL na frente norte; restantes
+# pela continuidade do perimetro). Os que ficam duvidosos ficam None (global).
+ALCADO_ZONA = {
+    "AB": "nascente_sul", "CD": "poente_sul", "DE": "poente_sul",
+    "EF": "poente_sul", "FG": "poente_sul", "GH": "poente_sul",
+    "HI": "norte", "IJ": "norte", "JK": "norte", "KL": "norte",
+    "LM": "nascente_sul", "MN": "nascente_sul", "MNO": "nascente_sul",
+    "OP": "nascente_sul", "PQ": "nascente_sul", "QR": "nascente_sul",
+}
+
 CORES_FASES = ["#8dd3c7", "#ffffb3", "#bebada", "#fb8072", "#80b1d3",
                "#fdb462", "#b3de69", "#fccde5", "#d9d9d9"]
 
@@ -3475,6 +3539,57 @@ def separador_resultados(dados):
         f"estimativa de projeto.")
 
 
+def zona_escav_de_edificio(edif):
+    """Frente de escavacao (poente_sul / norte / nascente_sul) do edificio ou
+    elemento de um alvo; None se nao mapeavel. Edificios vizinhos por nome
+    (confirmado com a foto aerea); alcados de contencao pela alinhamento das
+    vigas de distribuicao do plano (ALCADO_ZONA)."""
+    if not isinstance(edif, str):
+        return None
+    e = edif.lower()
+    if "santa casa" in e:
+        return "poente_sul"
+    if "cimas" in e:
+        return "nascente_sul"
+    if "clinica" in e or "clínica" in e or "abreu" in e:
+        return "norte"
+    alc = _extrair_alcado(edif)
+    if alc:
+        return ALCADO_ZONA.get(alc)
+    return None
+
+
+def _marcos_escavacao_zona(fig, zona, dt_min, dt_max, so_escavacao=True):
+    """Desenha, na figura de eixo temporal, os marcos reais de escavacao da
+    ZONA dada (ESCAVACAO_ZONAS). Devolve a lista (k, rotulo, data, cota, tipo)
+    dos eventos dentro da janela. Se zona for None, usa a lista global
+    (ESCAVACAO_COTAS) como recurso."""
+    vis = []
+    if zona and zona in ESCAVACAO_ZONAS:
+        eventos = [(pd.to_datetime(d), tp, cota, rot)
+                   for d, tp, cota, rot in ESCAVACAO_ZONAS[zona]
+                   if (not so_escavacao or tp == "escavacao")
+                   and dt_min <= pd.to_datetime(d) <= dt_max]
+    else:
+        eventos = [(pd.to_datetime(fim), "escavacao", cota, rot)
+                   for rot, cota, ini, fim in ESCAVACAO_COTAS
+                   if dt_min <= pd.to_datetime(fim) <= dt_max]
+    eventos.sort()
+    for k, (t, tp, cota, rot) in enumerate(eventos, start=1):
+        cor = "#8B4513" if tp == "escavacao" else (
+            "#7a1fa0" if tp == "ancoragem" else "#1f9e55")
+        fig.add_shape(type="line", xref="x", yref="paper", x0=t, x1=t,
+                      y0=0, y1=1, line=dict(color=cor, width=1, dash="dash"),
+                      layer="below")
+        fig.add_annotation(
+            x=t, y=-0.02, yref="paper", text=f"E{k}", showarrow=False,
+            xanchor="center", yanchor="top", font=dict(size=9, color="white"),
+            bgcolor=cor, borderpad=2,
+            hovertext=f"{rot} — {t.strftime('%d/%m/%Y')}")
+        vis.append((k, rot, t, cota, tp))
+    return vis
+
+
 def separador_correlacoes(dados):
     """
     CORRELACOES — graficos de interacao entre instrumentos. Cruzam, num eixo de
@@ -3496,22 +3611,25 @@ def separador_correlacoes(dados):
     # =====================================================================
     st.markdown("#### 1. Deformacao × Agua × Escavacao × Faseamento")
     st.caption("Num so eixo de tempo: a deformacao medida (esquerda), a cota da "
-               "agua subterranea (direita), os marcos reais de escavacao "
-               "(E1-E..., no fundo) e as fases da obra (faixas de cor). "
-               "Permite ver a deformacao a acelerar enquanto a agua e "
-               "rebaixada e a escavacao avanca.")
+               "agua subterranea (direita), os marcos reais de escavacao DA "
+               "ZONA do alvo/inclinometro escolhido (E1-E..., no fundo) e as "
+               "fases da obra (faixas de cor). Cada instrumento e cruzado com a "
+               "escavacao da frente que lhe fica em frente — nao com a do lado "
+               "oposto.")
 
     c1, c2 = st.columns(2)
     with c1:
         tipo = st.radio("Serie de deformacao", ["Inclinometro", "Alvo"],
                         horizontal=True, key="corr_tipo")
-        st.checkbox("Marcos de escavacao por cota (datas reais)", value=True,
+        st.checkbox("Marcos de escavacao da zona (datas reais)", value=True,
                     key="corr_escav",
                     help="Linhas verticais nas datas reais em que a escavacao "
-                         "atingiu cada cota (do plano de trabalhos impactado).")
-    # --- serie de deformacao escolhida ---
+                         "atingiu cada cota NA FRENTE do instrumento escolhido "
+                         "(planeamento detalhado, por zona de estacas).")
+    # --- serie de deformacao escolhida (e a sua zona de escavacao) ---
     df_def = None
     lbl_def = ""
+    zona_sel = None
     with c2:
         if tipo == "Inclinometro":
             res = dados.get("resumo")
@@ -3525,6 +3643,7 @@ def separador_correlacoes(dados):
                 df_def = s[[COLS["data"], "Máx. desloc. acumulado total (mm)"]].rename(
                     columns={"Máx. desloc. acumulado total (mm)": "def"})
                 lbl_def = f"Desl. max. {sel} (mm)"
+                zona_sel = INC_ZONA.get(str(sel))
         else:
             alv = dados["alvos"].copy()
             alv[COLS["data"]] = pd.to_datetime(alv[COLS["data"]], errors="coerce")
@@ -3535,6 +3654,15 @@ def separador_correlacoes(dados):
             df_def = s[[COLS["data"], COLS["desl_h"]]].rename(
                 columns={COLS["desl_h"]: "def"})
             lbl_def = f"Desl. horizontal {sel} (mm)"
+            if not s.empty:
+                zona_sel = zona_escav_de_edificio(s[COLS["edificio"]].iloc[0])
+    if zona_sel:
+        st.caption(f"↳ Frente de escavacao associada a **{sel}**: "
+                   f"**{ZONA_ESCAV_NOME[zona_sel]}**. Os marcos abaixo sao as "
+                   f"cotas atingidas nessa frente.")
+    else:
+        st.caption("↳ Sem zona de escavacao associada a esta serie — mostram-se "
+                   "os marcos globais de escavacao.")
 
     # --- serie da agua (piezometro) ---
     pz = dados["piezo"].copy()
@@ -3558,27 +3686,13 @@ def separador_correlacoes(dados):
             dt_max = max(dt_max, df_agua[COLS["data"]].max())
         fases_vis = adicionar_fases_obra(fig, dt_min, dt_max, barra_topo=False)
 
-        # marcos de escavacao por cota (datas reais) — linha vertical + E1,E2...
+        # marcos de escavacao da ZONA do instrumento (datas reais) — E1,E2...
         mostrar_escav = st.session_state.get("corr_escav", True)
         escav_visiveis = []
         if mostrar_escav:
-            na_janela = [(pd.to_datetime(fim), rotulo, cota)
-                         for rotulo, cota, ini, fim in ESCAVACAO_COTAS
-                         if dt_min <= pd.to_datetime(fim) <= dt_max]
-            na_janela.sort()
-            for k, (t, rotulo, cota) in enumerate(na_janela, start=1):
-                fig.add_shape(
-                    type="line", xref="x", yref="paper",
-                    x0=t, x1=t, y0=0, y1=1,
-                    line=dict(color="#8B4513", width=1, dash="dash"),
-                    layer="below")
-                fig.add_annotation(
-                    x=t, y=-0.02, yref="paper", text=f"E{k}",
-                    showarrow=False, xanchor="center", yanchor="top",
-                    font=dict(size=9, color="white"),
-                    bgcolor="#8B4513", borderpad=2,
-                    hovertext=f"{rotulo} — {t.strftime('%d/%m/%Y')}")
-                escav_visiveis.append((k, rotulo, t, cota))
+            vis = _marcos_escavacao_zona(fig, zona_sel, dt_min, dt_max,
+                                         so_escavacao=True)
+            escav_visiveis = [(k, rot, t, cota) for k, rot, t, cota, tp in vis]
 
         # deformacao (eixo Y esquerdo) — listas Python puras (ver nota abaixo)
         # NOTA: converter para listas puras evita a serializacao base64 ("bdata")
@@ -3616,9 +3730,11 @@ def separador_correlacoes(dados):
         legenda_fases(fases_vis)
         if escav_visiveis:
             itens = "  ·  ".join(
-                f"**E{k}** {rotulo} ({t.strftime('%d/%m')})"
+                (f"**E{k}** cota {cota:.2f} m ({t.strftime('%d/%m')})"
+                 if cota is not None else
+                 f"**E{k}** {rotulo} ({t.strftime('%d/%m')})")
                 for k, rotulo, t, cota in escav_visiveis)
-            st.caption("⛏ Escavacao (cota atingida, data real): " + itens)
+            st.caption("⛏ Escavacao na frente (cota atingida, data real): " + itens)
 
         if df_agua is not None and len(df_agua) >= 2 and len(df_def) >= 2:
             d_ini = df_def["def"].iloc[0]
@@ -3854,6 +3970,133 @@ def separador_correlacoes(dados):
                         "calcular a correlacao.")
         else:
             st.info("Serie insuficiente (alvo ou piezometro) para a correlacao.")
+
+    # =====================================================================
+    # 4. DEFORMACAO x ESCAVACAO DA FRENTE LOCAL  (mesma zona de estacas)
+    # =====================================================================
+    st.divider()
+    st.markdown("#### 4. Deformacao × Escavacao da frente local")
+    st.caption("Cruza o movimento de um alvo com a COTA a que a escavacao chegou "
+               "NA FRENTE desse alvo (planeamento detalhado, por zona de "
+               "estacas). A cota (castanho) desce em degraus a medida que a "
+               "frente aprofunda; ve-se a deformacao (vermelho) crescer com o "
+               "aprofundamento local — e nao com a escavacao do lado oposto.")
+
+    alv4 = dados["alvos"].copy()
+    alv4[COLS["data"]] = pd.to_datetime(alv4[COLS["data"]], errors="coerce")
+    alvos4 = sorted(alv4[COLS["alvo"]].dropna().unique())
+    idxA = alvos4.index("A3") if "A3" in alvos4 else 0
+    alvo4 = st.selectbox("Alvo", alvos4, index=idxA, key="corr_esc_alvo")
+    s4 = alv4[alv4[COLS["alvo"]] == alvo4].sort_values(COLS["data"])
+    zona4 = (zona_escav_de_edificio(s4[COLS["edificio"]].iloc[0])
+             if not s4.empty else None)
+
+    if not zona4 or zona4 not in ESCAVACAO_ZONAS:
+        st.info(f"O alvo {alvo4} nao tem frente de escavacao mapeada. Escolhe um "
+                f"alvo de um edificio/alcado com zona associada (Santa Casa, "
+                f"Cimas, Clinica, ou um alcado de contencao).")
+    else:
+        st.caption(f"↳ Frente de escavacao: **{ZONA_ESCAV_NOME[zona4]}**")
+        # eventos de escavacao (cota) da zona -> frente monotona descendente
+        esc_ev = sorted((pd.to_datetime(d), float(cota))
+                        for d, tp, cota, rot in ESCAVACAO_ZONAS[zona4]
+                        if tp == "escavacao" and cota is not None)
+        datas_e = [d for d, c in esc_ev]
+        cotas_e, m = [], None
+        for _, c in esc_ev:
+            m = c if m is None else min(m, c)
+            cotas_e.append(m)
+        # serie de deformacao do alvo
+        sd = s4[[COLS["data"], COLS["desl_h"]]].dropna()
+        d_def = [pd.to_datetime(v) for v in sd[COLS["data"]].tolist()]
+        y_def = [float(v) for v in sd[COLS["desl_h"]].tolist()]
+
+        # --- grafico de eixo duplo: deformacao (esq) + cota escavada (dir) ---
+        fig4 = go.Figure()
+        fig4.add_trace(go.Scatter(
+            x=d_def, y=y_def, mode="lines+markers",
+            name=f"Desl. H {alvo4} (mm)", line=dict(color="#c0140f", width=2)))
+        fig4.add_trace(go.Scatter(
+            x=datas_e, y=cotas_e, mode="lines+markers",
+            name="Cota escavada na frente (m)", yaxis="y2",
+            line=dict(color="#8B4513", width=2, shape="hv")))
+        # marcas de ancoragem / banda de laje da zona (linhas verticais)
+        dmin4 = min([d for d in d_def] + datas_e)
+        dmax4 = max([d for d in d_def] + datas_e)
+        for d, tp, cota, rot in ESCAVACAO_ZONAS[zona4]:
+            if tp == "escavacao":
+                continue
+            t = pd.to_datetime(d)
+            if not (dmin4 <= t <= dmax4):
+                continue
+            cor = "#7a1fa0" if tp == "ancoragem" else "#1f9e55"
+            fig4.add_vline(x=t, line=dict(color=cor, width=1, dash="dot"),
+                           annotation_text=("⚓" if tp == "ancoragem" else "▭"),
+                           annotation_position="top",
+                           annotation_font=dict(size=11, color=cor))
+        fig4.update_layout(
+            height=460, xaxis=dict(title="Data", type="date"),
+            yaxis=dict(title=dict(text=f"Desl. horizontal {alvo4} (mm)",
+                                  font=dict(color="#c0140f")),
+                       tickfont=dict(color="#c0140f")),
+            yaxis2=dict(title=dict(text="Cota escavada na frente (m)",
+                                   font=dict(color="#8B4513")),
+                        tickfont=dict(color="#8B4513"),
+                        overlaying="y", side="right", anchor="x"),
+            margin=dict(t=40, b=80),
+            legend=dict(orientation="h", yanchor="top", y=-0.18,
+                        xanchor="center", x=0.5))
+        st.plotly_chart(fig4, use_container_width=True)
+        st.caption("⚓ = ancoragens · ▭ = banda de laje (betonagem), nas datas "
+                   "reais da frente. A cota desce em degraus (cada degrau = uma "
+                   "cota atingida).")
+
+        # leitura factual
+        if len(cotas_e) >= 2 and len(y_def) >= 2:
+            st.markdown(
+                f"**Leitura:** na frente da {ZONA_ESCAV_NOME[zona4].split('—')[0].strip()}, "
+                f"a escavacao desceu de cota **{cotas_e[0]:.2f}** para "
+                f"**{cotas_e[-1]:.2f} m** enquanto o {alvo4} evoluiu de "
+                f"{y_def[0]:.1f} para **{y_def[-1]:.1f} mm**.")
+
+        # --- XY: deslocamento vs. cota escavada local (degrau) + coef. r ---
+        st.markdown("**Correlacao direta — deslocamento vs. cota escavada local**")
+        xe = np.array([pd.Timestamp(d).value for d in datas_e])
+        pts_c, pts_d = [], []
+        for d, y in zip(d_def, y_def):
+            idxs = np.where(xe <= pd.Timestamp(d).value)[0]
+            if len(idxs):
+                pts_c.append(cotas_e[idxs[-1]])
+                pts_d.append(y)
+        if len(pts_c) >= 3 and len(set(pts_c)) >= 2:
+            r4 = float(np.corrcoef(pts_c, pts_d)[0, 1])
+            figx = go.Figure()
+            figx.add_trace(go.Scatter(
+                x=[float(v) for v in pts_c], y=[float(v) for v in pts_d],
+                mode="markers", name="Campanhas",
+                marker=dict(color="#c0140f", size=9)))
+            b1, b0 = np.polyfit(pts_c, pts_d, 1)
+            xs = np.linspace(min(pts_c), max(pts_c), 20)
+            figx.add_trace(go.Scatter(
+                x=[float(v) for v in xs], y=[float(b1 * v + b0) for v in xs],
+                mode="lines", name="Tendencia",
+                line=dict(color="#8B4513", width=1, dash="dash")))
+            figx.update_layout(
+                height=430,
+                xaxis=dict(title="Cota escavada na frente (m)"),
+                yaxis=dict(title=f"Desl. horizontal {alvo4} (mm)"),
+                margin=dict(t=30, b=40),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02))
+            st.plotly_chart(figx, use_container_width=True)
+            forca = ("forte" if abs(r4) >= 0.8 else
+                     "moderada" if abs(r4) >= 0.5 else "fraca")
+            st.markdown(
+                f"**Correlacao:** r = **{r4:.2f}** ({forca}), em {len(pts_c)} "
+                f"campanhas. Como a cota DESCE quando a escavacao aprofunda, um "
+                f"r negativo significa que o deslocamento sobe a medida que a "
+                f"frente local desce. r mede a associacao, nao a causa.")
+        else:
+            st.info("Pontos insuficientes na janela da escavacao para o XY.")
 
 
 def separador_home(dados):
