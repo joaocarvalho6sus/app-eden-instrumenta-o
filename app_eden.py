@@ -4287,6 +4287,97 @@ def separador_correlacoes(dados):
                 st.caption("«sem janela completa» = apoio demasiado recente para "
                            "a janela posterior (os alvos terminam a 05/02/2026).")
 
+    # =====================================================================
+    # 6. COMPARACAO LADO-A-LADO DAS TRES FRENTES
+    # =====================================================================
+    st.divider()
+    st.markdown("#### 6. Comparação das três frentes")
+    st.caption("As três frentes no mesmo eixo de tempo: em cima, o movimento do "
+               "alvo mais deslocado de cada frente; em baixo, a cota a que a "
+               "escavação chegou em cada frente. Mostra se a movimentação é "
+               "LOCALIZADA (só uma frente dispara) ou se é geral do recinto.")
+    base6 = st.radio(
+        "Representante de cada frente",
+        ["Edifício vizinho", "Alvo mais deslocado"], horizontal=True,
+        key="corr_cmp_base",
+        help="«Edifício vizinho»: o pior alvo de cada edificio vizinho (Santa "
+             "Casa / Clinica / Cimas) — a comparacao classica. «Alvo mais "
+             "deslocado»: o pior alvo de cada frente, que pode ser da propria "
+             "cortina de contencao (alcados), e que se move mais do que os "
+             "edificios.")
+    alv6 = dados["alvos"].copy()
+    alv6[COLS["data"]] = pd.to_datetime(alv6[COLS["data"]], errors="coerce")
+    ultd6 = alv6[COLS["data"]].max()
+    ult6 = alv6[alv6[COLS["data"]] == ultd6].copy()
+    ult6["_zona"] = ult6[COLS["edificio"]].map(zona_escav_de_edificio)
+    CORES_FRENTE = {"poente_sul": "#c0140f", "norte": "#1f78d1",
+                    "nascente_sul": "#1f9e55"}
+
+    fig6 = go.Figure()
+    fig6c = go.Figure()
+    linhas6 = []
+    for zona in ["poente_sul", "norte", "nascente_sul"]:
+        cor = CORES_FRENTE[zona]
+        nome = ZONA_ESCAV_NOME[zona].split("—")[0].strip()
+        sub = ult6[ult6["_zona"] == zona]
+        if base6 == "Edifício vizinho":
+            sub_v = sub[~sub[COLS["edificio"]].astype(str)
+                        .str.contains("Alçado", na=False)]
+            if not sub_v.empty:
+                sub = sub_v
+        if not sub.empty:
+            rep = sub.nlargest(1, COLS["desl_h"])[COLS["alvo"]].iloc[0]
+            edi = sub[sub[COLS["alvo"]] == rep][COLS["edificio"]].iloc[0]
+            sd = alv6[alv6[COLS["alvo"]] == rep].sort_values(COLS["data"])[
+                [COLS["data"], COLS["desl_h"]]].dropna()
+            fig6.add_trace(go.Scatter(
+                x=[pd.to_datetime(v) for v in sd[COLS["data"]].tolist()],
+                y=[float(v) for v in sd[COLS["desl_h"]].tolist()],
+                mode="lines+markers", name=f"{nome}: {rep}",
+                line=dict(color=cor, width=2)))
+            dmax = float(sd[COLS["desl_h"]].max()) if not sd.empty else float("nan")
+            linhas6.append({
+                "Frente": ZONA_ESCAV_NOME[zona],
+                "Alvo (max)": rep,
+                "Edifício": edi,
+                "Desl. H max (mm)": round(dmax, 1),
+            })
+        # cota escavada da frente (envelope descendente)
+        ev = sorted((pd.to_datetime(d), float(c))
+                    for d, tp, c, r in ESCAVACAO_ZONAS[zona]
+                    if tp == "escavacao" and c is not None)
+        if ev:
+            datas6 = [d for d, c in ev]
+            cot6, mm = [], None
+            for _, c in ev:
+                mm = c if mm is None else min(mm, c)
+                cot6.append(mm)
+            fig6c.add_trace(go.Scatter(
+                x=datas6, y=cot6, mode="lines+markers", name=nome,
+                line=dict(color=cor, width=2, shape="hv")))
+    fig6.update_layout(
+        height=380, xaxis=dict(title="Data", type="date"),
+        yaxis=dict(title="Desl. horizontal (mm)"),
+        margin=dict(t=30, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02))
+    st.plotly_chart(fig6, use_container_width=True)
+    fig6c.update_layout(
+        height=320, xaxis=dict(title="Data", type="date"),
+        yaxis=dict(title="Cota escavada na frente (m)"),
+        margin=dict(t=30, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02))
+    st.plotly_chart(fig6c, use_container_width=True)
+    if linhas6:
+        st.dataframe(pd.DataFrame(linhas6), use_container_width=True,
+                     hide_index=True)
+        st.caption("Compara a MAGNITUDE do movimento entre frentes. Em «Edifício "
+                   "vizinho», só a Santa Casa (poente) se destaca — os outros "
+                   "vizinhos movem-se muito menos, o que aponta para movimentação "
+                   "localizada e não geral. Em «Alvo mais deslocado», as próprias "
+                   "cortinas de contenção (alçados) movem-se mais do que os "
+                   "edifícios. A comparação com a estimativa de projeto está no "
+                   "separador Resultados (Observado vs. Previsto).")
+
 
 def separador_home(dados):
     # ---- BANNER no topo: gradiente azul ---------------------------------
