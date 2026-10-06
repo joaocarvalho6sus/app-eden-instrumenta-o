@@ -1,36 +1,36 @@
 """
 =============================================================================
- THE EDEN, ESTORIL — APLICACAO DE ANALISE DE INSTRUMENTACAO GEOTECNICA
- Dissertacao de Mestrado — back-analysis da contencao periferica
+ THE EDEN, ESTORIL — APLICAÇÃO DE ANÁLISE DE INSTRUMENTAÇÃO GEOTÉCNICA
+ Dissertação de Mestrado — back-analysis da contenção periférica
 =============================================================================
 
  O QUE E ESTE FICHEIRO
  ---------------------
- Aplicacao Streamlit. NAO se corre colando no Python normal nem num
- "Python online": o Streamlit le este ficheiro e transforma-o numa pagina
+ Aplicação Streamlit. NÃO se corre colando no Python normal nem num
+ "Python online": o Streamlit le este ficheiro e transforma-o numa página
  web. Ver "COMO CORRER".
 
  SEPARADORES
  -----------
-   1. Visao geral 3D  — alvos topograficos no espaco real (M,P,Z), com
+   1. Visão geral 3D  — alvos topográficos no espaço real (M,P,Z), com
                         deslocamento amplificado, cor por magnitude e
-                        evolucao por campanha. Superficie interpolada
+                        evolução por campanha. Superfície interpolada
                         OPCIONAL, sempre com os pontos medidos por cima.
-   2. Inclinometros   — perfil deformado, evolucao, velocidade, precursores.
-   3. Alvos (2D)      — series temporais de deslocamento horizontal/vertical.
-   4. Celulas de carga— carga vs. blocagem e variacao (%) com alerta/alarme.
-   5. Piezometros     — cota da agua.
+   2. Inclinómetros   — perfil deformado, evolução, velocidade, precursores.
+   3. Alvos (2D)      — séries temporais de deslocamento horizontal/vertical.
+   4. Células de carga— carga vs. blocagem e variação (%) com alerta/alarme.
+   5. Piezómetros     — cota da água.
 
- NOTA METODOLOGICA (importante para a defesa)
+ NOTA METODOLÓGICA (importante para a defesa)
  --------------------------------------------
- - Os ALVOS TOPOGRAFICOS tem coordenadas reais (M,P,Z) -> podem ir para 3D.
- - Os INCLINOMETROS nao tem coordenadas em planta neste ficheiro (so azimute
-   e profundidade), por isso NAO sao colocados no 3D dos alvos — seria
-   inventar a posicao. Ficam na sua vista propria. Se um dia tiveres as
+ - Os ALVOS TOPOGRÁFICOS tem coordenadas reais (M,P,Z) -> podem ir para 3D.
+ - Os INCLINÓMETROS não tem coordenadas em planta neste ficheiro (só azimute
+   e profundidade), por isso NÃO são colocados no 3D dos alvos — seria
+   inventar a posição. Ficam na sua vista própria. Se um dia tiveres as
    coordenadas em planta, integram-se com vetores orientados pelo azimute.
- - A superficie 3D e INTERPOLACAO entre alvos: mostra-se so como apoio
-   visual e com os pontos medidos sempre visiveis. E uma leitura do campo
-   de deslocamentos dos alvos, nao um modelo do macico.
+ - A superfície 3D e INTERPOLAÇÃO entre alvos: mostra-se só como apoio
+   visual e com os pontos medidos sempre visíveis. E uma leitura do campo
+   de deslocamentos dos alvos, não um modelo do maciço.
 
  COMO CORRER
  -----------
@@ -44,7 +44,7 @@
  O separador "Planta (DXF)" le um desenho DXF (exportado do AutoCAD/Civil 3D)
  e desenha as suas linhas com os alvos por cima. Para a planta encaixar nos
  alvos, o DXF tem de estar no MESMO referencial de coordenadas da obra
- (M/P ~5000). Se nao estiver, ha um ajuste manual de posicao no separador.
+ (M/P ~5000). Se não estiver, há um ajuste manual de posição no separador.
 =============================================================================
 """
 
@@ -152,32 +152,31 @@ DEFORM_PROJETO = {
     "nascente_sul": 10.0,   # mm (cortina nascente/sul)
 }
 
-# Mapeamento CONFIRMADO (nao inferido) da zona de projeto para os edificios
-# vizinhos, com base na orientacao real verificada em planta/mapa:
-#   - Santa Casa: noroeste (poente + norte)  -> poente/norte (20 mm)
-#   - Cimas:      nordeste (nascente + norte) -> poente/norte (20 mm), pela
-#                 regra do projeto "poente OU norte = 20 mm"
-#   - Clinica:    nascente + norte            -> poente/norte (20 mm)
-# O referencial (M,P) dos alvos esta rodado face ao norte real, por isso a
-# inferencia geometrica NAO e fiavel; estes tres sao fixados a mao.
-ZONA_FIXA_GRUPO = {
-    "Santa Casa": "poente_norte",
-    "Cimas": "poente_norte",
-    "Clínica": "poente_norte",
-    "Clinica": "poente_norte",
-}
+# A estimativa de projeto e atribuida pela FRENTE DE ESCAVACAO adjacente,
+# a mesma usada nas Correlacoes (zona_escav_de_edificio / ALCADO_ZONA):
+#   frente poente (alcados CD, BF, DE, EF, FG, GH; Santa Casa) -> 20 mm
+#   frente norte  (alcados HI-KL; Clinica)                      -> 20 mm
+#   frente nascente/sul (alcados AB, LM-QR; Cimas)              -> 10 mm
+# Assim, Cimas (frente nascente, alcado PQ a ~8 m) compara com 10 mm.
+# NOTA: para edificios vizinhos a comparacao e INDIRETA — a estimativa de
+# projeto refere-se ao deslocamento da cortina, nao ao do edificio.
+PREVISTO_POR_FRENTE = {"poente_sul": 20.0, "norte": 20.0, "nascente_sul": 10.0}
+NOME_FRENTE = {"poente_sul": "poente", "norte": "norte",
+               "nascente_sul": "nascente/sul"}
 
 # Localizacao das CELULAS DE CARGA (alcado/zona onde esta a ancoragem).
 # So faz sentido cruzar a carga de uma celula com o movimento de alvos do
 # MESMO alcado/zona. CONFIRMADO em planta e modelo 3D do projeto: ambas as
-# celulas estao na cortina sob o edificio da Santa Casa (lado poente, ZG2,
-# junto a ancoragem A26). Por isso cruzam validamente com os alvos da Santa
+# celulas estao na cortina sob o edificio da Santa Casa (lado poente,
+# junto a ancoragem A26). Nota: o alcado da 33GRADOS assinala "ZG2" nesta zona,
+# mas as sondagens SC6/Pz e SC8/Pz e os perfis interpretativos da ENGGEO nao o
+# confirmam — por isso a zona geotecnica NAO e indicada na app. Por isso cruzam validamente com os alvos da Santa
 # Casa (A1-A8...). Cada entrada: (rotulo da zona, filtro de grupo de alvos).
 #   - CC 2501796 / A26: cortina da Santa Casa (Piso -1, cota 15,90)
 #   - CC 200792  / DE : cortina da Santa Casa (proxima da A26)
 LOCALIZACAO_CELULAS = {
-    "CC 2501796": ("Cortina sob a Santa Casa — ZG2, Piso -1 (cota 15,90), junto a A26", "Santa Casa"),
-    "CC 200792":  ("Cortina sob a Santa Casa — ZG2, Piso -2 (cota 12,45), perto da A26", "Santa Casa"),
+    "CC 2501796": ("Cortina sob a Santa Casa — Piso -1 (cota 15,90), junto a A26", "Santa Casa"),
+    "CC 200792":  ("Cortina sob a Santa Casa — Piso -2 (cota 12,45), perto da A26", "Santa Casa"),
 }
 
 # Imagens de localizacao de cada celula (planta/alcado do projeto + contexto).
@@ -186,15 +185,15 @@ LOCALIZACAO_CELULAS = {
 IMAGENS_CELULAS = {
     "CC 2501796": [
         ("cc_2501796_planta.jpg",
-         "Planta de localizacao das celulas — A26 (Piso -1, cota 15,90), ZG2"),
+         "Planta de localização das células — A26 (Piso -1, cota 15,90)"),
         ("cc_2501796_3d.jpg",
-         "Modelo 3D do projeto — localizacao da celula A26; Santa Casa assinalada"),
+         "Modelo 3D do projeto — localização da célula A26; Santa Casa assinalada"),
     ],
     "CC 200792": [
         ("cc_200792_alcado.jpg",
-         "Alcado D-E — ancoragem DE (Piso -2, cota 12,45), ZG2"),
+         "Alçado D-E — ancoragem DE (Piso -2, cota 12,45)"),
         ("planta_geral.jpg",
-         "Planta de localizacao geral (recinto) — Santa Casa assinalada"),
+         "Planta de localização geral (recinto) — Santa Casa assinalada"),
     ],
 }
 
@@ -204,7 +203,7 @@ ALCADOS_A_CONFIRMAR = {"DE"}         # sem deslocamento -> grupo nao distinguive
 
 
 def _extrair_alcado(edif):
-    """Devolve o codigo do alcado (ex. 'FG') ou None se nao for contencao."""
+    """Devolve o código do alçado (ex. 'FG') ou None se não for contenção."""
     import re
     if isinstance(edif, str) and "Alçado" in edif:
         m = re.search(r"Alçado (\w+)", edif)
@@ -214,24 +213,24 @@ def _extrair_alcado(edif):
 
 def criterios_do_alvo(edif):
     """
-    Devolve (criterio, rotulo, a_confirmar) para uma linha de alvo, a partir
-    do nome do edificio/elemento. 'criterio' e o tuplo (Ha,Hm,Va,Vm).
+    Devolve (critério, rotulo, a_confirmar) para uma linha de alvo, a partir
+    do nome do edifício/elemento. 'critério' e o tuplo (Há,Hm,Va,Vm).
     """
     alc = _extrair_alcado(edif)
     if alc is None:
-        return CRIT_VIZINHOS, "Edificio adjacente (15/25 · 10/20)", False
+        return CRIT_VIZINHOS, "Edifício adjacente (15/25 · 10/20)", False
     if alc in ALCADOS_24M:
-        return CRIT_CONT_24, f"Contencao 24 m — Alcado {alc} (30/40 · 10/15)", False
+        return CRIT_CONT_24, f"Contenção 24 m — Alçado {alc} (30/40 · 10/15)", False
     if alc in ALCADOS_17M:
-        return CRIT_CONT_17, f"Contencao 17 m — Alcado {alc} (20/40 · 10/15)", False
+        return CRIT_CONT_17, f"Contenção 17 m — Alçado {alc} (20/40 · 10/15)", False
     # alcado sem classificacao segura
-    return CRIT_CONT_17, f"Alcado {alc} (17 m assumido — A CONFIRMAR)", True
+    return CRIT_CONT_17, f"Alçado {alc} (17 m assumido — A CONFIRMAR)", True
 
 
 def estado_calculado(h, v, criterio):
     """
     Estado a partir do deslocamento horizontal (h) e vertical (v) acumulados,
-    dado um criterio (Ha,Hm,Va,Vm). O estado e o mais severo entre H e V.
+    dado um critério (Há,Hm,Va,Vm). O estado e o mais severo entre H e V.
     Devolve 'Alarme' | 'Alerta' | 'Regular' | 'Sem leitura'.
     """
     ha, hm, va, vm = criterio
@@ -246,11 +245,11 @@ def estado_calculado(h, v, criterio):
 def anexar_estado_calculado(df):
     """
     Recebe o dataframe de alvos e devolve uma copia com colunas novas:
-      'Criterio'          — rotulo legivel do criterio aplicado
-      'Estado calculado'  — estado recalculado de ΔH/ΔV com os criterios oficiais
+      'Critério'          — rotulo legível do critério aplicado
+      'Estado calculado'  — estado recalculado de ΔH/ΔV com os critérios oficiais
       'Confere'           — True se coincide com a coluna 'Estado' do Excel
-      'Fachada SC'        — 'Frente escavacao' | 'Lateral (mar)' | '' (so Santa Casa)
-    Nao altera a coluna 'Estado' original: serve de auditoria lado a lado.
+      'Fachada SC'        — 'Frente escavação' | 'Lateral (mar)' | '' (só Santa Casa)
+    Não altera a coluna 'Estado' original: serve de auditoria lado a lado.
     """
     d = df.copy()
     crits, rotulos, estados, confere, fachadas = [], [], [], [], []
@@ -267,7 +266,7 @@ def anexar_estado_calculado(df):
         else:
             confere.append(None)
         fachadas.append(fachada_santa_casa(r.get(COLS["edificio"]), r.get(COLS["alvo"])))
-    d["Criterio"] = rotulos
+    d["Critério"] = rotulos
     d["Estado calculado"] = estados
     d["Confere"] = confere
     d["Fachada SC"] = fachadas
@@ -292,12 +291,12 @@ SC_SUBSTITUIDOS = {"A5": "A5b", "A6": "A6b", "A7": "A7b", "A8": "A8b"}
 
 
 def fachada_santa_casa(edif, alvo):
-    """Devolve a fachada da Santa Casa a que o alvo pertence, ou '' se nao aplicar."""
+    """Devolve a fachada da Santa Casa a que o alvo pertence, ou '' se não aplicar."""
     if not (isinstance(edif, str) and "Santa Casa" in edif):
         return ""
     a = str(alvo)
     if a in SC_FACHADA_1:
-        return "Frente escavacao"
+        return "Frente escavação"
     if a in SC_FACHADA_2:
         return "Lateral (mar)"
     return ""
@@ -316,18 +315,18 @@ GEO_SONDAGENS = {
 
 # camadas (topo, base, unidade) em profundidade (m)
 GEO_LITOLOGIA = {
-    "SC6/Pz": [(0.0, 0.5, "Aterro"), (0.5, 21.05, "Gres (C1As)")],
-    "SC7":    [(0.0, 0.5, "Aterro"), (0.5, 19.89, "Gres (C1As)")],
-    "SC8/Pz": [(0.0, 0.5, "Aterro"), (0.5, 19.5, "Gres (C1As)"),
-               (19.5, 21.0, "Calcario (C1A)")],
-    "SC9/Pz": [(0.0, 0.5, "Aterro"), (0.5, 21.41, "Gres (C1As)")],
+    "SC6/Pz": [(0.0, 0.5, "Aterro"), (0.5, 21.05, "Grés (C1As)")],
+    "SC7":    [(0.0, 0.5, "Aterro"), (0.5, 19.89, "Grés (C1As)")],
+    "SC8/Pz": [(0.0, 0.5, "Aterro"), (0.5, 19.5, "Grés (C1As)"),
+               (19.5, 21.0, "Calcário (C1A)")],
+    "SC9/Pz": [(0.0, 0.5, "Aterro"), (0.5, 21.41, "Grés (C1As)")],
 }
 
 # cor de cada unidade litologica (para a coluna)
 GEO_CORES_LITO = {
     "Aterro": "#c0641e",          # mesmo laranja do ZG6 (aterro)
-    "Gres (C1As)": "#a9c47f",     # verde-base do gres (alinhado ao ZG4)
-    "Calcario (C1A)": "#5c8a45",  # verde mais escuro (calcario de fundo)
+    "Grés (C1As)": "#a9c47f",     # verde-base do gres (alinhado ao ZG4)
+    "Calcário (C1A)": "#5c8a45",  # verde mais escuro (calcario de fundo)
 }
 
 # ensaios SPT: (profundidade_m, N). N=60 indica nega.
@@ -344,17 +343,17 @@ GEO_SPT = {
 
 # zonamento geotecnico (Quadros V, VI, VII)
 GEO_ZONAMENTO = [
-    {"Zona":"ZG6","Descricao":"Aterro heterogeneo de origem nao selectiva",
+    {"Zona":"ZG6","Descrição":"Aterro heterogéneo de origem não seletiva",
      "gama (kN/m3)":"17-18","c' (kPa)":"<5","fi' (graus)":"<26","E'":"<5 MPa"},
-    {"Zona":"ZG5","Descricao":"Gres pouco consolidado, SPT 11-30, RQD 0%",
+    {"Zona":"ZG5","Descrição":"Grés pouco consolidado, SPT 11-30, RQD 0%",
      "gama (kN/m3)":"19-20","c' (kPa)":"5-15","fi' (graus)":"28-33","E'":"8-30 MPa"},
-    {"Zona":"ZG4","Descricao":"Gres pouco consolidado, SPT 31-56, RQD 0%",
+    {"Zona":"ZG4","Descrição":"Grés pouco consolidado, SPT 31-56, RQD 0%",
      "gama (kN/m3)":"20-21","c' (kPa)":"5-30","fi' (graus)":"30-36","E'":"25-50 MPa"},
-    {"Zona":"ZG3","Descricao":"Gres/calcario irreg. consolidado, SPT>=60, RQD 0-25%",
+    {"Zona":"ZG3","Descrição":"Grés/calcário irreg. consolidado, SPT>=60, RQD 0-25%",
      "gama (kN/m3)":"22-24","c' (kPa)":"0.04-0.40 MPa","fi' (graus)":"29-32","E'":"0.07-0.22 GPa"},
-    {"Zona":"ZG2","Descricao":"Gres irreg. consolidado a consolidado, SPT>=60, RQD 45-75%",
+    {"Zona":"ZG2","Descrição":"Grés irreg. consolidado a consolidado, SPT>=60, RQD 45-75%",
      "gama (kN/m3)":"24-25","c' (kPa)":"1.26-3.14 MPa","fi' (graus)":"32-36","E'":"0.80-2.81 GPa"},
-    {"Zona":"ZG1","Descricao":"Gres consolidado, SPT>=60, RQD 76-100%",
+    {"Zona":"ZG1","Descrição":"Grés consolidado, SPT>=60, RQD 76-100%",
      "gama (kN/m3)":"25-26","c' (kPa)":"2.70-8.69 MPa","fi' (graus)":"38-42","E'":"7.94-14.13 GPa"},
 ]
 
@@ -410,11 +409,14 @@ NF_REPOUSO = [
 # com a equipa de instrumentacao. O nivel de confianca reflete a clareza
 # da correspondencia visual entre as plantas.
 INC_META = {
-    "I1": {"sondagem": "SC8/Pz", "confianca": "media-alta",
+    "I1": {"sondagem": "SC6/Pz", "confianca": "média",
            "azimute": 330, "posicao": "canto SO (poente)"},
+    # I1: a SC8/Pz fica no canto NE da Santa Casa, longe do canto SO; a
+    # sondagem de 2022 mais proxima do I1 e a SC6/Pz (as sondagens da 2.a fase,
+    # incluindo a SC3/Pz junto ao canto SO, nao estavam executadas em 2022).
     "I2": {"sondagem": "SC9/Pz", "confianca": "alta",
            "azimute": 225, "posicao": "topo N (bolbo curvo)"},
-    "I3": {"sondagem": "SC6/Pz", "confianca": "media",
+    "I3": {"sondagem": "SC6/Pz", "confianca": "média",
            "azimute": 335, "posicao": "SE/nascente"},
 }
 
@@ -432,16 +434,16 @@ def _rumo_cardeal(az):
 # (nome, inicio ISO, conclusao ISO)
 # =========================================================================
 # FASEAMENTO DA OBRA — datas REAIS de execucao (plano de trabalhos impactado,
-# Aquatecnica, 22/04/2026). As macro-fases usam as datas impactadas (o que foi
+# Aquatécnica, 22/04/2026). As macro-fases usam as datas impactadas (o que foi
 # de facto executado). Fonte: "Plano de Trabalhos - Impactado ECP".
 # =========================================================================
 FASES_OBRA = [
-    ("Contencao periferica",                    "2025-05-13", "2026-04-15"),
+    ("Contenção periférica",                    "2025-05-13", "2026-04-15"),
     ("Estacas Poente e Norte",                  "2025-05-13", "2025-08-12"),
     ("Estacas Central e Nascente",              "2025-08-13", "2025-10-07"),
     ("Estacas Cimas",                           "2025-05-13", "2025-09-25"),
-    ("Escavacao + bandas de laje + ancoragens", "2025-07-08", "2026-04-15"),
-    ("Viga coroamento + muros contencao",       "2025-07-08", "2025-11-13"),
+    ("Escavação + bandas de laje + ancoragens", "2025-07-08", "2026-04-15"),
+    ("Viga coroamento + muros contenção",       "2025-07-08", "2025-11-13"),
 ]
 
 # ESCAVACAO POR COTA — marcos reais (cota atingida + datas), do planeamento
@@ -483,7 +485,7 @@ ESCAVACAO_ZONAS = {
         ("2026-01-06", "escavacao", 12.45, "VD Piso -2"),
         ("2026-02-09", "ancoragem", None,  "Ancoragens VD Piso -2 (2 lados)"),
         ("2026-02-25", "escavacao", 9.00,  "VD Piso -3"),
-        ("2026-03-23", "escavacao", 4.55,  "fundo de escavacao"),
+        ("2026-03-23", "escavacao", 4.55,  "fundo de escavação"),
     ],
     "norte": [
         ("2025-09-17", "escavacao", 22.55, "cota 29 -> 22,55"),
@@ -492,7 +494,7 @@ ESCAVACAO_ZONAS = {
         ("2025-11-04", "banda_laje", None, "Banda Laje Piso 1 (Fase 2)"),
         ("2025-12-31", "escavacao", 12.45, "VD Piso -2 + fundo Banda Laje"),
         ("2026-02-13", "banda_laje", None, "Banda Laje Piso -2 (F2)"),
-        ("2026-04-15", "escavacao", 4.55,  "fundo de escavacao"),
+        ("2026-04-15", "escavacao", 4.55,  "fundo de escavação"),
     ],
     "nascente_sul": [
         ("2025-10-27", "banda_laje", None, "Banda Laje Piso 1 (Fase 1)"),
@@ -500,7 +502,7 @@ ESCAVACAO_ZONAS = {
         ("2025-12-23", "escavacao", 12.45, "VD Piso -2 + fundo Banda Laje"),
         ("2026-02-04", "banda_laje", None, "Banda Laje Piso -2 (F1)"),
         ("2026-03-11", "escavacao", 9.00,  "VD Piso -3"),
-        ("2026-04-14", "escavacao", 4.55,  "fundo de escavacao"),
+        ("2026-04-14", "escavacao", 4.55,  "fundo de escavação"),
     ],
 }
 ZONA_ESCAV_NOME = {
@@ -519,7 +521,7 @@ CELULA_ZONA = {"CC 2501796": "poente_sul", "CC 200792": "poente_sul"}
 # pela continuidade do perimetro). Os que ficam duvidosos ficam None (global).
 ALCADO_ZONA = {
     "AB": "nascente_sul", "CD": "poente_sul", "DE": "poente_sul",
-    "EF": "poente_sul", "FG": "poente_sul", "GH": "poente_sul",
+    "EF": "poente_sul", "FG": "poente_sul", "GH": "poente_sul", "BF": "poente_sul",
     "HI": "norte", "IJ": "norte", "JK": "norte", "KL": "norte",
     "LM": "nascente_sul", "MN": "nascente_sul", "MNO": "nascente_sul",
     "OP": "nascente_sul", "PQ": "nascente_sul", "QR": "nascente_sul",
@@ -529,15 +531,15 @@ CORES_FASES = ["#8dd3c7", "#ffffb3", "#bebada", "#fb8072", "#80b1d3",
                "#fdb462", "#b3de69", "#fccde5", "#d9d9d9"]
 
 # FASEAMENTO: real (impactado) vs contratual (previsto), para comparacao de
-# desempenho face ao prazo. Fonte: plano de trabalhos impactado (Aquatecnica).
+# desempenho face ao prazo. Fonte: plano de trabalhos impactado (Aquatécnica).
 # (nome, ini_real, fim_real, dur_real_dias, dur_contratual_dias)
 FASES_COMPARACAO = [
-    ("Contencao periferica",        "2025-05-13", "2026-04-15", 242, 210),
-    ("Execucao de estacas",         "2025-05-13", "2025-10-07", 106,  70),
+    ("Contenção periférica",        "2025-05-13", "2026-04-15", 242, 210),
+    ("Execução de estacas",         "2025-05-13", "2025-10-07", 106,  70),
     ("Estacas Poente e Norte",      "2025-05-13", "2025-08-12",  66,  30),
     ("Estacas Central e Nascente",  "2025-08-13", "2025-10-07", 106,  40),
     ("Estacas Cimas",               "2025-05-13", "2025-09-25",  98,  98),
-    ("Escavacao + bandas + ancoragens", "2025-07-08", "2026-04-15", 202, 170),
+    ("Escavação + bandas + ancoragens", "2025-07-08", "2026-04-15", 202, 170),
     ("Viga coroamento + muros",     "2025-07-08", "2025-11-13",  93,  57),
 ]
 
@@ -566,22 +568,22 @@ def _atribuir_sublinhas(fases):
 def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True,
                          barra_topo=True):
     """
-    Sobrepoe as fases da obra a um grafico com o tempo no eixo X.
+    Sobrepõe as fases da obra a um gráfico com o tempo no eixo X.
 
-    barra_topo=True (por omissao): BARRA DE FASEAMENTO (tipo Gantt) numa banda
-    no topo do proprio grafico — cada fase e um segmento de COR SOLIDA (sem
-    faixas de fundo translucidas, que se misturavam onde as fases se
-    sobrepunham), com o seu NUMERO fixo. Fases sobrepostas sao empilhadas em
-    sub-linhas para nao se misturarem. O eixo Y dos dados e encolhido (domain)
-    para abrir espaco; a Gantt partilha o eixo X e alinha automaticamente.
-    NAO usar com eixos Y duplos (overlaying) — o domain so afeta um eixo.
+    barra_topo=True (por omissão): BARRA DE FASEAMENTO (tipo Gantt) numa banda
+    no topo do próprio gráfico — cada fase e um segmento de COR SÓLIDA (sem
+    faixas de fundo translúcidas, que se misturavam onde as fases se
+    sobrepunham), com o seu NÚMERO fixo. Fases sobrepostas são empilhadas em
+    sub-linhas para não se misturarem. O eixo Y dos dados e encolhido (domain)
+    para abrir espaço; a Gantt partilha o eixo X e alinha automaticamente.
+    NÃO usar com eixos Y duplos (overlaying) — o domain só afeta um eixo.
 
-    barra_topo=False: modo legado para graficos de eixo Y duplo (ex. Correlacoes)
-    — faixas de fundo translucidas + numero no inicio de cada fase, SEM tocar
+    barra_topo=False: modo legado para gráficos de eixo Y duplo (ex. Correlações)
+    — faixas de fundo translúcidas + número no início de cada fase, SEM tocar
     no domain do eixo Y.
 
     O nome completo esta na legenda a direita (trace fantasma) e no hover.
-    Devolve a lista de fases visiveis (para a legenda).
+    Devolve a lista de fases visíveis (para a legenda).
     """
     dt_min = pd.to_datetime(dt_min)
     dt_max = pd.to_datetime(dt_max)
@@ -681,22 +683,22 @@ def adicionar_fases_obra(fig, dt_min, dt_max, faixas=True, marcos=True,
 
 
 def legenda_fases(visiveis):
-    """Escreve, por baixo do grafico, a legenda numero -> nome das fases.
-    Usa o numero FIXO global que vem no tuplo (nao re-enumera)."""
+    """Escreve, por baixo do gráfico, a legenda número -> nome das fases.
+    Usa o número FIXO global que vêm no tuplo (não re-enumera)."""
     if not visiveis:
         return
     itens = "  ·  ".join(f"**{n}**. {nome}"
                          for _, _, nome, _, n in visiveis)
-    st.caption("Fases da obra (planeamento real): " + itens)
+    st.caption("Fases da obra (plano impactado, adotado como real): " + itens)
 
 
 def barra_faseamento(dt_min, dt_max, altura=34):
     """
-    Desenha uma mini-barra de faseamento (tipo Gantt) para o periodo visivel:
-    cada fase e uma barra horizontal na sua propria linha, com o nome legivel,
-    sem sobreposicoes. Devolve uma figura plotly compacta para colocar POR CIMA
-    do grafico principal — assim as etiquetas das fases saem de dentro do
-    grafico e deixam de colidir.
+    Desenha uma mini-barra de faseamento (tipo Gantt) para o período visível:
+    cada fase e uma barra horizontal na sua própria linha, com o nome legível,
+    sem sobreposições. Devolve uma figura plotly compacta para colocar POR CIMA
+    do gráfico principal — assim as etiquetas das fases saem de dentro do
+    gráfico e deixam de colidir.
     """
     import plotly.graph_objects as go
     dt_min = pd.to_datetime(dt_min)
@@ -734,23 +736,104 @@ def barra_faseamento(dt_min, dt_max, altura=34):
     return fig
 
 
-def configurar_eixo_tempo(fig, granularidade="Automatico"):
+def configurar_eixo_tempo(fig, granularidade="Automático"):
     """
     Define a granularidade das marcas do eixo temporal (X).
-    'Mensal' -> 1 marca/mes; 'Quinzenal' -> de 15 em 15 dias;
-    'Semanal' -> de 7 em 7 dias; 'Automatico' -> deixa o plotly decidir.
-    Marcas mais finas ajudam a ler o faseamento da obra ao nivel a que as
+    'Mensal' -> 1 marca/mês; 'Quinzenal' -> de 15 em 15 dias;
+    'Semanal' -> de 7 em 7 dias; 'Automático' -> deixa o plotly decidir.
+    Marcas mais finas ajudam a ler o faseamento da obra ao nível a que as
     campanhas existem (~8 em 8 dias).
     """
+    # as etiquetas em portugues sao geradas por _datas_pt (antes de desenhar)
     if granularidade == "Mensal":
-        fig.update_xaxes(dtick="M1", tickformat="%b %Y", tickangle=-30)
+        fig.update_xaxes(dtick="M1", tickangle=-30)
     elif granularidade == "Quinzenal":
-        fig.update_xaxes(dtick=14 * 24 * 3600 * 1000, tickformat="%d %b",
-                         tickangle=-45)
+        fig.update_xaxes(dtick=14 * 24 * 3600 * 1000, tickangle=-45)
     elif granularidade == "Semanal":
-        fig.update_xaxes(dtick=7 * 24 * 3600 * 1000, tickformat="%d %b",
-                         tickangle=-45)
+        fig.update_xaxes(dtick=7 * 24 * 3600 * 1000, tickangle=-45)
     # 'Automatico' -> nao mexe
+
+
+# =========================================================================
+# DATAS EM PORTUGUES NOS GRAFICOS
+# -------------------------------------------------------------------------
+# O plotly.js escreve os meses em ingles ("Dec 14") e o Streamlit nao carrega
+# os ficheiros de localizacao. Antes de cada grafico ser desenhado, os eixos X
+# com datas recebem marcas explicitas (tickvals/ticktext) com os meses em
+# portugues: mensais ("out 2025") ou de 7/14 dias ("15 dez"), conforme a
+# granularidade escolhida (dtick) ou a extensao do periodo.
+# =========================================================================
+_MESES_PT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set",
+             "out", "nov", "dez"]
+
+
+def _datas_do_eixo(fig, ref):
+    datas = []
+    for tr in fig.data:
+        if (getattr(tr, "xaxis", None) or "x") != ref:
+            continue
+        for arr in (getattr(tr, "x", None), getattr(tr, "base", None)):
+            if arr is None:
+                continue
+            try:
+                v = pd.to_datetime(pd.Series(list(arr)), errors="coerce")
+            except Exception:
+                continue
+            if len(v) and v.notna().mean() > 0.8 and not pd.api.types.is_numeric_dtype(pd.Series(list(arr))):
+                datas.extend(v.dropna().tolist())
+    return datas
+
+
+def _datas_pt(fig):
+    try:
+        lay = fig.layout
+        refs = {(getattr(tr, "xaxis", None) or "x") for tr in fig.data}
+        for ref in refs:
+            nome = "xaxis" if ref == "x" else "xaxis" + ref[1:]
+            ax = lay[nome] if nome in lay else None
+            if ax is None or ax.tickvals is not None:
+                continue
+            datas = _datas_do_eixo(fig, ref)
+            if not datas:
+                continue
+            d0, d1 = min(datas), max(datas)
+            if ax.range is not None:
+                try:
+                    d0, d1 = pd.to_datetime(ax.range[0]), pd.to_datetime(ax.range[1])
+                except Exception:
+                    pass
+            dias = max((d1 - d0).days, 1)
+            dt = ax.dtick
+            if dt == "M1" or (dt is None and dias > 120):
+                passo = 1 if dias <= 400 else (2 if dias <= 800 else 3)
+                t = pd.Timestamp(d0.year, d0.month, 1)
+                if t < d0:
+                    t = t + pd.DateOffset(months=1)
+                vals = []
+                while t <= d1:
+                    vals.append(t); t = t + pd.DateOffset(months=passo)
+                txt = [f"{_MESES_PT[v.month - 1]} {v.year}" for v in vals]
+            else:
+                step = 7 if (isinstance(dt, (int, float)) and dt <= 7 * 86400000 + 1) or (dt is None and dias <= 60) else 14
+                vals = list(pd.date_range(pd.Timestamp(d0.date()), d1, freq=f"{step}D"))
+                txt = [f"{v.day} {_MESES_PT[v.month - 1]}" + (f"<br>{v.year}" if (k == 0 or v.month == 1 and v.day <= step) else "")
+                       for k, v in enumerate(vals)]
+            if len(vals) >= 2:
+                ax.update(tickmode="array", tickvals=vals, ticktext=txt,
+                          hoverformat="%d/%m/%Y")
+    except Exception:
+        pass
+    return fig
+
+
+_plotly_chart_original = st.plotly_chart
+
+
+def _plotly_chart_pt(fig, *args, **kwargs):
+    return _plotly_chart_original(_datas_pt(fig), *args, **kwargs)
+
+
+st.plotly_chart = _plotly_chart_pt
 
 
 st.set_page_config(page_title="IMS — Instrumentation Monitoring System",
@@ -776,6 +859,20 @@ def _carregar_dados_cached(fonte, _versao):
             df = pd.DataFrame()
         if COLS["data"] in df.columns:
             df[COLS["data"]] = pd.to_datetime(df[COLS["data"]], errors="coerce")
+        if chave == "alvos" and not df.empty and COLS["alvo"] in df.columns:
+            # A5-A8 foram tapados e substituidos por A5b-A8b (re-zerados a
+            # 20/10/2025). As leituras 0,0000 dos originais a partir dessa data
+            # nao sao medicoes: tratam-se como ausencia de leitura.
+            msk = (df[COLS["alvo"]].astype(str).isin(["A5", "A6", "A7", "A8"])
+                   & (df[COLS["data"]] >= pd.Timestamp("2025-10-20")))
+            cols_num = [c for c in df.columns if c not in (
+                COLS["data"], "Campanha", COLS["alvo"], COLS["edificio"],
+                COLS["M0"], COLS["P0"], COLS["Z0"], "Ficheiro fonte", "Página")]
+            for c in cols_num:
+                if c == COLS["estado"]:
+                    df.loc[msk, c] = "Sem leitura"
+                elif pd.api.types.is_numeric_dtype(df[c]):
+                    df.loc[msk, c] = np.nan
         dados[chave] = df
     return dados
 
@@ -799,12 +896,12 @@ def carregar_dados(fonte):
 
 def validar_colunas(df, nomes, contexto):
     if df.empty:
-        st.warning(f"A folha de '{contexto}' esta vazia ou nao foi encontrada.")
+        st.warning(f"A folha de '{contexto}' está vazia ou não foi encontrada.")
         return False
     faltam = [n for n in nomes if n not in df.columns]
     if faltam:
         st.error(f"Em '{contexto}' faltam colunas: {faltam}. "
-                 f"Verifica o bloco CONFIGURACAO (COLS) ou o Excel.")
+                 f"Verifica o bloco CONFIGURAÇÃO (COLS) ou o Excel.")
         return False
     return True
 
@@ -846,9 +943,9 @@ def dxf_extrair_segmentos(conteudo_bytes, layers_incluir=None):
     Le um DXF e devolve uma lista de polilinhas para desenhar:
         [(xs, ys, layer), ...]
     Le os tipos mais comuns em plantas: LINE, LWPOLYLINE, POLYLINE, ARC, CIRCLE.
-    (ARC e CIRCLE sao essenciais: as estacas da cortina de contencao aparecem
-    desenhadas como pequenos arcos/circulos.)
-    Se 'layers_incluir' for dado, so devolve entidades dessas layers.
+    (ARC e CIRCLE são essenciais: as estacas da cortina de contenção aparecem
+    desenhadas como pequenos arcos/círculos.)
+    Se 'layers_incluir' for dado, só devolve entidades dessas layers.
     """
     import io
     import numpy as np
@@ -913,7 +1010,7 @@ def dxf_gama_coordenadas(segmentos):
 # SEPARADOR 1 — VISAO GERAL 3D (ALVOS TOPOGRAFICOS)
 # =========================================================================
 def classificar_grupo(nome_edificio):
-    """Devolve ('contencao', alcado) ou ('edificio', nome) para dar cor/forma."""
+    """Devolve ('contenção', alçado) ou ('edifício', nome) para dar cor/forma."""
     import re
     if isinstance(nome_edificio, str) and "Alçado" in nome_edificio:
         m = re.search(r"Alçado (\w+)", nome_edificio)
@@ -924,11 +1021,11 @@ def classificar_grupo(nome_edificio):
 def contorno_recinto(campanha):
     """
     Constroi o contorno do recinto como a ENVOLVENTE CONVEXA (convex hull)
-    dos alvos da contencao periferica. Ao contrario de ligar centroides, o
+    dos alvos da contenção periférica. Ao contrário de ligar centroides, o
     convex hull envolve sempre os pontos por fora — nunca passa por dentro
     da nuvem, evitando a falsa impressao de alvos 'interiores'.
-    Devolve (Ms, Ps, Zs) ja fechado, ou None se nao houver pontos/scipy.
-    Tudo no sistema dos alvos — nao precisa de DXF nem de alinhamento.
+    Devolve (Ms, Ps, Zs) já fechado, ou None se não houver pontos/scipy.
+    Tudo no sistema dos alvos — não precisa de DXF nem de alinhamento.
     """
     import numpy as np
     cont = campanha[campanha[COLS["edificio"]].astype(str).str.contains("Alçado", na=False)].copy()
@@ -961,10 +1058,10 @@ CORES_EDIFICIO = {
 
 def _casa_edificio(fig, grp, cor, nome):
     """
-    Desenha uma casa simples e MERAMENTE ILUSTRATIVA na posicao de um edificio
-    vizinho: um bloco (paredes) rematado por um telhado de duas aguas. A posicao
-    e a extensao assentam nas coordenadas reais dos alvos do edificio; a forma e
-    esquematica e nao representa a geometria real do edificio.
+    Desenha uma casa simples e MERAMENTE ILUSTRATIVA na posição de um edifício
+    vizinho: um bloco (paredes) rematado por um telhado de duas águas. A posição
+    e a extensão assentam nas coordenadas reais dos alvos do edifício; a forma e
+    esquemática e não representa a geometria real do edifício.
     """
     import numpy as np
     x0, x1 = grp[COLS["M0"]].min(), grp[COLS["M0"]].max()
@@ -1012,19 +1109,19 @@ def separador_3d(dados):
         alvos,
         [COLS["data"], COLS["alvo"], COLS["edificio"], COLS["M0"], COLS["P0"],
          COLS["Z0"], COLS["dM"], COLS["dP"], COLS["dZ"], COLS["desl_h"]],
-        "Alvos topograficos",
+        "Alvos topográficos",
     )
     if not ok:
         return
 
-    st.subheader("Movimento dos alvos no espaco, com a geometria da obra")
-    st.caption("O contorno castanho e a envolvente dos alvos da contencao "
-               "(convex hull), que aproxima o limite do recinto de escavacao. "
-               "Os alvos dos edificios vizinhos aparecem agrupados e "
-               "identificados por cor. As setas mostram a direcao e magnitude "
-               "do deslocamento acumulado (amplificado). Todos os alvos sao de "
-               "periferia — na cortina de contencao ou nas fachadas vizinhas; "
-               "nao ha instrumentos dentro da escavacao. Tudo no sistema de "
+    st.subheader("Movimento dos alvos no espaço, com a geometria da obra")
+    st.caption("O contorno castanho é a envolvente dos alvos da contenção "
+               "(convex hull), que aproxima o limite do recinto de escavação. "
+               "Os alvos dos edifícios vizinhos aparecem agrupados e "
+               "identificados por cor. As setas mostram a direção e magnitude "
+               "do deslocamento acumulado (amplificado). Todos os alvos são de "
+               "periferia — na cortina de contenção ou nas fachadas vizinhas; "
+               "não há instrumentos dentro da escavação. Tudo no sistema de "
                "coordenadas dos alvos, sem necessidade de DXF.")
 
     datas = sorted(alvos[COLS["data"]].dropna().unique())
@@ -1034,39 +1131,39 @@ def separador_3d(dados):
             "Campanha", options=datas, value=datas[-1],
             format_func=lambda d: pd.to_datetime(d).strftime("%d/%m/%Y"))
     with col_b:
-        fator = st.slider("Amplificacao do deslocamento", 50, 2000, 500, 50,
-                          help="Os deslocamentos sao milimetricos e as "
+        fator = st.slider("Amplificação do deslocamento", 50, 2000, 500, 50,
+                          help="Os deslocamentos são milimétricos e as "
                                "coordenadas em metros; amplifica-se para ver.")
     with col_c:
         mostrar_contorno = st.checkbox("Contorno do recinto", value=True)
         mostrar_caixa = st.checkbox(
-            "Caixa de escavacao", value=True,
+            "Caixa de escavação", value=True,
             help="Desenha o volume escavado abaixo do contorno, com a "
-                 "PROFUNDIDADE real de escavacao do projeto (coroamento-fundo "
-                 "= 16,3 m). E uma distancia, nao uma cota absoluta — os alvos "
+                 "PROFUNDIDADE real de escavação do projeto (coroamento-fundo "
+                 "= 16,3 m). É uma distância, não uma cota absoluta — os alvos "
                  "e o projeto usam referenciais de cota diferentes.")
         mostrar_fases = st.checkbox(
-            "Fases de escavacao (pisos)", value=False,
-            help="Marca dentro da caixa os niveis dos pisos (-1 a -4) como "
-                 "planos, a partir das cotas de projeto. Sao distancias abaixo "
+            "Fases de escavação (pisos)", value=False,
+            help="Marca dentro da caixa os níveis dos pisos (-1 a -4) como "
+                 "planos, a partir das cotas de projeto. São distâncias abaixo "
                  "do coroamento, invariantes ao referencial.")
         destacar_alarmes = st.checkbox(
             "Destacar alarmes/alertas", value=True,
             help="Marca a vermelho os alvos e setas em alarme e a laranja os "
-                 "em alerta, segundo os criterios oficiais recalculados.")
+                 "em alerta, segundo os critérios oficiais recalculados.")
         destacar_sc = st.checkbox(
-            "Realcar fachadas da Santa Casa", value=True,
-            help="Distingue a fachada frontal (A1-A4, exposta a escavacao) da "
+            "Realçar fachadas da Santa Casa", value=True,
+            help="Distingue a fachada frontal (A1-A4, exposta a escavação) da "
                  "lateral (A5-A8, ao mar).")
         identificar_edif = st.checkbox(
-            "Identificar edificios", value=True,
-            help="Etiqueta com o nome de cada edificio, flutuando sobre os "
+            "Identificar edifícios", value=True,
+            help="Etiqueta com o nome de cada edifício, flutuando sobre os "
                  "seus alvos.")
         mostrar_casas = st.checkbox(
-            "Casas dos edificios (ilustrativo)", value=True,
-            help="Desenha cada edificio vizinho como uma casa simples "
-                 "(bloco + telhado). Posicao real dos alvos; forma esquematica "
-                 "— nao representa a geometria real do edificio.")
+            "Casas dos edifícios (ilustrativo)", value=True,
+            help="Desenha cada edifício vizinho como uma casa simples "
+                 "(bloco + telhado). Posição real dos alvos; forma esquemática "
+                 "— não representa a geometria real do edifício.")
 
     campanha = alvos[alvos[COLS["data"]] == data_sel].copy()
     # recalcular estado de cada alvo da campanha com os criterios oficiais
@@ -1109,7 +1206,7 @@ def separador_3d(dados):
                 x=list(Ms), y=list(Ps), z=[base_z] * len(Ms),
                 mode="lines", line=dict(color="peru", width=3),
                 surfaceaxis=2, surfacecolor="rgba(180,150,110,0.30)",
-                name=f"Fundo de escavacao (−{prof:.1f} m do coroamento)",
+                name=f"Fundo de escavação (−{prof:.1f} m do coroamento)",
                 hoverinfo="skip",
             ))
             # planos das FASES de escavacao (cotas dos pisos, como distancias
@@ -1153,11 +1250,11 @@ def separador_3d(dados):
             nome_leg = chave
         else:
             cor = "#ff7f0e"
-            nome_leg = f"Contencao — Alcado {etiqueta}"
+            nome_leg = f"Contenção — Alçado {etiqueta}"
 
         # simbolo por fachada da Santa Casa (frontal vs lateral)
         if destacar_sc and e_santa_casa:
-            simbolos = ["diamond" if f == "Frente escavacao" else "circle"
+            simbolos = ["diamond" if f == "Frente escavação" else "circle"
                         for f in fachadas]
         else:
             simbolos = "circle"
@@ -1243,7 +1340,7 @@ def separador_3d(dados):
     n_alerta = int((campanha["Estado calculado"] == "Alerta").sum())
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Alvos na campanha", len(campanha))
-    c2.metric("Desl. horizontal max. (mm)", f"{np.nanmax(desl_h_all):.1f}")
+    c2.metric("Desl. horizontal máx. (mm)", f"{np.nanmax(desl_h_all):.1f}")
     c3.metric("Em alarme", n_alarme)
     c4.metric("Em alerta", n_alerta)
     idx = int(np.nanargmax(desl_h_all))
@@ -1251,20 +1348,20 @@ def separador_3d(dados):
     sc = campanha[campanha["Fachada SC"] != ""]
     linha_sc = ""
     if len(sc):
-        frente = sc[sc["Fachada SC"] == "Frente escavacao"][COLS["desl_h"]]
+        frente = sc[sc["Fachada SC"] == "Frente escavação"][COLS["desl_h"]]
         lateral = sc[sc["Fachada SC"] == "Lateral (mar)"][COLS["desl_h"]]
         if len(frente) and len(lateral):
-            linha_sc = (f" Na Santa Casa, a fachada frontal (losangos, media "
+            linha_sc = (f" Na Santa Casa, a fachada frontal (losangos, média "
                         f"{frente.mean():.0f} mm) move-se mais que a lateral "
-                        f"(circulos, {lateral.mean():.0f} mm) — coerente com a "
-                        f"exposicao direta a escavacao.")
+                        f"(círculos, {lateral.mean():.0f} mm) — coerente com a "
+                        f"exposição direta a escavação.")
     st.caption(
         f"O alvo mais afetado ({nomes_all[idx]}, {np.nanmax(desl_h_all):.1f} mm) "
         f"pertence a: {edif_all[idx]}. Setas e contornos: vermelho = alarme, "
-        f"laranja = alerta, verde = regular (criterios oficiais recalculados). "
-        f"A caixa mostra a profundidade real de escavacao (16,3 m, do projeto) "
-        f"como distancia abaixo da cortina — os alvos e o projeto usam "
-        f"referenciais de cota diferentes, por isso e profundidade, nao cota "
+        f"laranja = alerta, verde = regular (critérios oficiais recalculados). "
+        f"A caixa mostra a profundidade real de escavação (16,3 m, do projeto) "
+        f"como distância abaixo da cortina — os alvos e o projeto usam "
+        f"referenciais de cota diferentes, por isso e profundidade, não cota "
         f"absoluta.{linha_sc}")
 
 
@@ -1275,24 +1372,24 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
     perfis, resumo = dados["perfis"], dados["resumo"]
     ok = validar_colunas(perfis, [COLS["data"], COLS["inclinometro"],
                                   COLS["profundidade"], COLS["desl_total"]],
-                         "Inclinometros / perfis") \
+                         "Inclinómetros / perfis") \
         and validar_colunas(resumo, [COLS["data"], COLS["inclinometro"],
                                      COLS["desl_max_global"], COLS["prof_do_max"]],
-                            "Inclinometros / resumo")
+                            "Inclinómetros / resumo")
     if not ok:
         return
 
-    inc = st.selectbox("Inclinometro",
+    inc = st.selectbox("Inclinómetro",
                        sorted(perfis[COLS["inclinometro"]].dropna().unique()))
     p_inc = perfis[perfis[COLS["inclinometro"]] == inc].copy()
     r_inc = resumo[resumo[COLS["inclinometro"]] == inc].copy().sort_values(COLS["data"])
     datas_inc = sorted(p_inc[COLS["data"]].dropna().unique())
     if not datas_inc:
-        st.warning("Sem leituras com data valida.")
+        st.warning("Sem leituras com data válida.")
         return
 
     tab_perfil, tab_evol = st.tabs(
-        ["📐 Perfil deformado", "📈 Evolucao do deslocamento"])
+        ["📐 Perfil deformado", "📈 Evolução do deslocamento"])
     with tab_perfil:
         st.subheader("Perfil deformado")
         st.caption("Deslocamento acumulado ao longo da profundidade. Base fixa.")
@@ -1303,10 +1400,10 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
 
         # opcao de sobrepor a geologia de uma sondagem (peca-chave do back-analysis)
         geo_on = st.checkbox("Sobrepor geologia + SPT da sondagem", value=False,
-                             help="Mostra a litologia, o nivel freatico e o "
+                             help="Mostra a litologia, o nível freático e o "
                                   "perfil SPT de uma sondagem no mesmo eixo de "
-                                  "profundidade, para relacionar a deformacao "
-                                  "com a resistencia do terreno.")
+                                  "profundidade, para relacionar a deformação "
+                                  "com a resistência do terreno.")
         sond_sel = None
         if geo_on:
             # sugestao por proximidade (inferida das plantas)
@@ -1316,20 +1413,20 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
             if meta and meta["sondagem"] in sonds:
                 default_idx = sonds.index(meta["sondagem"])
             sond_sel = st.selectbox(
-                "Sondagem de referencia", sonds, index=default_idx)
+                "Sondagem de referência", sonds, index=default_idx)
             if meta:
                 rumo = _rumo_cardeal(meta["azimute"])
                 sugerida = meta["sondagem"]
                 nota = (f"Sugerida por proximidade: **{sugerida}** "
-                        f"(confianca {meta['confianca']}; {inc} fica em "
+                        f"(confiança {meta['confianca']}; {inc} fica em "
                         f"{meta['posicao']}). Eixo A+ orientado a "
                         f"{meta['azimute']}° ({rumo}). ")
                 if sond_sel != sugerida:
                     nota += f"Estas a ver **{sond_sel}**, diferente da sugerida."
                 st.caption(nota)
-                st.caption("Associacao inclinometro-sondagem inferida da "
-                           "sobreposicao das plantas — a confirmar com a "
-                           "instrumentacao.")
+                st.caption("Associação inclinómetro-sondagem inferida da "
+                           "sobreposição das plantas — a confirmar com a "
+                           "instrumentação.")
 
         fig = go.Figure()
 
@@ -1399,15 +1496,15 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
         if geo_on and sond_sel:
             st.caption(f"Litologia, NF e SPT da sondagem {sond_sel} sobrepostos "
                        f"(SPT no eixo de cima). A leitura central do "
-                       f"back-analysis: ve se o 'joelho' de maior deformacao do "
+                       f"back-analysis: ve se o 'joelho' de maior deformação do "
                        f"perfil coincide com uma subida do SPT (grés a "
-                       f"consolidar) ou com o nivel freatico. Onde o "
-                       f"inclinometro passa da base da sondagem, nao ha dado "
-                       f"geologico.")
+                       f"consolidar) ou com o nível freático. Onde o "
+                       f"inclinómetro passa da base da sondagem, não há dado "
+                       f"geológico.")
 
     with tab_evol:
-        st.subheader("Evolucao do deslocamento")
-        st.caption("Maximo global vs. profundidade fixa.")
+        st.subheader("Evolução do deslocamento")
+        st.caption("Máximo global vs. profundidade fixa.")
         profs = sorted(p_inc[COLS["profundidade"]].dropna().unique())
         moda = r_inc[COLS["prof_do_max"]].mode()
         pdef = float(moda.iloc[0]) if len(moda) else profs[0]
@@ -1418,14 +1515,14 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
         s_max = r_inc.sort_values(COLS["data"])
         fig2 = go.Figure()
         fig2.add_trace(go.Scatter(x=s_max[COLS["data"]], y=s_max[COLS["desl_max_global"]],
-                                  mode="lines+markers", name="Maximo global"))
+                                  mode="lines+markers", name="Máximo global"))
         fig2.add_trace(go.Scatter(x=s_fix[COLS["data"]], y=s_fix[COLS["desl_total"]],
                                   mode="lines+markers", name=f"A {prof_fixa:.1f} m"))
         fig2.update_xaxes(title="Data")
         fig2.update_yaxes(title="Deslocamento (mm)")
         fig2.update_layout(
             height=780,
-            legend=dict(title="Serie", orientation="v",
+            legend=dict(title="Série", orientation="v",
                         yanchor="top", y=1, xanchor="left", x=1.02,
                         font=dict(size=11)),
             margin=dict(r=60, t=60, b=40))
@@ -1433,9 +1530,9 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
 
     st.divider()
     st.subheader("Velocidade e sinais precursores")
-    base = st.radio("Serie de base", ["Maximo global", f"Profundidade fixa ({prof_fixa:.1f} m)"],
+    base = st.radio("Série de base", ["Máximo global", f"Profundidade fixa ({prof_fixa:.1f} m)"],
                     horizontal=True)
-    if base == "Maximo global":
+    if base == "Máximo global":
         vdf = calcular_velocidade(s_max[COLS["data"]], s_max[COLS["desl_max_global"]],
                                   limiar_vel, fator_acel)
     else:
@@ -1453,14 +1550,14 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
 
     n = int(vdf["precursor"].sum())
     c1, c2, c3 = st.columns(3)
-    c1.metric("Ult. desloc. max. (mm)",
+    c1.metric("Últ. desloc. máx. (mm)",
               f"{s_max[COLS['desl_max_global']].iloc[-1]:.2f}" if len(s_max) else "-")
     vmax = vdf["velocidade"].max()
-    c2.metric("Velocidade max. (mm/dia)", f"{vmax:.3f}" if pd.notna(vmax) else "-")
+    c2.metric("Velocidade máx. (mm/dia)", f"{vmax:.3f}" if pd.notna(vmax) else "-")
     c3.metric("Precursores", n)
     (st.warning if n else st.success)(
-        f"{n} leitura(s) com aceleracao acima dos criterios." if n
-        else "Nenhuma aceleracao acima dos criterios.")
+        f"{n} leitura(s) com aceleração acima dos critérios." if n
+        else "Nenhuma aceleração acima dos critérios.")
 
 
 # =========================================================================
@@ -1468,10 +1565,10 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
 # =========================================================================
 def _plotar_alcado_esquematico(sub_edi, edi, selecionados, cores_estado):
     """
-    Desenha um alcado ESQUEMATICO de um edificio a partir das coordenadas
+    Desenha um alçado ESQUEMÁTICO de um edifício a partir das coordenadas
     reais dos alvos. Usa a coordenada ao longo da fachada (M ou P, conforme
-    a orientacao dominante) no eixo horizontal e o Z no eixo vertical. As
-    POSICOES RELATIVAS sao fieis aos dados; a ESCALA e esquematica (nao se
+    a orientação dominante) no eixo horizontal e o Z no eixo vertical. As
+    POSIÇÕES RELATIVAS são fieis aos dados; a ESCALA e esquemática (não se
     afirmam cotas absolutas). Devolve uma figura plotly ou None.
     """
     import plotly.graph_objects as go
@@ -1482,7 +1579,7 @@ def _plotar_alcado_esquematico(sub_edi, edi, selecionados, cores_estado):
     span_m = d[COLS["M0"]].max() - d[COLS["M0"]].min()
     span_p = d[COLS["P0"]].max() - d[COLS["P0"]].min()
     eixo = COLS["M0"] if span_m >= span_p else COLS["P0"]
-    horiz_lbl = "Posicao ao longo da fachada (m, relativo)"
+    horiz_lbl = "Posição ao longo da fachada (m, relativo)"
 
     fig = go.Figure()
     # moldura da fachada (retangulo de fundo)
@@ -1519,7 +1616,7 @@ def _plotar_alcado_esquematico(sub_edi, edi, selecionados, cores_estado):
 
 
 def _slug_edificio(edi):
-    """Nome de ficheiro seguro (sem acentos, minusculas) para a foto do edificio."""
+    """Nome de ficheiro seguro (sem acentos, minusculas) para a foto do edifício."""
     import unicodedata
     txt = unicodedata.normalize("NFKD", str(edi)).encode("ascii", "ignore").decode()
     slug = "".join(c if c.isalnum() else "_" for c in txt).strip("_").lower()
@@ -1530,10 +1627,10 @@ def _slug_edificio(edi):
 
 def mostrar_localizacao_alvo(sub_edi, edi, selecionados, cores_estado):
     """
-    Mostra onde estao os alvos selecionados no edificio. Prioridade:
-      1) foto real do relatorio, se existir em fotos_alvos/<slug>.{png,jpg}
-      2) alcado esquematico das coordenadas reais (fallback)
-    A foto e propriedade do relatorio de instrumentacao (33GRADOS) — creditar.
+    Mostra onde estão os alvos selecionados no edifício. Prioridade:
+      1) foto real do relatório, se existir em fotos_alvos/<slug>.{png,jpg}
+      2) alçado esquemático das coordenadas reais (fallback)
+    A foto e propriedade do relatório de instrumentação (33GRADOS) — creditar.
     """
     import os
     slug = _slug_edificio(edi)
@@ -1547,27 +1644,27 @@ def mostrar_localizacao_alvo(sub_edi, edi, selecionados, cores_estado):
             break
     if foto:
         st.image(foto, use_container_width=True,
-                 caption=f"Localizacao dos alvos — {edi}. "
-                         f"Fonte: relatorio de instrumentacao (33GRADOS).")
+                 caption=f"Localização dos alvos — {edi}. "
+                         f"Fonte: relatório de instrumentação (33GRADOS).")
         return
     # fallback: esquema das coordenadas
     fig = _plotar_alcado_esquematico(sub_edi, edi, selecionados, cores_estado)
     if fig is not None:
         st.plotly_chart(fig, use_container_width=True)
-        st.caption("Esquema a partir das coordenadas reais dos alvos (posicoes "
-                   "relativas fieis; escala esquematica). O alvo selecionado "
+        st.caption("Esquema a partir das coordenadas reais dos alvos (posições "
+                   "relativas fieis; escala esquemática). O alvo selecionado "
                    "aparece em estrela. Para uma foto real, coloca a imagem em "
                    f"'fotos_alvos/{slug}.png'.")
     else:
-        st.caption("Sem coordenadas suficientes para esquematizar este edificio.")
+        st.caption("Sem coordenadas suficientes para esquematizar este edifício.")
 
 
 def separador_alvos_2d(dados):
     alvos = dados["alvos"]
     if not validar_colunas(alvos, [COLS["data"], COLS["alvo"], COLS["edificio"],
-                                   COLS["desl_h"], COLS["dZ"]], "Alvos topograficos"):
+                                   COLS["desl_h"], COLS["dZ"]], "Alvos topográficos"):
         return
-    st.subheader("Alvos topograficos — evolucao temporal")
+    st.subheader("Alvos topográficos — evolução temporal")
 
     # recalcular estado de ΔH/ΔV com os criterios oficiais (auditoria)
     alvos = anexar_estado_calculado(alvos)
@@ -1580,8 +1677,8 @@ def separador_alvos_2d(dados):
     n_reg = int((ult["Estado calculado"] == "Regular").sum())
     n_sl = int((ult["Estado calculado"] == "Sem leitura").sum())
 
-    st.markdown(f"**Estado na ultima campanha ({data_ult})** — recalculado dos "
-                f"deslocamentos ΔH/ΔV com os criterios oficiais:")
+    st.markdown(f"**Estado na última campanha ({data_ult})** — recalculado dos "
+                f"deslocamentos ΔH/ΔV com os critérios oficiais:")
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Em ALARME", n_alarme)
     m2.metric("Em ALERTA", n_alerta)
@@ -1594,47 +1691,49 @@ def separador_alvos_2d(dados):
     n_tot = int(len(comp))
     if n_tot:
         if n_conf == n_tot:
-            st.success(f"Auditoria: o estado recalculado coincide com a coluna "
-                       f"'Estado' do relatorio em {n_conf}/{n_tot} leituras (100%). "
-                       f"Os criterios estao corretamente reproduzidos.")
+            st.success(f"Auditoria: o estado recalculado pela app coincide com a "
+                       f"coluna 'Estado' do Excel (calculada por fórmula) em "
+                       f"{n_conf}/{n_tot} leituras (100%). As duas implementações "
+                       f"dos critérios são coerentes; a comparação com o estado "
+                       f"publicado nos relatórios 33GRADOS é feita à parte.")
         else:
-            st.warning(f"Auditoria: divergencia em {n_tot - n_conf}/{n_tot} leituras "
-                       f"entre o estado recalculado e a coluna 'Estado' do relatorio. "
-                       f"Ver tabela de divergencias abaixo.")
-            with st.expander("Ver divergencias estado recalculado vs. relatorio"):
+            st.warning(f"Auditoria: divergência em {n_tot - n_conf}/{n_tot} leituras "
+                       f"entre o estado recalculado e a coluna 'Estado' do Excel. "
+                       f"Ver tabela de divergências abaixo.")
+            with st.expander("Ver divergências estado recalculado vs. relatório"):
                 div = comp[~comp["Confere"]]
                 st.dataframe(
                     div[[COLS["data"], COLS["alvo"], COLS["edificio"],
                          COLS["desl_h"], COLS["dZ"], COLS["estado"],
-                         "Estado calculado", "Criterio"]],
+                         "Estado calculado", "Critério"]],
                     use_container_width=True, hide_index=True)
 
     # alvos em alarme/alerta agora, para leitura rapida
     crit_now = ult[ult["Estado calculado"].isin(["Alarme", "Alerta"])].copy()
     if len(crit_now):
         crit_now = crit_now.sort_values("Estado calculado")
-        st.caption("Alvos em alerta ou alarme na ultima campanha:")
+        st.caption("Alvos em alerta ou alarme na última campanha:")
         st.dataframe(
             crit_now[[COLS["alvo"], COLS["edificio"], "Fachada SC",
-                      COLS["desl_h"], COLS["dZ"], "Estado calculado", "Criterio"]]
+                      COLS["desl_h"], COLS["dZ"], "Estado calculado", "Critério"]]
             .rename(columns={COLS["desl_h"]: "Desl. H (mm)", COLS["dZ"]: "ΔZ (mm)"}),
             use_container_width=True, hide_index=True)
     st.divider()
 
     edificios = sorted(alvos[COLS["edificio"]].dropna().unique())
-    edi = st.selectbox("Edificio / elemento", edificios)
+    edi = st.selectbox("Edifício / elemento", edificios)
     sub = alvos[alvos[COLS["edificio"]] == edi]
 
     # se for a Santa Casa, permitir filtrar por fachada e avisar da substituicao
     e_santa_casa = isinstance(edi, str) and "Santa Casa" in edi
     if e_santa_casa:
         st.info(
-            "A Santa Casa tem duas fachadas instrumentadas: **Frente a escavacao** "
+            "A Santa Casa tem duas fachadas instrumentadas: **Frente a escavação** "
             "(A1–A4) e **Lateral, virada ao mar** (A5–A8). Os alvos A5–A8 foram "
-            "tapados por um painel publicitario e substituidos por **A5b–A8b**, "
-            "RE-ZERADOS em 20/10/2025 — por isso os acumulados dos 'b' nao sao "
-            "comparaveis diretamente com A1–A4 (arrancam de zero mais tarde).")
-        fach = st.radio("Fachada", ["Ambas", "Frente escavacao", "Lateral (mar)"],
+            "tapados por um painel publicitário e substituídos por **A5b–A8b**, "
+            "RE-ZERADOS em 20/10/2025 — por isso os acumulados dos 'b' não são "
+            "comparáveis diretamente com A1–A4 (arrancam de zero mais tarde).")
+        fach = st.radio("Fachada", ["Ambas", "Frente escavação", "Lateral (mar)"],
                         horizontal=True)
         if fach != "Ambas":
             sub = sub[sub["Fachada SC"] == fach]
@@ -1643,9 +1742,9 @@ def separador_alvos_2d(dados):
     sel = st.multiselect("Alvos", lista, default=lista[:min(5, len(lista))])
 
     # localizacao fisica dos alvos (foto real ou esquema das coordenadas)
-    if st.checkbox("Mostrar localizacao dos alvos no edificio", value=False,
-                   help="Foto real do relatorio, se disponivel; caso contrario "
-                        "um alcado esquematico a partir das coordenadas."):
+    if st.checkbox("Mostrar localização dos alvos no edifício", value=False,
+                   help="Foto real do relatório, se disponível; caso contrário "
+                        "um alçado esquemático a partir das coordenadas."):
         COR_ESTADO = {"Alarme": "#c0140f", "Alerta": "#e67e00",
                       "Regular": "#1f9e55"}
         mostrar_localizacao_alvo(sub, edi, sel, COR_ESTADO)
@@ -1653,18 +1752,18 @@ def separador_alvos_2d(dados):
     # criterio aplicavel a este edificio (para desenhar as linhas de limiar)
     crit_edi, rotulo_edi, ac_edi = criterios_do_alvo(edi)
     Ha, Hm, Va, Vm = crit_edi
-    st.caption(f"Criterio aplicado: **{rotulo_edi}**. As linhas tracejadas nos "
-               f"graficos marcam os limiares de alerta e alarme.")
+    st.caption(f"Critério aplicado: **{rotulo_edi}**. As linhas tracejadas nos "
+               f"gráficos marcam os limiares de alerta e alarme.")
     if ac_edi:
-        st.warning("Este alcado esta com criterio ASSUMIDO (a confirmar com o "
-                   "projeto de contencao).")
+        st.warning("Este alçado está com critério ASSUMIDO (a confirmar com o "
+                   "projeto de contenção).")
     data_rezerag = pd.to_datetime("2025-10-20")
 
     # --- controlo de zoom temporal (util quando as fases da obra estao ligadas)
     cz1, cz2 = st.columns([1, 2])
     with cz1:
         granul = st.selectbox("Detalhe do eixo temporal",
-                              ["Automatico", "Mensal", "Quinzenal", "Semanal"],
+                              ["Automático", "Mensal", "Quinzenal", "Semanal"],
                               index=0,
                               help="Marcas mais finas ajudam a ler as "
                                    "campanhas (~8 em 8 dias).")
@@ -1739,12 +1838,12 @@ def separador_alvos_2d(dados):
 # SEPARADOR 4 — CELULAS DE CARGA
 # =========================================================================
 def _mostrar_imagens_celula(cel_sel, key_suffix=""):
-    """Mostra, num expander, as imagens de localizacao da celula (pecas do
-    projeto). Reutilizada no separador Celulas (Dados) e na Analise."""
+    """Mostra, num expander, as imagens de localização da célula (peças do
+    projeto). Reutilizada no separador Células (Dados) e na Análise."""
     imgs = IMAGENS_CELULAS.get(cel_sel, [])
     if not imgs:
         return
-    with st.expander(f"📍 Ver localizacao da celula {cel_sel} (pecas do projeto)"):
+    with st.expander(f"📍 Ver localização da célula {cel_sel} (peças do projeto)"):
         base_dir = Path(__file__).resolve().parent
         mostrou = False
         for fich, legenda in imgs:
@@ -1755,22 +1854,22 @@ def _mostrar_imagens_celula(cel_sel, key_suffix=""):
                 st.image(str(fp), caption=legenda, use_container_width=True)
                 mostrou = True
         if not mostrou:
-            st.info("Imagens de localizacao nao encontradas (pasta "
+            st.info("Imagens de localização não encontradas (pasta "
                     "'fotos_celulas/'). Verifica que foram publicadas com a app.")
         loc = LOCALIZACAO_CELULAS.get(cel_sel)
         if loc:
-            st.caption(f"Localizacao: {loc[0]}. Imagens das pecas desenhadas do "
-                       f"projeto de contencao (JETsj).")
+            st.caption(f"Localização: {loc[0]}. Imagens das peças desenhadas do "
+                       f"projeto de contenção (JETsj).")
 
 
 def separador_celulas(dados):
     cc = dados["celulas"]
     if not validar_colunas(cc, [COLS["data"], COLS["celula"], COLS["carga_atual"],
-                                COLS["variacao"]], "Celulas de carga"):
+                                COLS["variacao"]], "Células de carga"):
         return
     cc = cc.sort_values(COLS["data"])
-    st.subheader("Celulas de carga")
-    cel = st.selectbox("Celula", sorted(cc[COLS["celula"]].dropna().unique()))
+    st.subheader("Células de carga")
+    cel = st.selectbox("Célula", sorted(cc[COLS["celula"]].dropna().unique()))
     _mostrar_imagens_celula(cel, key_suffix="_inputs")
     sub = cc[cc[COLS["celula"]] == cel].sort_values(COLS["data"])
     col1, col2 = st.columns(2)
@@ -1787,12 +1886,12 @@ def separador_celulas(dados):
     with col2:
         fig2 = go.Figure()
         fig2.add_trace(go.Scatter(x=sub[COLS["data"]], y=sub[COLS["variacao"]] * 100,
-                                  mode="lines+markers", name="Variacao (%)"))
+                                  mode="lines+markers", name="Variação (%)"))
         fig2.add_hline(y=CC_ALERTA * 100, line_dash="dash", line_color="orange",
                        annotation_text="Alerta 15%")
         fig2.add_hline(y=CC_ALARME * 100, line_dash="dash", line_color="red",
                        annotation_text="Alarme 25%")
-        fig2.update_xaxes(title="Data"); fig2.update_yaxes(title="Variacao (%)")
+        fig2.update_xaxes(title="Data"); fig2.update_yaxes(title="Variação (%)")
         fig2.update_layout(height=460)
         st.plotly_chart(fig2, use_container_width=True)
     cols = [c for c in [COLS["data"], COLS["ancoragem"], COLS["carga_atual"],
@@ -1810,20 +1909,20 @@ def separador_piezometros(dados):
                            "Piezometros"):
         return
     pz = pz.sort_values(COLS["data"])
-    st.subheader("Piezometros — cota da agua vs. escavacao")
-    st.caption("O eixo vertical e a COTA (m), partilhada com as cotas de "
-               "projeto da escavacao/contencao e com o nivel freatico de "
-               "repouso. Assim ve-se a que profundidade anda a agua face a "
-               "cada piso e ao fundo de escavacao.")
+    st.subheader("Piezómetros — cota da água vs. escavação")
+    st.caption("O eixo vertical é a COTA (m), partilhada com as cotas de "
+               "projeto da escavação/contenção e com o nível freático de "
+               "repouso. Assim ve-se a que profundidade anda a água face a "
+               "cada piso e ao fundo de escavação.")
 
     c1, c2 = st.columns([1, 2])
     with c1:
-        p = st.selectbox("Piezometro",
+        p = st.selectbox("Piezómetro",
                          sorted(pz[COLS["piezometro"]].dropna().unique()))
     with c2:
-        mostrar_pisos = st.checkbox("Cotas dos pisos e fundo de escavacao",
+        mostrar_pisos = st.checkbox("Cotas dos pisos e fundo de escavação",
                                     value=True)
-        mostrar_nf = st.checkbox("Nivel freatico de repouso (2022)", value=True)
+        mostrar_nf = st.checkbox("Nível freático de repouso (2022)", value=True)
 
     sub = pz[pz[COLS["piezometro"]] == p].sort_values(COLS["data"])
     fig = go.Figure()
@@ -1838,7 +1937,7 @@ def separador_piezometros(dados):
                           annotation_font_size=9)
         fig.add_hline(y=COTA_FUNDO_ESCAVACAO,
                       line=dict(color="#b45309", width=2),
-                      annotation_text=f"Fundo de escavacao ({COTA_FUNDO_ESCAVACAO:.2f})",
+                      annotation_text=f"Fundo de escavação ({COTA_FUNDO_ESCAVACAO:.2f})",
                       annotation_position="right", annotation_font_size=10)
 
     # nivel freatico de repouso (faixa entre min e max das sondagens)
@@ -1851,7 +1950,7 @@ def separador_piezometros(dados):
 
     # a serie do piezometro por cima
     fig.add_trace(go.Scatter(x=sub[COLS["data"]], y=sub[COLS["cota_agua"]],
-                             mode="lines+markers", name="Cota da agua (PZ)",
+                             mode="lines+markers", name="Cota da água (PZ)",
                              line=dict(color="#2563eb", width=2)))
     fig.update_xaxes(title="Data")
     fig.update_yaxes(title="Cota (m)")
@@ -1871,14 +1970,14 @@ def separador_piezometros(dados):
         desc = c_ini - c_fim
         nf_med = sum(c for _, c in NF_REPOUSO) / len(NF_REPOUSO)
         st.markdown(
-            f"**Leitura:** a agua no {p} desceu de **{c_ini:.2f}** para "
-            f"**{c_fim:.2f} m** ({desc:+.2f} m) no periodo monitorizado. "
-            f"O fundo de escavacao (**{COTA_FUNDO_ESCAVACAO:.2f} m**) fica "
-            f"{c_fim - COTA_FUNDO_ESCAVACAO:.1f} m abaixo da agua atual e "
-            f"~{nf_med - COTA_FUNDO_ESCAVACAO:.0f} m abaixo do nivel freatico "
+            f"**Leitura:** a água no {p} desceu de **{c_ini:.2f}** para "
+            f"**{c_fim:.2f} m** ({desc:+.2f} m) no período monitorizado. "
+            f"O fundo de escavação (**{COTA_FUNDO_ESCAVACAO:.2f} m**) fica "
+            f"{c_fim - COTA_FUNDO_ESCAVACAO:.1f} m abaixo da água atual e "
+            f"~{nf_med - COTA_FUNDO_ESCAVACAO:.0f} m abaixo do nível freático "
             f"de repouso de 2022 (~{nf_med:.0f} m).")
-    st.caption("Cotas de projeto: escavacao e contencao periferica (JETsj, "
-               "PRO/2023/368). NF de repouso: piezometros das sondagens "
+    st.caption("Cotas de projeto: escavação e contenção periférica (JETsj, "
+               "PRO/2023/368). NF de repouso: piezómetros das sondagens "
                "(ENGGEO, Quadro III, 24/11/2022).")
 
 
@@ -1894,11 +1993,11 @@ LAYERS_ESTRUTURAIS_SUGERIDAS = [
 
 def transformacao_semelhanca(p1_src, p1_dst, p2_src, p2_dst):
     """
-    Transformacao de semelhanca 2D (translacao + rotacao + escala uniforme)
+    Transformação de semelhanca 2D (translação + rotação + escala uniforme)
     que leva pontos do sistema do DESENHO (src) para o sistema dos ALVOS (dst),
     a partir de 2 pares de pontos correspondentes.
 
-    Dois pontos chegam para fixar as 4 incognitas (2 translacao, 1 rotacao,
+    Dois pontos chegam para fixar as 4 incognitas (2 translação, 1 rotação,
     1 escala). Devolve (aplicar, escala, angulo_graus), onde aplicar(x, y)
     converte uma coordenada do desenho para o sistema dos alvos.
     """
@@ -1933,17 +2032,17 @@ def separador_planta(dados):
                  "localmente) para ativar a leitura de desenhos.")
         return
 
-    st.caption("Carrega uma planta em DXF (por exemplo a planta de escavacao "
-               "e contencao de um piso). Podes ve-la sozinha, ou ALINHA-LA com "
-               "os alvos topograficos indicando 2 pontos de referencia — a app "
-               "calcula a transformacao e sobrepoe os alvos coloridos pelo "
+    st.caption("Carrega uma planta em DXF (por exemplo a planta de escavação "
+               "e contenção de um piso). Podes ve-la sozinha, ou ALINHA-LA com "
+               "os alvos topográficos indicando 2 pontos de referência — a app "
+               "calcula a transformação e sobrepõe os alvos coloridos pelo "
                "deslocamento.")
 
     dxf = st.file_uploader("Ficheiro DXF", type=["dxf"])
     if dxf is None:
-        st.info("Carrega um DXF para ver a planta. Sugestao: a planta de "
-                "escavacao do piso -1, -2 ou -3 mostra bem o contorno do "
-                "recinto de contencao.")
+        st.info("Carrega um DXF para ver a planta. Sugestão: a planta de "
+                "escavação do piso -1, -2 ou -3 mostra bem o contorno do "
+                "recinto de contenção.")
         return
 
     conteudo = dxf.getvalue()
@@ -1951,13 +2050,13 @@ def separador_planta(dados):
     try:
         layers = dxf_listar_layers(conteudo)
     except Exception as e:
-        st.error(f"Nao consegui ler as layers do DXF. Detalhe: {e}")
+        st.error(f"Não consegui ler as layers do DXF. Detalhe: {e}")
         return
 
     sugeridas = [l for l in layers
                  if any(l.upper().startswith(p) for p in LAYERS_ESTRUTURAIS_SUGERIDAS)]
 
-    st.write(f"O desenho tem **{len(layers)} layers**. Estao pre-selecionadas "
+    st.write(f"O desenho tem **{len(layers)} layers**. Estão pre-selecionadas "
              f"as estruturais (contorno, estacas, grelha). Ajusta se quiseres:")
     layers_sel = st.multiselect("Layers a desenhar", sorted(layers),
                                 default=sorted(sugeridas) if sugeridas else [])
@@ -1968,10 +2067,10 @@ def separador_planta(dados):
     try:
         segmentos = dxf_extrair_segmentos(conteudo, set(layers_sel))
     except Exception as e:
-        st.error(f"Nao consegui extrair a geometria. Detalhe: {e}")
+        st.error(f"Não consegui extrair a geometria. Detalhe: {e}")
         return
     if not segmentos:
-        st.warning("Nao encontrei geometria nas layers escolhidas. Tenta outras.")
+        st.warning("Não encontrei geometria nas layers escolhidas. Tenta outras.")
         return
 
     # ---------------------------------------------------------------------
@@ -1985,22 +2084,22 @@ def separador_planta(dados):
     aplicar = None
     if tem_alvos:
         alinhar = st.checkbox(
-            "Alinhar a planta com os alvos (sobreposicao)", value=False,
-            help="Precisas de indicar, para 2 alvos, onde eles estao no "
-                 "desenho. A coordenada no sistema dos alvos ja vem do Excel.")
+            "Alinhar a planta com os alvos (sobreposição)", value=False,
+            help="Precisas de indicar, para 2 alvos, onde eles estão no "
+                 "desenho. A coordenada no sistema dos alvos já vêm do Excel.")
 
     if alinhar:
         # coordenadas dos alvos (sistema dos alvos) — uma linha por alvo (usar campanha mais recente)
         ult = alvos[alvos[COLS["data"]] == alvos[COLS["data"]].max()]
         lista_alvos = sorted(ult[COLS["alvo"]].astype(str).unique())
 
-        st.markdown("**Ponto de referencia 1**")
+        st.markdown("**Ponto de referência 1**")
         c1, c2, c3 = st.columns(3)
         a1 = c1.selectbox("Alvo 1", lista_alvos, key="a1")
         x1d = c2.number_input("X no desenho", value=0.0, key="x1d", format="%.2f")
         y1d = c3.number_input("Y no desenho", value=0.0, key="y1d", format="%.2f")
 
-        st.markdown("**Ponto de referencia 2** (escolhe um bem afastado do 1)")
+        st.markdown("**Ponto de referência 2** (escolhe um bem afastado do 1)")
         d1, d2, d3 = st.columns(3)
         a2 = d1.selectbox("Alvo 2", lista_alvos,
                           index=min(len(lista_alvos) - 1, 1), key="a2")
@@ -2008,7 +2107,7 @@ def separador_planta(dados):
         y2d = d3.number_input("Y no desenho", value=0.0, key="y2d", format="%.2f")
 
         st.caption("Como obter o X,Y no desenho: abre o DXF no AutoCAD ou num "
-                   "visualizador, aponta o cursor ao sitio onde o alvo esta, e "
+                   "visualizador, aponta o cursor ao sítio onde o alvo esta, e "
                    "le as coordenadas. Quanto mais afastados os 2 alvos, melhor.")
 
         def coord_alvo(nome):
@@ -2028,14 +2127,14 @@ def separador_planta(dados):
                     (x1d, y1d), P1, (x2d, y2d), P2)
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Escala desenho->alvos", f"{escala:.4f}")
-                m2.metric("Rotacao", f"{ang:.1f}°")
+                m2.metric("Rotação", f"{ang:.1f}°")
                 m3.metric("Estado", "Alinhado")
                 if not (0.5 < escala < 2.0):
                     st.warning("A escala calculada e invulgar. Confirma as "
                                "coordenadas dos pontos no desenho — pode haver "
                                "troca de X/Y ou de ponto.")
             except Exception as e:
-                st.error(f"Nao consegui calcular o alinhamento: {e}")
+                st.error(f"Não consegui calcular o alinhamento: {e}")
 
     # ---------------------------------------------------------------------
     # DESENHAR
@@ -2086,8 +2185,8 @@ def separador_planta(dados):
 
     if aplicar is not None:
         st.success("Planta alinhada com os alvos. Verifica visualmente se o "
-                   "contorno bate certo com a nuvem de alvos; se nao, ajusta os "
-                   "pontos de referencia.")
+                   "contorno bate certo com a nuvem de alvos; se não, ajusta os "
+                   "pontos de referência.")
     else:
         st.caption("Planta em coordenadas locais do desenho. Ativa o "
                    "alinhamento acima para a sobrepor aos alvos.")
@@ -2098,7 +2197,7 @@ def separador_planta(dados):
 # =========================================================================
 def desenhar_coluna_litologica(fig, sondagem, x_centro=0, largura=0.8,
                                em_cota=False, cota_terreno=0):
-    """Desenha a coluna litologica de uma sondagem como retangulos coloridos.
+    """Desenha a coluna litológica de uma sondagem como retangulos coloridos.
     Se em_cota=True, converte profundidade em cota (cota_terreno - prof)."""
     for topo, base, unidade in GEO_LITOLOGIA[sondagem]:
         y0 = cota_terreno - topo if em_cota else topo
@@ -2112,10 +2211,10 @@ def desenhar_coluna_litologica(fig, sondagem, x_centro=0, largura=0.8,
 
 def _zona_por_N(n):
     """
-    Ponte de LEITURA N -> zona geotecnica, segundo os intervalos do proprio
-    relatorio (Quadros V-VII): ZG5 (SPT 11-30), ZG4 (31-56), ZG3/ZG2/ZG1 (>=60,
-    distinguidas pelo RQD que NAO temos por ponto). Serve so para colorir o
-    ponto SPT e dar leitura rapida; NAO define fronteiras de camada.
+    Ponte de LEITURA N -> zona geotécnica, segundo os intervalos do próprio
+    relatório (Quadros V-VII): ZG5 (SPT 11-30), ZG4 (31-56), ZG3/ZG2/ZG1 (>=60,
+    distinguidas pelo RQD que NÃO temos por ponto). Serve só para colorir o
+    ponto SPT e dar leitura rápida; NÃO define fronteiras de camada.
     Devolve a chave da zona (ou grupo) para indexar ZONA_CORES.
     """
     if n < 11:
@@ -2161,21 +2260,23 @@ ZONA_CORES = {
 # o perfil litologico e o zonamento (mesmo verde-base para o gres)
 GEO_CORES_LITO_V2 = {
     "Aterro": "#c0641e",
-    "Gres (C1As)": "#a9c47f",
-    "Calcario (C1A)": "#5c8a45",
+    "Grés (C1As)": "#a9c47f",
+    "Calcário (C1A)": "#5c8a45",
 }
 
 
 def separador_geologia(dados):
-    st.subheader("Geologia do terreno (Relatorio ENGGEO, proc. 220216)")
-    st.caption("Leitura integrada por sondagem: a coluna litologica, os ensaios "
-               "SPT e o zonamento geotecnico partilham o eixo de profundidade, "
+    st.subheader("Geologia do terreno (Relatório ENGGEO, proc. 220216)")
+    st.caption("Leitura integrada por sondagem: a coluna litológica, os ensaios "
+               "SPT e o zonamento geotécnico partilham o eixo de profundidade, "
                "para se lerem em conjunto. Sob ~0,5 m de aterro, o terreno e "
-               "essencialmente grés dos 'Grés Superiores' (C1As), com calcario "
-               "(C1A) apenas no fundo do SC8. A deformacao nao se explica por "
-               "uma camada mole — nao existe — mas pelo grau de consolidacao do "
-               "grés, que cresce com a profundidade (o SPT sobe de ~11-30 para "
-               "nega).")
+               "essencialmente grés dos 'Grés Superiores' (C1As), com calcário "
+               "(C1A) apenas no fundo do SC8. A resistência não é uniforme: há "
+               "troços de menor N(SPT) intercalados com nega (por exemplo, N 19-47 "
+               "no SC8 entre as cotas ~24 e ~18 e N 22-38 no SC6 entre as cotas "
+               "~14 e ~6,6) e o RQD é nulo em grande parte das sondagens. Compare "
+               "sondagens por COTA, não por profundidade (as bocas estão a cotas "
+               "diferentes).")
 
     sonds = list(GEO_LITOLOGIA.keys())
 
@@ -2187,11 +2288,11 @@ def separador_geologia(dados):
         else:
             sond = None
     with col_info:
-        st.caption("A coluna colorida a esquerda de cada sondagem e a litologia; "
-                   "os pontos e a linha sao o SPT (N pancadas), no mesmo eixo de "
-                   "profundidade. A cor do ponto SPT indica a zona geotecnica "
-                   "provavel pelo valor de N (ver tabela em baixo). A linha azul "
-                   "tracejada e o nivel freatico.")
+        st.caption("A coluna colorida à esquerda de cada sondagem é a litologia; "
+                   "os pontos e a linha são o SPT (N pancadas), no mesmo eixo de "
+                   "profundidade. A cor do ponto SPT indica a zona geotécnica "
+                   "provável pelo valor de N (ver tabela em baixo). A linha azul "
+                   "tracejada é o nível freático.")
 
     alvo_sonds = [sond] if sond else sonds
     n_col = len(alvo_sonds)
@@ -2269,7 +2370,7 @@ def separador_geologia(dados):
                                  name=f"SPT→{zona}"))
     fig.add_trace(go.Scatter(x=[None], y=[None], mode="lines",
                              line=dict(color="blue", dash="dash"),
-                             name="Nivel freatico"))
+                             name="Nível freático"))
     fig.add_trace(go.Scatter(x=[None], y=[None], mode="lines",
                              line=dict(color="gray", dash="dot"),
                              name="Nega (N=60)"))
@@ -2281,20 +2382,20 @@ def separador_geologia(dados):
                       margin=dict(l=0, r=0, t=30, b=10),
                       legend=dict(font=dict(size=10)))
     st.plotly_chart(fig, use_container_width=True)
-    st.caption("Como ler: para cada sondagem, a barra colorida a esquerda e a "
-               "litologia; a curva a direita e o SPT (escala 0–60, com a linha "
-               "pontilhada na nega). Onde o SPT sobe, o grés esta mais "
-               "consolidado — e e ai que a rigidez do macico aumenta. "
-               "Profundidades de cada zona ZG NAO estao definidas no relatorio "
-               "por ponto; a cor do SPT e a zona PROVAVEL pelo valor de N.")
+    st.caption("Como ler: para cada sondagem, a barra colorida à esquerda é a "
+               "litologia; a curva à direita é o SPT (escala 0–60, com a linha "
+               "pontilhada na nega). Onde o SPT sobe, o grés está mais "
+               "consolidado — e e ai que a rigidez do maciço aumenta. "
+               "Profundidades de cada zona ZG NÃO estão definidas no relatório "
+               "por ponto; a cor do SPT é a zona PROVÁVEL pelo valor de N.")
 
     st.divider()
 
-    st.markdown("#### Zonamento geotecnico e parametros de projeto")
-    st.caption("Parametros propostos (Quadros V-VII do relatorio) que alimentam "
-               "a modelacao numerica da contencao. A coluna 'SPT tipico' e a "
-               "ponte para o perfil acima: e por ela que se le em que zona esta "
-               "cada troco de terreno.")
+    st.markdown("#### Zonamento geotécnico e parâmetros de projeto")
+    st.caption("Parâmetros propostos (Quadros V-VII do relatório) que alimentam "
+               "a modelação numérica da contenção. A coluna 'SPT típico' é a "
+               "ponte para o perfil acima: é por ela que se lê em que zona está "
+               "cada troço de terreno.")
 
     faixa_spt = {
         "ZG6": "aterro", "ZG5": "11–30", "ZG4": "31–56",
@@ -2302,7 +2403,7 @@ def separador_geologia(dados):
         "ZG1": "≥60 (RQD 76–100%)",
     }
     zt = pd.DataFrame(GEO_ZONAMENTO)
-    zt.insert(2, "SPT tipico (N)", zt["Zona"].map(faixa_spt))
+    zt.insert(2, "SPT típico (N)", zt["Zona"].map(faixa_spt))
 
     # colorir a celula da zona com a cor oficial (gradiente de consolidacao)
     def _estilo_zona(v):
@@ -2317,11 +2418,11 @@ def separador_geologia(dados):
 
     st.dataframe(zt.style.map(_estilo_zona, subset=["Zona"]),
                  use_container_width=True, hide_index=True)
-    st.caption("gama: peso volumico | c': coesao | fi': angulo de atrito | "
-               "E': modulo de deformabilidade. Zonas ZG3-ZG1 (rocha) com c' e E' "
-               "em MPa/GPa; ZG6-ZG4 (solo/grés brando) em kPa/MPa. Nota: as tres "
+    st.caption("gama: peso volúmico | c': coesão | fi': ângulo de atrito | "
+               "E': módulo de deformabilidade. Zonas ZG3-ZG1 (rocha) com c' e E' "
+               "em MPa/GPa; ZG6-ZG4 (solo/grés brando) em kPa/MPa. Nota: as três "
                "zonas de nega (ZG3-ZG1) distinguem-se pelo RQD, que o SPT sozinho "
-               "nao mede — por isso o perfil agrupa-as como 'nega'.")
+               "não mede — por isso o perfil agrupa-as como 'nega'.")
 
 
 
@@ -2330,19 +2431,19 @@ def separador_geologia(dados):
 # =========================================================================
 def separador_obra(dados):
     st.subheader("Cronograma da obra — planeado vs. executado")
-    st.caption("Comparacao entre o planeamento CONTRATUAL (previsto) e o "
+    st.caption("Comparação entre o planeamento CONTRATUAL (previsto) e o "
                "EXECUTADO (real, do plano de trabalhos impactado da "
-               "Aquatecnica, 22/04/2026). A janela de instrumentacao esta "
-               "assinalada, para relacionar as fases com a monitorizacao.")
+               "Aquatécnica, 22/04/2026). A janela de instrumentação está "
+               "assinalada, para relacionar as fases com a monitorização.")
 
     vista = st.radio("Cronograma a mostrar",
-                     ["Executado (real)", "Comparacao real vs. previsto"],
+                     ["Planeamento impactado (adotado como real)", "Comparação impactado vs. contratual"],
                      horizontal=True)
 
     fig = go.Figure()
     nomes = [f[0] for f in FASES_COMPARACAO]
 
-    if vista == "Executado (real)":
+    if vista.startswith("Planeamento impactado"):
         for i, (nome, ini, fim, dur_r, dur_c) in enumerate(FASES_COMPARACAO):
             cor = CORES_FASES[i % len(CORES_FASES)]
             fig.add_trace(go.Scatter(
@@ -2362,13 +2463,13 @@ def separador_obra(dados):
             fig.add_trace(go.Scatter(
                 x=[t0, t1_real], y=[f"{nome} ", f"{nome} "], mode="lines",
                 line=dict(color=cor, width=11),
-                hovertemplate=f"REAL: {dur_r} dias<extra></extra>",
+                hovertemplate=f"IMPACTADO: {dur_r} dias<extra></extra>",
                 showlegend=False))
             # barra prevista (em baixo, cinza)
             fig.add_trace(go.Scatter(
                 x=[t0, t1_prev], y=[f" {nome}", f" {nome}"], mode="lines",
                 line=dict(color="rgba(120,120,120,0.6)", width=11),
-                hovertemplate=f"PREVISTO: {dur_c} dias<extra></extra>",
+                hovertemplate=f"CONTRATUAL: {dur_c} dias<extra></extra>",
                 showlegend=False))
 
     # faixa da janela de instrumentacao
@@ -2377,7 +2478,7 @@ def separador_obra(dados):
         d0 = alvos[COLS["data"]].min()
         d1 = alvos[COLS["data"]].max()
         fig.add_vrect(x0=d0, x1=d1, fillcolor="crimson", opacity=0.10,
-                      line_width=0, annotation_text="Instrumentacao",
+                      line_width=0, annotation_text="Instrumentação",
                       annotation_position="top left")
 
     fig.update_xaxes(title="Data")
@@ -2408,14 +2509,14 @@ def separador_obra(dados):
         f"**Leitura:** somando as fases estruturais, foram executadas em "
         f"**{tot_r} dias** contra **{tot_c} previstos** "
         f"({(tot_r-tot_c)/tot_c*100:+.0f}%). O maior desvio foi em "
-        f"**{pior[0]}** (+{pior[3]-pior[4]} dias). Os desvios de prazo sao "
+        f"**{pior[0]}** (+{pior[3]-pior[4]} dias). Os desvios de prazo são "
         f"relevantes para o back-analysis: fases que se prolongaram "
-        f"mantiveram o macico desconfinado mais tempo, o que ajuda a "
-        f"interpretar a evolucao da deformacao.")
-    st.caption("Nota: a duracao prevista e a contratual (sem impacto); a "
-               "executada e a impactada. As datas de inicio reais e "
+        f"mantiveram o maciço desconfinado mais tempo, o que ajuda a "
+        f"interpretar a evolução da deformação.")
+    st.caption("Nota: a duração prevista é a contratual (sem impacto); a "
+               "executada é a impactada. As datas de início reais e "
                "contratuais coincidem na maioria das macro-fases — o desvio "
-               "manifesta-se na duracao, nao no arranque.")
+               "manifesta-se na duração, não no arranque.")
 
 
 # =========================================================================
@@ -2423,58 +2524,70 @@ def separador_obra(dados):
 # =========================================================================
 def separador_pressupostos(dados):
     """
-    Reune num so sitio TODOS os pressupostos, inferencias e limitacoes da
+    Reúne num só sítio TODOS os pressupostos, inferências e limitações da
     ferramenta e dos dados — o que e medido vs. o que e assumido, e o estado de
-    confirmacao de cada um. Assumir as limitacoes explicitamente e uma forca:
-    antecipa as perguntas dificeis da defesa.
+    confirmação de cada um. Assumir as limitações explicitamente e uma forca:
+    antecipa as perguntas difíceis da defesa.
     """
-    st.subheader("Pressupostos, inferencias e qualidade dos dados")
-    st.caption("Transparencia sobre o que e MEDIDO e o que e ASSUMIDO. Cada "
-               "pressuposto tem a sua origem e o estado de confirmacao. Esta "
-               "seccao reune, num so sitio, as ressalvas assinaladas ao longo "
-               "da aplicacao.")
+    st.subheader("Pressupostos, inferências e qualidade dos dados")
+    st.caption("Transparência sobre o que é MEDIDO e o que é ASSUMIDO. Cada "
+               "pressuposto tem a sua origem e o estado de confirmação. Esta "
+               "secção reúne, num só sítio, as ressalvas assinaladas ao longo "
+               "da aplicação.")
 
-    st.markdown("#### Pressupostos e inferencias da ferramenta")
+    st.markdown("#### Pressupostos e inferências da ferramenta")
     press = pd.DataFrame([
         {"Item": "Referencial de cota (3D)",
-         "O que se assume": "A caixa de escavacao usa a PROFUNDIDADE real "
-                            "(16,3 m), nao a cota absoluta — os sistemas de cota "
-                            "dos alvos (Z 42-63) e do projeto (4,5-24,6) nao "
-                            "estao relacionados.",
+         "O que se assume": "A caixa de escavação usa a PROFUNDIDADE real "
+                            "(16,3 m), não a cota absoluta — os sistemas de cota "
+                            "dos alvos (Z 42-63) e do projeto (4,5-24,6) não "
+                            "estão relacionados.",
          "Estado": "A confirmar (falta 1 par de cotas nos 2 sistemas)"},
-        {"Item": "Associacao inclinometro-sondagem",
-         "O que se assume": "I1<->SC8, I2<->SC9, I3<->SC6, inferido por "
-                            "sobreposicao das plantas de prospecao e de "
-                            "instrumentacao.",
-         "Estado": "A confirmar com a equipa de instrumentacao"},
-        {"Item": "Criterio do alcado DE",
-         "O que se assume": "Classificado como contencao 17 m; os deslocamentos "
-                            "sao ~0, pelo que os dados nao distinguem 17 de 24 m.",
-         "Estado": "A confirmar com o projeto de contencao"},
+        {"Item": "Associação inclinómetro-sondagem",
+         "O que se assume": "I1<->SC6, I2<->SC9, I3<->SC6, inferido por "
+                            "sobreposição das plantas de prospeção e de "
+                            "instrumentação. A sobreposição gráfica é feita "
+                            "por PROFUNDIDADE, não por cota (cota da boca dos "
+                            "tubos desconhecida).",
+         "Estado": "A confirmar com a equipa de instrumentação"},
+        {"Item": "Critério do alçado DE",
+         "O que se assume": "Classificado como contenção 17 m; os deslocamentos "
+                            "são ~0, pelo que os dados não distinguem 17 de 24 m.",
+         "Estado": "A confirmar com o projeto de contenção"},
         {"Item": "Faseamento da obra",
-         "O que se assume": "Datas do cronograma PREVISTO, nao do executado.",
-         "Estado": "Substituivel pelas datas reais de obra"},
-        {"Item": "Zona geotecnica no perfil SPT",
-         "O que se assume": "A cor da zona (ZG) e a provavel pelo valor de N; o "
-                            "relatorio nao define fronteiras de zona por "
+         "O que se assume": "Datas do plano de trabalhos impactado e do "
+                            "planeamento detalhado, adotadas como aproximação da "
+                            "execução real (não há registo diário de obra). "
+                            "Contraexemplo conhecido: a célula da A26 tem carga a "
+                            "09/12/2025, antes da execução prevista das "
+                            "ancoragens do piso -1 (09-16/12).",
+         "Estado": "Pressuposto declarado"},
+        {"Item": "Zona geotécnica no perfil SPT",
+         "O que se assume": "A cor da zona (ZG) é a provável pelo valor de N; o "
+                            "relatório não define fronteiras de zona por "
                             "profundidade.",
-         "Estado": "Leitura qualitativa (nao fronteiras reais)"},
+         "Estado": "Leitura qualitativa (não fronteiras reais)"},
     ])
     st.dataframe(press, use_container_width=True, hide_index=True)
 
-    st.markdown("#### Tratamento de dados (criterios aplicados)")
+    st.markdown("#### Tratamento de dados (critérios aplicados)")
     trat = pd.DataFrame([
         {"Item": "Estado dos alvos",
-         "Tratamento": "Recalculado de ΔH/ΔV com criterios oficiais do "
-                       "relatorio; auditado contra a coluna do Excel (467/467, "
-                       "100%)."},
+         "Tratamento": "Recalculado de ΔH/ΔV com os critérios do relatório; "
+                       "comparado com a coluna Estado do Excel (fórmula) — "
+                       "coerência entre implementações, não confirmação do "
+                       "estado publicado nos relatórios."},
+        {"Item": "Leituras nulas de A5-A8 após 20/10/2025",
+         "Tratamento": "Os alvos tapados tem leitura 0,0000 no relatório; a app "
+                       "trata-as como ausência de leitura (a série não cai a "
+                       "zero)."},
         {"Item": "Alvos A5-A8 -> A5b-A8b",
-         "Tratamento": "Tratados como series separadas; os 'b' foram re-zerados "
-                       "em 20/10/2025 e os acumulados nao sao comparaveis "
+         "Tratamento": "Tratados como séries separadas; os 'b' foram re-zerados "
+                       "em 20/10/2025 e os acumulados não são comparáveis "
                        "diretamente com A1-A4."},
         {"Item": "Fachadas da Santa Casa",
          "Tratamento": "Distinguidas frontal (A1-A4) e lateral (A5-A8) pela "
-                       "posicao em planta."},
+                       "posição em planta."},
     ])
     st.dataframe(trat, use_container_width=True, hide_index=True)
 
@@ -2487,23 +2600,23 @@ def separador_pressupostos(dados):
         xq = pd.ExcelFile(fpath)
         if "Qualidade_Dados" in xq.sheet_names:
             qd = pd.read_excel(xq, "Qualidade_Dados")
-            st.markdown("#### Questoes de qualidade dos dados (do relatorio)")
-            st.caption("Ressalvas identificadas no proprio modelo de dados, "
+            st.markdown("#### Questões de qualidade dos dados (do relatório)")
+            st.caption("Ressalvas identificadas no próprio modelo de dados, "
                        "transcritas da folha Qualidade_Dados.")
             st.dataframe(qd, use_container_width=True, hide_index=True)
     except Exception:
         pass
 
-    st.info("Nota metodologica: estas limitacoes nao invalidam a analise — "
-            "delimitam o seu alcance. As conclusoes centrais (relacao entre "
-            "escavacao, rebaixamento da agua e deformacao; consolidacao "
-            "crescente do gres) assentam em dados medidos, nao nos "
-            "pressupostos acima.")
+    st.info("Nota metodológica: estas limitações não invalidam a análise — "
+            "delimitam o seu alcance. A app apresenta medições e correlações; a "
+            "interpretação das causas (escavação, furação das ancoragens, "
+            "rebaixamento da água, rigidez do maciço) é feita pelo engenheiro e "
+            "uma correlação temporal não demonstra, por si só, causalidade.")
 
 
 @st.cache_data
 def _carregar_terreno():
-    """Le o modelo digital de terreno (MDT) extraido do levantamento topografico."""
+    """Le o modelo digital de terreno (MDT) extraido do levantamento topográfico."""
     import json
     base_dir = Path(__file__).resolve().parent
     fp = base_dir / "terreno_mdt.json"
@@ -2519,15 +2632,15 @@ def _carregar_terreno():
 
 def _cor_lados_por_movimento(dados, esc):
     """
-    Coloracao ILUSTRATIVA e QUALITATIVA dos lados do recinto de escavacao
-    conforme o nivel de movimento dos alvos, associado por ORIENTACAO.
+    Coloração ILUSTRATIVA e QUALITATIVA dos lados do recinto de escavação
+    conforme o nível de movimento dos alvos, associado por ORIENTAÇÃO.
 
-    Como o terreno (coords nacionais) e os alvos (coords locais) estao em
-    referenciais diferentes, nao ha correspondencia ponto-a-ponto. A associacao
-    e feita por lado/orientacao: divide-se o contorno em 4 quadrantes (N, S, E,
+    Como o terreno (coords nacionais) e os alvos (coords locais) estão em
+    referenciais diferentes, não há correspondencia ponto-a-ponto. A associação
+    e feita por lado/orientação: divide-se o contorno em 4 quadrantes (N, S, E,
     O) relativos ao centro, e a cada quadrante atribui-se a cor do pior estado
-    dos alvos cuja orientacao (relativa ao centro dos alvos) corresponde a esse
-    lado. E uma leitura de tendencia, nao uma medida exata.
+    dos alvos cuja orientação (relativa ao centro dos alvos) corresponde a esse
+    lado. E uma leitura de tendência, não uma medida exata.
 
     Devolve lista de (indice_inicio, indice_fim, cor, etiqueta) para desenhar
     o contorno por troços coloridos.
@@ -2592,17 +2705,17 @@ def _cor_lados_por_movimento(dados, esc):
 
 def _bbox_alinhamento(dados, terreno):
     """
-    Calcula os parametros de alinhamento CAIXA-ENVOLVENTE entre o referencial
+    Calcula os parâmetros de alinhamento CAIXA-ENVOLVENTE entre o referencial
     dos alvos (local, M~5000/P~5050) e o do terreno (nacional, X~-110900/
     Y~-106300). Centra o conjunto dos alvos no centro do terreno e aplica uma
-    escala UNICA proporcional (a menor razao de extensao, para nao distorcer).
-    Devolve um dicionario com centros, escala e extensao — a transformacao em si
+    escala ÚNICA proporcional (a menor razão de extensão, para não distorcer).
+    Devolve um dicionario com centros, escala e extensão — a transformação em si
     e aplicada por _transformar_xy, que aceita ajustes finos do utilizador.
 
     NOTA IMPORTANTE (honestidade para a tese): este alinhamento e ILUSTRATIVO.
-    Nao ha pontos de controlo comuns aos dois referenciais, por isso a posicao
-    de cada alvo sobre o terreno e APROXIMADA (erro tipico de metros). Serve
-    para ver a tendencia do movimento sobre o relevo, nao para medir. A precisao
+    Não há pontos de controlo comuns aos dois referenciais, por isso a posição
+    de cada alvo sobre o terreno e APROXIMADA (erro típico de metros). Serve
+    para ver a tendência do movimento sobre o relevo, não para medir. A precisão
     esta no separador Alvos (2D).
     """
     import numpy as np
@@ -2625,8 +2738,8 @@ def _bbox_alinhamento(dados, terreno):
 
 def _transformar_xy(M, P, par, rot_deg=0, flip_x=False, flip_y=False,
                     off_x=0.0, off_y=0.0):
-    """Aplica a transformacao caixa-envolvente (par de _bbox_alinhamento) a
-    coordenadas de alvos, com ajustes finos opcionais (rotacao em torno do
+    """Aplica a transformação caixa-envolvente (par de _bbox_alinhamento) a
+    coordenadas de alvos, com ajustes finos opcionais (rotação em torno do
     centro, espelhamento e desvio manual). Devolve (X, Y) no referencial do
     terreno."""
     import numpy as np
@@ -2642,8 +2755,8 @@ def _transformar_xy(M, P, par, rot_deg=0, flip_x=False, flip_y=False,
 
 
 def _transformar_vetor(dM, dP, par, rot_deg=0, flip_x=False, flip_y=False):
-    """Transforma um VETOR de deslocamento (sem translacao nem centro): so
-    aplica espelhamento, rotacao e escala. Para as setas de movimento assentarem
+    """Transforma um VETOR de deslocamento (sem translação nem centro): só
+    aplica espelhamento, rotação e escala. Para as setas de movimento assentarem
     coerentes com os alvos transformados."""
     import numpy as np
     dM = np.asarray(dM, dtype=float); dP = np.asarray(dP, dtype=float)
@@ -2665,7 +2778,7 @@ def _superficie_terreno(_terreno):
 
 
 def _cota_terreno_em(X, Y, pts_xy, pts_z):
-    """Interpola a cota da superficie do terreno nos pontos (X,Y) — para
+    """Interpola a cota da superfície do terreno nos pontos (X,Y) — para
     'drapejar' os alvos sobre o relevo. Linear dentro do casco; nearest fora."""
     import numpy as np
     from scipy.interpolate import griddata
@@ -2679,9 +2792,9 @@ def _cota_terreno_em(X, Y, pts_xy, pts_z):
 
 
 def _casa_edificio_xy(fig, X, Y, zbase, cor, nome):
-    """Como _casa_edificio, mas recebe coordenadas JA TRANSFORMADAS (X,Y no
+    """Como _casa_edificio, mas recebe coordenadas JÁ TRANSFORMADAS (X,Y no
     referencial do terreno) e a cota de base do terreno — para desenhar a casa
-    ilustrativa do edificio vizinho sobre a superficie fundida."""
+    ilustrativa do edifício vizinho sobre a superfície fundida."""
     import numpy as np
     x0, x1 = float(np.min(X)), float(np.max(X))
     y0, y1 = float(np.min(Y)), float(np.max(Y))
@@ -2713,21 +2826,21 @@ def _casa_edificio_xy(fig, X, Y, zbase, cor, nome):
 
 def separador_terreno3d(dados):
     """
-    3D do terreno REAL, a partir do levantamento topografico (MDT triangulado),
-    no referencial da obra e com cotas Z reais. Mostra a superficie do terreno,
-    a linha de escavacao (cota 4,55) e o volume escavado. Ao contrario do 3D dos
+    3D do terreno REAL, a partir do levantamento topográfico (MDT triangulado),
+    no referencial da obra e com cotas Z reais. Mostra a superfície do terreno,
+    a linha de escavação (cota 4,55) e o volume escavado. Ao contrário do 3D dos
     alvos (referencial local, cotas relativas), este assenta em cotas absolutas.
     """
-    st.subheader("Terreno 3D — modelo do levantamento topografico")
-    st.caption("Superficie real do terreno (modelo digital triangulado) do "
-               "levantamento topografico, no referencial da obra e com COTAS "
-               "REAIS. Mostra a topografia original e o volume a escavar ate a "
+    st.subheader("Terreno 3D — modelo do levantamento topográfico")
+    st.caption("Superfície real do terreno (modelo digital triangulado) do "
+               "levantamento topográfico, no referencial da obra e com COTAS "
+               "REAIS. Mostra a topografia original e o volume a escavar até a "
                "cota de fundo (4,55 m). Complementa o 3D dos alvos — que usa um "
                "referencial local e cotas relativas — com geometria absoluta.")
 
     terreno = _carregar_terreno()
     if terreno is None:
-        st.info("Modelo de terreno nao disponivel (falta terreno_mdt.json).")
+        st.info("Modelo de terreno não disponível (falta terreno_mdt.json).")
         return
 
     import numpy as np
@@ -2737,35 +2850,35 @@ def separador_terreno3d(dados):
 
     c1, c2 = st.columns(2)
     with c1:
-        mostrar_escav = st.checkbox("Mostrar volume de escavacao", value=True)
-        mostrar_curvas = st.checkbox("Curvas de nivel", value=False,
-                                     help="Curvas de nivel do levantamento, que "
-                                          "dao a leitura do relevo (alcados).")
+        mostrar_escav = st.checkbox("Mostrar volume de escavação", value=True)
+        mostrar_curvas = st.checkbox("Curvas de nível", value=False,
+                                     help="Curvas de nível do levantamento, que "
+                                          "dao a leitura do relevo (alçados).")
         colorir_lados = st.checkbox(
-            "Colorir alcados por movimento (ilustrativo)", value=False,
-            help="Colore os lados do recinto conforme o nivel de movimento dos "
-                 "alvos proximos, por orientacao. E QUALITATIVO e ilustrativo: "
-                 "o terreno e os alvos estao em referenciais diferentes, pelo "
-                 "que a associacao e por lado, nao por ponto exato.")
+            "Colorir alçados por movimento (ilustrativo)", value=False,
+            help="Colore os lados do recinto conforme o nível de movimento dos "
+                 "alvos próximos, por orientação. É QUALITATIVO e ilustrativo: "
+                 "o terreno e os alvos estão em referenciais diferentes, pelo "
+                 "que a associação e por lado, não por ponto exato.")
     with c2:
         exagero = st.slider("Exagero vertical", 1.0, 4.0, 1.5, 0.5,
-                            help="Amplia a escala vertical para realcar o "
+                            help="Amplia a escala vertical para realçar o "
                                  "relevo. 1.0 = escala real.")
         # filtro por fase de escavacao: ate que piso ja se escavou
         fases_esc = ["Terreno original (sem escavar)"] + \
-            [f"Ate {nome} (cota {cota:.2f})" for nome, cota in COTAS_PISOS
+            [f"Até {nome} (cota {cota:.2f})" for nome, cota in COTAS_PISOS
              if cota < z_max_terreno] + \
-            [f"Escavacao completa (fundo {z_fundo})"]
+            [f"Escavação completa (fundo {z_fundo})"]
         fase_esc = st.selectbox(
-            "Fase de escavacao a representar", fases_esc,
+            "Fase de escavação a representar", fases_esc,
             index=len(fases_esc) - 1,
-            help="Mostra a escavacao ate a cota do piso correspondente. As "
-                 "cotas sao as do projeto; a escavacao real progride por fases.")
+            help="Mostra a escavação até a cota do piso correspondente. As "
+                 "cotas são as do projeto; a escavação real progride por fases.")
 
     # cota de escavacao correspondente a fase escolhida
     if fase_esc.startswith("Terreno original"):
         cota_escav_fase = None                 # nao escavado
-    elif fase_esc.startswith("Escavacao completa"):
+    elif fase_esc.startswith("Escavação completa"):
         cota_escav_fase = z_fundo
     else:
         # extrair a cota do texto "...(cota XX.XX)"
@@ -2807,7 +2920,7 @@ def separador_terreno3d(dados):
             fig.add_trace(go.Scatter3d(
                 x=ex, y=ey, z=[zf] * len(ex), mode="lines",
                 line=dict(color=cor_fundo, width=4),
-                name=f"Escavacao ate cota {cota_escav_fase:.2f}"))
+                name=f"Escavação até cota {cota_escav_fase:.2f}"))
         else:
             # desenhar o contorno por segmentos coloridos conforme o lado
             for (i0, i1, cor, lbl) in segmentos_cor:
@@ -2840,7 +2953,7 @@ def separador_terreno3d(dados):
             fig.add_trace(go.Scatter3d(
                 x=cx, y=cy, z=cz, mode="lines",
                 line=dict(color="rgba(60,40,20,0.5)", width=1),
-                name="Curvas de nivel", hoverinfo="skip"))
+                name="Curvas de nível", hoverinfo="skip"))
 
     fig.update_layout(
         height=640,
@@ -2850,20 +2963,20 @@ def separador_terreno3d(dados):
         margin=dict(l=0, r=0, t=10, b=0))
     st.plotly_chart(fig, use_container_width=True)
 
-    st.caption(f"Superficie do terreno entre as cotas {z.min():.1f} e "
-               f"{z.max():.1f} m; fundo de escavacao a {z_fundo} m — "
+    st.caption(f"Superfície do terreno entre as cotas {z.min():.1f} e "
+               f"{z.max():.1f} m; fundo de escavação a {z_fundo} m — "
                f"aproximadamente {z.max()-z_fundo:.0f} m de altura escavada no "
-               f"ponto mais alto. Fonte: levantamento topografico (DXF). Notas: "
-               f"o exagero vertical e apenas visual; o filtro de fase mostra a "
-               f"escavacao ate a cota do piso do projeto (a progressao real e "
-               f"por fases). A coloracao dos alcados por movimento, quando "
+               f"ponto mais alto. Fonte: levantamento topográfico (DXF). Notas: "
+               f"o exagero vertical é apenas visual; o filtro de fase mostra a "
+               f"escavação até a cota do piso do projeto (a progressão real e "
+               f"por fases). A coloração dos alçados por movimento, quando "
                f"ativa, e ILUSTRATIVA e qualitativa — associa o estado dos "
-               f"alvos ao lado do recinto por orientacao, nao por coordenada "
+               f"alvos ao lado do recinto por orientação, não por coordenada "
                f"exata, porque terreno e alvos usam referenciais distintos.")
 
 
 def _detetar_cantos_contorno(pts, n_cantos=4):
-    """Deteta os cantos de um contorno fechado (angulo interno mais fechado),
+    """Deteta os cantos de um contorno fechado (ângulo interno mais fechado),
     espacados entre si. Usado para posicionar as escoras de canto."""
     import numpy as np
     pts = np.asarray(pts)
@@ -2887,19 +3000,19 @@ def _detetar_cantos_contorno(pts, n_cantos=4):
 def _elementos_contencao_esquematicos(fig, esc, zex, cotas_pisos,
                                       coroamento, fundo):
     """
-    Desenha, de forma ESQUEMATICA mas INFORMADA PELO PROJETO, as solucoes de
-    contencao periferica: viga de coroamento/distribuicao, bandas de laje e
-    escoramentos. Baseado nas pecas desenhadas da JETsj (EDN-JET-ZZ-ZZ-DR-U-
+    Desenha, de forma ESQUEMÁTICA mas INFORMADA PELO PROJETO, as soluções de
+    contenção periférica: viga de coroamento/distribuição, bandas de laje e
+    escoramentos. Baseado nas peças desenhadas da JETsj (EDN-JET-ZZ-ZZ-DR-U-
     0021..0027): cotas dos pisos confirmadas com o projeto, cores das lajes
     conforme a legenda oficial, e escoras HORIZONTAIS entre lados opostos as
-    cotas dos pisos (como nos cortes tipo), nao diagonais de canto.
+    cotas dos pisos (como nos cortes tipo), não diagonais de canto.
 
-    ATENCAO — HONESTIDADE: a FORMA em planta (o contorno curvo real, a geometria
-    exata de cada banda) nao foi extraida do PDF — a sua reproducao vetorial nao
-    era fiavel. Por isso as bandas sao aneis perimetrais aproximados sobre o
-    contorno disponivel, e as escoras sao troços representativos. As COTAS e as
-    CORES sao reais; a forma e esquematica. A representacao rigorosa esta nas
-    pecas desenhadas do projeto e nas VISTAS 3D do projeto (mostradas no fim
+    ATENÇÃO — HONESTIDADE: a FORMA em planta (o contorno curvo real, a geometria
+    exata de cada banda) não foi extraída do PDF — a sua reprodução vetorial não
+    era fiável. Por isso as bandas são aneis perimetrais aproximados sobre o
+    contorno disponível, e as escoras são troços representativos. As COTAS e as
+    CORES são reais; a forma e esquemática. A representação rigorosa esta nas
+    peças desenhadas do projeto e nas VISTAS 3D do projeto (mostradas no fim
     deste separador).
     """
     import numpy as np
@@ -2913,8 +3026,8 @@ def _elementos_contencao_esquematicos(fig, esc, zex, cotas_pisos,
     fig.add_trace(go.Scatter3d(
         x=list(ex) + [ex[0]], y=list(ey) + [ey[0]], z=[zc] * (n + 1),
         mode="lines", line=dict(color="#3a3a3a", width=6),
-        name="Viga de coroamento/distribuicao (projeto: cota real)",
-        hovertemplate="Viga de coroamento/distribuicao<br>"
+        name="Viga de coroamento/distribuição (projeto: cota real)",
+        hovertemplate="Viga de coroamento/distribuição<br>"
                       f"cota {coroamento:.2f} m (projeto JETsj)<extra></extra>"))
 
     # 2) BANDAS DE LAJE — aneis perimetrais as cotas reais dos pisos, com as
@@ -2967,35 +3080,35 @@ def _elementos_contencao_esquematicos(fig, esc, zex, cotas_pisos,
     fig.add_trace(go.Scatter3d(
         x=xs, y=ys, z=zs, mode="lines",
         line=dict(color=escora_verde, width=5),
-        name="Escoras metalicas provisorias (esquematico)",
-        hovertemplate="Escora metalica provisoria (horizontal)<br>"
-                      "posicao esquematica<extra></extra>"))
+        name="Escoras metálicas provisórias (esquemático)",
+        hovertemplate="Escora metálica provisória (horizontal)<br>"
+                      "posição esquemática<extra></extra>"))
 
 
 def separador_terreno_alvos_3d(dados):
     """
     SEPARADOR FUNDIDO: terreno real (MDT) + alvos com movimento drapejados
-    sobre a superficie. Junta o melhor dos dois 3D antigos — o relevo real com
-    curvas de nivel e volume de escavacao, e os alvos coloridos por estado com
-    setas de deslocamento, casas dos edificios e destaque da Santa Casa.
+    sobre a superfície. Junta o melhor dos dois 3D antigos — o relevo real com
+    curvas de nível e volume de escavação, e os alvos coloridos por estado com
+    setas de deslocamento, casas dos edifícios e destaque da Santa Casa.
 
-    Referenciais diferentes: os alvos sao alinhados ao terreno por CAIXA-
+    Referenciais diferentes: os alvos são alinhados ao terreno por CAIXA-
     ENVOLVENTE (ilustrativo, ver _bbox_alinhamento) e assentes na cota do
-    terreno (drapejados). A posicao e APROXIMADA; a precisao esta no Alvos 2D.
+    terreno (drapejados). A posição e APROXIMADA; a precisão esta no Alvos 2D.
     """
     import numpy as np
     st.subheader("Terreno + Alvos 3D — movimento sobre o relevo real")
-    st.caption("Funde o modelo real do terreno (levantamento topografico, com "
-               "curvas de nivel e volume de escavacao) com os alvos e o seu "
-               "movimento. Os alvos estao num referencial diferente do terreno, "
-               "por isso sao POUSADOS sobre a superficie por alinhamento "
-               "aproximado (caixa-envolvente) — a posicao e ILUSTRATIVA, para "
-               "ler a tendencia do movimento sobre o relevo. A medicao precisa "
-               "esta no separador Alvos (2D).")
+    st.caption("Funde o modelo real do terreno (levantamento topográfico, com "
+               "curvas de nível e volume de escavação) com os alvos e o seu "
+               "movimento. Os alvos estão num referencial diferente do terreno, "
+               "por isso são POUSADOS sobre a superfície por alinhamento "
+               "aproximado (caixa-envolvente) — a posição é ILUSTRATIVA, para "
+               "ler a tendência do movimento sobre o relevo. A medição precisa "
+               "está no separador Alvos (2D).")
 
     terreno = _carregar_terreno()
     if terreno is None:
-        st.info("Modelo de terreno nao disponivel (falta terreno_mdt.json).")
+        st.info("Modelo de terreno não disponível (falta terreno_mdt.json).")
         return
     alvos = dados.get("alvos")
     if alvos is None or alvos.empty:
@@ -3004,7 +3117,7 @@ def separador_terreno_alvos_3d(dados):
 
     par = _bbox_alinhamento(dados, terreno)
     if par is None:
-        st.info("Nao foi possivel alinhar alvos e terreno.")
+        st.info("Não foi possível alinhar alvos e terreno.")
         return
 
     faces = np.array(terreno["faces"])
@@ -3020,39 +3133,39 @@ def separador_terreno_alvos_3d(dados):
             "Campanha", options=datas, value=datas[-1],
             format_func=lambda d: pd.to_datetime(d).strftime("%d/%m/%Y"),
             key="fus_campanha")
-        fator = st.slider("Amplificacao do deslocamento", 50, 2000, 500, 50,
+        fator = st.slider("Amplificação do deslocamento", 50, 2000, 500, 50,
                           key="fus_fator",
-                          help="Deslocamentos milimetricos sobre coordenadas em "
+                          help="Deslocamentos milimétricos sobre coordenadas em "
                                "metros; amplia-se para se verem.")
         exagero = st.slider("Exagero vertical do terreno", 1.0, 4.0, 1.5, 0.5,
                             key="fus_exag",
-                            help="Amplia so a escala vertical do relevo.")
+                            help="Amplia só a escala vertical do relevo.")
     with col_b:
-        mostrar_curvas = st.checkbox("Curvas de nivel", value=True,
+        mostrar_curvas = st.checkbox("Curvas de nível", value=True,
                                      key="fus_curvas")
-        mostrar_escav = st.checkbox("Volume de escavacao", value=True,
+        mostrar_escav = st.checkbox("Volume de escavação", value=True,
                                     key="fus_escav")
-        mostrar_casas = st.checkbox("Casas dos edificios", value=True,
+        mostrar_casas = st.checkbox("Casas dos edifícios", value=True,
                                     key="fus_casas")
-        identificar_edif = st.checkbox("Identificar edificios", value=True,
+        identificar_edif = st.checkbox("Identificar edifícios", value=True,
                                        key="fus_idedif")
         mostrar_contencao = st.checkbox(
-            "Elementos de contencao (esquematico)", value=False,
+            "Elementos de contenção (esquemático)", value=False,
             key="fus_contencao",
-            help="Desenha, de forma ESQUEMATICA e ILUSTRATIVA, a viga de "
+            help="Desenha, de forma ESQUEMÁTICA e ILUSTRATIVA, a viga de "
                  "coroamento, as bandas de laje (as cotas reais dos pisos) e "
                  "os escoramentos de canto. A geometria de projeto destes "
-                 "elementos nao consta dos dados — a forma e assumida, so as "
-                 "cotas das lajes/viga sao reais. Os escoramentos sao "
+                 "elementos não consta dos dados — a forma é assumida, só as "
+                 "cotas das lajes/viga são reais. Os escoramentos são "
                  "totalmente ilustrativos.")
     with col_c:
         destacar_alarmes = st.checkbox("Destacar alarmes/alertas", value=True,
                                        key="fus_alarmes")
-        destacar_sc = st.checkbox("Realcar Santa Casa", value=True,
+        destacar_sc = st.checkbox("Realçar Santa Casa", value=True,
                                   key="fus_sc")
         # ajustes finos do alinhamento (o utilizador valida a olho)
         with st.expander("Ajuste fino do alinhamento"):
-            rot = st.select_slider("Rotacao", [0, 90, 180, 270], value=0,
+            rot = st.select_slider("Rotação", [0, 90, 180, 270], value=0,
                                    key="fus_rot")
             flip_x = st.checkbox("Espelhar horizontal", value=False,
                                  key="fus_flipx")
@@ -3105,12 +3218,12 @@ def separador_terreno_alvos_3d(dados):
         fig.add_trace(go.Mesh3d(
             x=wx, y=wy, z=wz, i=wi, j=wj, k=wk,
             color="#b45309", opacity=0.45, flatshading=True,
-            name="Paredes de escavacao", hoverinfo="skip"))
+            name="Paredes de escavação", hoverinfo="skip"))
         # contorno do fundo (linha fechada, cota de fundo)
         fig.add_trace(go.Scatter3d(
             x=list(ex) + [ex[0]], y=list(ey) + [ey[0]], z=[zf] * (n + 1),
             mode="lines", line=dict(color="#8B4513", width=4),
-            name=f"Fundo de escavacao ({cota_escav_fase:.2f} m)"))
+            name=f"Fundo de escavação ({cota_escav_fase:.2f} m)"))
         # aresta de topo (onde a escavacao corta a superficie)
         fig.add_trace(go.Scatter3d(
             x=list(ex), y=list(ey), z=list(ztopo), mode="lines",
@@ -3137,7 +3250,7 @@ def separador_terreno_alvos_3d(dados):
             fig.add_trace(go.Scatter3d(
                 x=cx, y=cy, z=cz, mode="lines",
                 line=dict(color="rgba(60,40,20,0.5)", width=1),
-                name="Curvas de nivel", hoverinfo="skip"))
+                name="Curvas de nível", hoverinfo="skip"))
 
     # ---- alvos drapejados + movimento ----
     COR_ESTADO = {"Alarme": "#c0140f", "Alerta": "#e67e00", "Regular": "#1f9e55"}
@@ -3167,10 +3280,10 @@ def separador_terreno_alvos_3d(dados):
         if tipo == "edificio":
             cor = CORES_EDIFICIO.get(chave, "#7f7f7f"); nome_leg = chave
         else:
-            cor = "#ff7f0e"; nome_leg = f"Contencao — Alcado {etiqueta}"
+            cor = "#ff7f0e"; nome_leg = f"Contenção — Alçado {etiqueta}"
 
         if destacar_sc and e_santa_casa:
-            simbolos = ["diamond" if f == "Frente escavacao" else "circle"
+            simbolos = ["diamond" if f == "Frente escavação" else "circle"
                         for f in fachadas]
         else:
             simbolos = "circle"
@@ -3244,37 +3357,37 @@ def separador_terreno_alvos_3d(dados):
     n_alerta = int((campanha["Estado calculado"] == "Alerta").sum())
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Alvos na campanha", len(campanha))
-    c2.metric("Desl. horizontal max. (mm)", f"{np.nanmax(desl_h_all):.1f}")
+    c2.metric("Desl. horizontal máx. (mm)", f"{np.nanmax(desl_h_all):.1f}")
     c3.metric("Em alarme", n_alarme)
     c4.metric("Em alerta", n_alerta)
     idx = int(np.nanargmax(desl_h_all))
     st.caption(
         f"O alvo mais afetado ({nomes_all[idx]}, {np.nanmax(desl_h_all):.1f} mm) "
-        f"esta drapejado sobre o relevo real. Vermelho = alarme, laranja = "
-        f"alerta, verde = regular. IMPORTANTE: a posicao dos alvos sobre o "
-        f"terreno e aproximada (alinhamento por caixa-envolvente entre "
+        f"está drapejado sobre o relevo real. Vermelho = alarme, laranja = "
+        f"alerta, verde = regular. IMPORTANTE: a posição dos alvos sobre o "
+        f"terreno é aproximada (alinhamento por caixa-envolvente entre "
         f"referenciais diferentes) — para leitura tendencial do movimento sobre "
-        f"o relevo, nao metrica. A medicao precisa esta no separador Alvos (2D). "
+        f"o relevo, não métrica. A medição precisa está no separador Alvos (2D). "
         f"Se algum alvo cair no lado errado, usa o 'Ajuste fino do alinhamento'.")
     if mostrar_contencao:
         st.warning(
-            "⚠ Os elementos de contencao (viga de coroamento/distribuicao, "
-            "bandas de laje, escoras metalicas) sao ESQUEMATICOS mas INFORMADOS "
+            "⚠ Os elementos de contenção (viga de coroamento/distribuição, "
+            "bandas de laje, escoras metálicas) são ESQUEMÁTICOS mas INFORMADOS "
             "PELO PROJETO: as cotas dos pisos e as cores das lajes seguem as "
-            "pecas desenhadas da JETsj (EDN-JET-ZZ-ZZ-DR-U-0021..0027), e as "
-            "escoras sao horizontais entre lados (como nos cortes tipo). A FORMA "
+            "peças desenhadas da JETsj (EDN-JET-ZZ-ZZ-DR-U-0021..0027), e as "
+            "escoras são horizontais entre lados (como nos cortes tipo). A FORMA "
             "em planta (contorno curvo, geometria exata de cada banda) e "
-            "aproximada — nao foi extraida do projeto. Para a representacao "
+            "aproximada — não foi extraída do projeto. Para a representação "
             "rigorosa, ver as Vistas 3D do projeto no fim deste separador.")
 
     # ---- Vistas 3D do proprio projeto (referencia fiel, JETsj) ----
-    with st.expander("📐 Vistas 3D do projeto de contencao (JETsj) — referencia"):
-        st.caption("Imagens das pecas desenhadas do projeto de contencao "
-                   "periferica (JETsj, pranchas EDN-JET-ZZ-ZZ-DR-U-0002 a 0005). "
-                   "Sao a representacao AUTORITATIVA e rigorosa da solucao — "
+    with st.expander("📐 Vistas 3D do projeto de contenção (JETsj) — referência"):
+        st.caption("Imagens das peças desenhadas do projeto de contenção "
+                   "periférica (JETsj, pranchas EDN-JET-ZZ-ZZ-DR-U-0002 a 0005). "
+                   "São a representação AUTORITATIVA e rigorosa da solução — "
                    "cortina de estacas, bandas de laje por cota, ancoragens, "
-                   "escoras metalicas e faseamento. O 3D interativo acima e uma "
-                   "leitura do movimento dos alvos; estas vistas sao a geometria "
+                   "escoras metálicas e faseamento. O 3D interativo acima é uma "
+                   "leitura do movimento dos alvos; estas vistas são a geometria "
                    "de projeto.")
         base_dir = Path(__file__).resolve().parent
         vistas = [
@@ -3292,25 +3405,25 @@ def separador_terreno_alvos_3d(dados):
                 st.image(str(fp), caption=legenda, use_container_width=True)
                 alguma = True
         if not alguma:
-            st.info("Imagens das vistas 3D do projeto nao encontradas "
+            st.info("Imagens das vistas 3D do projeto não encontradas "
                     "(pasta 'projeto_vistas/'). Verifica que foi publicada "
                     "junto com a app.")
 
 
 def separador_resultados(dados):
     """
-    RESULTADOS — quantificacao factual das movimentacoes observadas pela
-    instrumentacao. Magnitude, distribuicao espacial, ritmo, profundidade e
-    comparacao com a estimativa de projeto. Sao ILUSTRACOES DOS RESULTADOS,
-    sem interpretacao de causas: a correlacao entre instrumentos esta no
-    separador Correlacoes; a interpretacao do PORQUE e do autor no texto.
+    RESULTADOS — quantificação factual das movimentações observadas pela
+    instrumentação. Magnitude, distribuição espacial, ritmo, profundidade e
+    comparação com a estimativa de projeto. São ILUSTRACOES DOS RESULTADOS,
+    sem interpretação de causas: a correlação entre instrumentos esta no
+    separador Correlações; a interpretação do PORQUE e do autor no texto.
     """
     import numpy as np
-    st.subheader("Resultados — movimentacoes observadas")
-    st.caption("Quantificacao factual do que a instrumentacao mediu: quanto, "
+    st.subheader("Resultados — movimentações observadas")
+    st.caption("Quantificação factual do que a instrumentação mediu: quanto, "
                "onde, a que ritmo e a que profundidade, e como se compara com a "
-               "estimativa de projeto. Ilustracao de resultados, sem "
-               "interpretacao de causas.")
+               "estimativa de projeto. Ilustração de resultados, sem "
+               "interpretação de causas.")
 
     alvos = dados.get("alvos")
     if alvos is None or alvos.empty:
@@ -3322,34 +3435,34 @@ def separador_resultados(dados):
     ult = anexar_estado_calculado(alvos[alvos[COLS["data"]] == ult_data].copy())
 
     # ---- 1. QUANTO ----
-    st.markdown("#### 1. Quanto — magnitude das movimentacoes")
+    st.markdown("#### 1. Quanto — magnitude das movimentações")
     n_alarme = int((ult["Estado calculado"] == "Alarme").sum())
     n_alerta = int((ult["Estado calculado"] == "Alerta").sum())
     dh = ult[COLS["desl_h"]]
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Alvos monitorizados", ult[COLS["alvo"]].nunique())
-    c2.metric("Desl. H maximo (mm)", f"{dh.max():.1f}")
+    c2.metric("Desl. H máximo (mm)", f"{dh.max():.1f}")
     c3.metric("Em alarme", n_alarme)
     c4.metric("Em alerta", n_alerta)
 
     top = ult.nlargest(10, COLS["desl_h"])[
         [COLS["alvo"], COLS["edificio"], COLS["desl_h"], COLS["dZ"],
          "Estado calculado"]].copy()
-    top.columns = ["Alvo", "Edificio / elemento", "Desl. H (mm)",
+    top.columns = ["Alvo", "Edifício / elemento", "Desl. H (mm)",
                    "Desl. V ΔZ (mm)", "Estado"]
     top["Desl. H (mm)"] = top["Desl. H (mm)"].round(1)
     top["Desl. V ΔZ (mm)"] = top["Desl. V ΔZ (mm)"].round(1)
-    st.markdown("**Ranking dos 10 alvos mais deslocados** (ultima campanha, "
+    st.markdown("**Ranking dos 10 alvos mais deslocados** (última campanha, "
                 f"{ult_data.strftime('%d/%m/%Y')}):")
     st.dataframe(top, use_container_width=True, hide_index=True)
     top1 = top.iloc[0]
     st.caption(f"Maior deslocamento horizontal: alvo {top1['Alvo']} "
                f"({top1['Desl. H (mm)']:.1f} mm), no elemento "
-               f"«{top1['Edificio / elemento']}».")
+               f"«{top1['Edifício / elemento']}».")
 
     # ---- 2. ONDE ----
     st.divider()
-    st.markdown("#### 2. Onde — distribuicao espacial")
+    st.markdown("#### 2. Onde — distribuição espacial")
     g = ult.groupby(COLS["edificio"])[COLS["desl_h"]].agg(
         media="mean", maximo="max", n="count").reset_index()
     g = g.sort_values("maximo", ascending=False)
@@ -3357,12 +3470,12 @@ def separador_resultados(dados):
     fig_b = go.Figure()
     fig_b.add_trace(go.Bar(
         y=g_plot[COLS["edificio"]], x=g_plot["maximo"].round(1),
-        orientation="h", name="Maximo",
+        orientation="h", name="Máximo",
         marker=dict(color="#c0140f"),
         text=g_plot["maximo"].round(1), textposition="auto"))
     fig_b.add_trace(go.Bar(
         y=g_plot[COLS["edificio"]], x=g_plot["media"].round(1),
-        orientation="h", name="Media",
+        orientation="h", name="Média",
         marker=dict(color="#f0a080")))
     fig_b.update_layout(
         height=460, barmode="overlay",
@@ -3373,18 +3486,18 @@ def separador_resultados(dados):
     st.plotly_chart(fig_b, use_container_width=True)
     lider = g.iloc[0]
     seg = g.iloc[1] if len(g) > 1 else None
-    txt_onde = (f"Elemento com maior movimentacao: «{lider[COLS['edificio']]}» "
-                f"(max {lider['maximo']:.1f} mm, media {lider['media']:.1f} mm).")
+    txt_onde = (f"Elemento com maior movimentação: «{lider[COLS['edificio']]}» "
+                f"(máx {lider['maximo']:.1f} mm, média {lider['media']:.1f} mm).")
     if seg is not None:
         racio = lider["maximo"] / seg["maximo"] if seg["maximo"] else float("nan")
-        txt_onde += (f" O segundo e «{seg[COLS['edificio']]}» (max "
+        txt_onde += (f" O segundo é «{seg[COLS['edificio']]}» (máx "
                      f"{seg['maximo']:.1f} mm) — o primeiro move-se "
                      f"{racio:.1f}x mais.")
     st.caption(txt_onde)
 
     # ---- 3. QUANDO / RITMO ----
     st.divider()
-    st.markdown("#### 3. Quando e a que ritmo — velocidade de movimentacao")
+    st.markdown("#### 3. Quando e a que ritmo — velocidade de movimentação")
     st.caption("Velocidade (mm/dia entre campanhas) do deslocamento horizontal "
                "de um alvo. Mostra quando o movimento acelerou.")
     alvos_disp = sorted(ult.nlargest(15, COLS["desl_h"])[COLS["alvo"]]
@@ -3410,15 +3523,15 @@ def separador_resultados(dados):
             legend=dict(orientation="h", yanchor="bottom", y=1.02))
         st.plotly_chart(fig_c, use_container_width=True)
         pico = s_v.loc[s_v["vel"].idxmax()]
-        st.caption(f"Velocidade maxima do alvo {alvo_sel}: {pico['vel']:.2f} "
+        st.caption(f"Velocidade máxima do alvo {alvo_sel}: {pico['vel']:.2f} "
                    f"mm/dia, no intervalo terminado a "
                    f"{pico[COLS['data']].strftime('%d/%m/%Y')}.")
 
     # ---- 4. PROFUNDIDADE ----
     st.divider()
-    st.markdown("#### 4. A que profundidade — perfil inclinometrico")
-    st.caption("Profundidade do deslocamento maximo de cada inclinometro e "
-               "evolucao da deformada ao longo do tempo.")
+    st.markdown("#### 4. A que profundidade — perfil inclinométrico")
+    st.caption("Profundidade do deslocamento máximo de cada inclinómetro e "
+               "evolução da deformada ao longo do tempo.")
     res = dados.get("resumo")
     if res is not None and not res.empty:
         res = res.copy()
@@ -3428,14 +3541,14 @@ def separador_resultados(dados):
             si = res[res[COLS["inclinometro"]] == inc].sort_values(
                 COLS["data"]).iloc[-1]
             linhas.append({
-                "Inclinometro": inc,
-                "Desl. max (mm)": round(float(si[COLS["desl_max_global"]]), 1),
-                "Profundidade do max (m)": round(float(si[COLS["prof_do_max"]]), 1),
+                "Inclinómetro": inc,
+                "Desl. máx (mm)": round(float(si[COLS["desl_max_global"]]), 1),
+                "Profundidade do máx (m)": round(float(si[COLS["prof_do_max"]]), 1),
             })
         df_d = pd.DataFrame(linhas)
         st.dataframe(df_d, use_container_width=True, hide_index=True)
     else:
-        st.info("Sem dados de inclinometros para o perfil de profundidade.")
+        st.info("Sem dados de inclinómetros para o perfil de profundidade.")
 
     # deformada do inclinometro ao longo do tempo (ilustracao do resultado)
     perfis = dados.get("perfis")
@@ -3443,7 +3556,7 @@ def separador_resultados(dados):
         perfis = perfis.copy()
         perfis[COLS["data"]] = pd.to_datetime(perfis[COLS["data"]], errors="coerce")
         incs = sorted(perfis[COLS["inclinometro"]].dropna().unique())
-        inc_sel = st.selectbox("Inclinometro (deformada no tempo)", incs,
+        inc_sel = st.selectbox("Inclinómetro (deformada no tempo)", incs,
                                key="res_inc_deformada")
         pi = perfis[perfis[COLS["inclinometro"]] == inc_sel]
         datas_i = sorted(pi[COLS["data"]].dropna().unique())
@@ -3470,47 +3583,44 @@ def separador_resultados(dados):
             margin=dict(t=30, b=40),
             legend=dict(title="Campanha", orientation="v", x=1.02, y=1))
         st.plotly_chart(fig8, use_container_width=True)
-        st.caption(f"Deformada do {inc_sel} em varias campanhas (cor mais clara "
+        st.caption(f"Deformada do {inc_sel} em várias campanhas (cor mais clara "
                    f"= mais antiga; mais escura = mais recente).")
 
     # ---- 5. OBSERVADO vs PREVISTO ----
     st.divider()
-    st.markdown("#### 5. Observado vs. Previsto — comparacao com o projeto")
+    st.markdown("#### 5. Observado vs. Previsto — comparação com o projeto")
     st.caption(
-        "Deslocamento horizontal OBSERVADO vs. ESTIMATIVA DE PROJETO (memoria "
+        "Deslocamento horizontal OBSERVADO vs. ESTIMATIVA DE PROJETO (memória "
         "descritiva JETsj: ~20 mm na cortina poente/norte, ~10 mm na "
-        "nascente/sul — valor de CALCULO para a ultima fase de escavacao). "
-        "«Origem zona»: «confirmada» = orientacao verificada em planta; "
-        "«inferida» = deduzida da geometria (a confirmar — referencial (M,P) "
-        "rodado face ao norte real).")
+        "nascente/sul — valor de CÁLCULO para a última fase de escavação), "
+        "atribuida pela frente de escavação adjacente. Para os edifícios "
+        "vizinhos a comparação e INDIRETA: a estimativa refere-se a cortina, "
+        "não ao edifício.")
     Mc = ult[COLS["M0"]].mean()
     Pc = ult[COLS["P0"]].mean()
     linhas = []
     for chave, grp in ult.groupby(COLS["edificio"]):
-        zona_key = None
-        origem = "inferida"
-        for alvo_nome, zk in ZONA_FIXA_GRUPO.items():
-            if isinstance(chave, str) and alvo_nome.lower() in chave.lower():
-                zona_key = zk
-                origem = "confirmada"
-                break
-        if zona_key is None:
+        frente = zona_escav_de_edificio(chave)
+        if frente in PREVISTO_POR_FRENTE:
+            prev = PREVISTO_POR_FRENTE[frente]
+            zona = NOME_FRENTE[frente]
+        else:
             M = grp[COLS["M0"]].mean()
             P = grp[COLS["P0"]].mean()
-            poente = M < Mc
-            norte = P > Pc
-            zona_key = "poente_norte" if (poente or norte) else "nascente_sul"
-        prev = DEFORM_PROJETO[zona_key]
-        zona = "poente/norte" if zona_key == "poente_norte" else "nascente/sul"
+            zona_key = "poente_norte" if (M < Mc or P > Pc) else "nascente_sul"
+            prev = DEFORM_PROJETO[zona_key]
+            zona = ("poente/norte" if zona_key == "poente_norte" else "nascente/sul") + " (inferida)"
+        tipo = ("direta (cortina)" if "contencao" in str(chave).lower()
+                or "contenção" in str(chave).lower() else "indireta (edifício vizinho)")
         obs = grp[COLS["desl_h"]].max()
         dif = obs - prev
         pct = (dif / prev * 100) if prev else float("nan")
         linhas.append({
-            "Grupo": chave, "Zona": zona, "Origem zona": origem,
-            "Previsto (mm)": prev, "Observado max (mm)": round(obs, 1),
-            "Diferenca (mm)": round(dif, 1), "Excesso (%)": round(pct, 0),
+            "Grupo": chave, "Frente": zona, "Comparação": tipo,
+            "Previsto (mm)": prev, "Observado máx (mm)": round(obs, 1),
+            "Diferença (mm)": round(dif, 1), "Excesso (%)": round(pct, 0),
         })
-    df5 = pd.DataFrame(linhas).sort_values("Observado max (mm)", ascending=False)
+    df5 = pd.DataFrame(linhas).sort_values("Observado máx (mm)", ascending=False)
     st.dataframe(df5, use_container_width=True, hide_index=True)
     top5 = df5.head(12)
     fig5 = go.Figure()
@@ -3518,10 +3628,10 @@ def separador_resultados(dados):
         y=top5["Grupo"], x=top5["Previsto (mm)"], orientation="h",
         name="Previsto (projeto)", marker=dict(color="#9aa7b5")))
     fig5.add_trace(go.Bar(
-        y=top5["Grupo"], x=top5["Observado max (mm)"], orientation="h",
-        name="Observado (max)", marker=dict(color="#c0140f")))
+        y=top5["Grupo"], x=top5["Observado máx (mm)"], orientation="h",
+        name="Observado (máx)", marker=dict(color="#c0140f")))
     fig5.add_vline(x=40, line=dict(color="#8B0000", width=1, dash="dash"),
-                   annotation_text="Alarme contencao (40)",
+                   annotation_text="Alarme contenção (40)",
                    annotation_position="top")
     fig5.update_layout(
         height=460, barmode="group",
@@ -3532,18 +3642,18 @@ def separador_resultados(dados):
     st.plotly_chart(fig5, use_container_width=True)
     pior = df5.iloc[0]
     st.caption(
-        f"Maior excedencia: «{pior['Grupo']}» — observado "
-        f"{pior['Observado max (mm)']:.1f} mm vs. previsto "
-        f"{pior['Previsto (mm)']:.0f} mm (zona {pior['Zona']}, origem "
-        f"{pior['Origem zona']}), ~{pior['Excesso (%)']:.0f}% acima da "
+        f"Maior excedência: «{pior['Grupo']}» — observado "
+        f"{pior['Observado máx (mm)']:.1f} mm vs. previsto "
+        f"{pior['Previsto (mm)']:.0f} mm (frente {pior['Frente']}; comparação "
+        f"{pior['Comparação']}), ~{pior['Excesso (%)']:.0f}% acima da "
         f"estimativa de projeto.")
 
 
 def zona_escav_de_edificio(edif):
-    """Frente de escavacao (poente_sul / norte / nascente_sul) do edificio ou
-    elemento de um alvo; None se nao mapeavel. Edificios vizinhos por nome
-    (confirmado com a foto aerea); alcados de contencao pela alinhamento das
-    vigas de distribuicao do plano (ALCADO_ZONA)."""
+    """Frente de escavação (poente_sul / norte / nascente_sul) do edifício ou
+    elemento de um alvo; None se não mapeavel. Edifícios vizinhos por nome
+    (confirmado com a foto aerea); alçados de contenção pela alinhamento das
+    vigas de distribuição do plano (ALCADO_ZONA)."""
     if not isinstance(edif, str):
         return None
     e = edif.lower()
@@ -3560,7 +3670,7 @@ def zona_escav_de_edificio(edif):
 
 
 def _marcos_escavacao_zona(fig, zona, dt_min, dt_max, so_escavacao=True):
-    """Desenha, na figura de eixo temporal, os marcos reais de escavacao da
+    """Desenha, na figura de eixo temporal, os marcos reais de escavação da
     ZONA dada (ESCAVACAO_ZONAS). Devolve a lista (k, rotulo, data, cota, tipo)
     dos eventos dentro da janela. Se zona for None, usa a lista global
     (ESCAVACAO_COTAS) como recurso."""
@@ -3592,38 +3702,38 @@ def _marcos_escavacao_zona(fig, zona, dt_min, dt_max, so_escavacao=True):
 
 def separador_correlacoes(dados):
     """
-    CORRELACOES — graficos de interacao entre instrumentos. Cruzam, num eixo de
-    tempo comum (ou num diagrama XY), varias series da instrumentacao para
-    ILUSTRAR a correlacao entre os dados introduzidos (agua, escavacao,
-    faseamento, carga nas ancoragens) e as movimentacoes medidas. O objetivo e
-    DEMONSTRAR a correlacao — nao explicar a causa, que e do autor no texto.
+    CORRELAÇÕES — gráficos de interação entre instrumentos. Cruzam, num eixo de
+    tempo comum (ou num diagrama XY), várias séries da instrumentação para
+    ILUSTRAR a correlação entre os dados introduzidos (água, escavação,
+    faseamento, carga nas ancoragens) e as movimentações medidas. O objetivo e
+    DEMONSTRAR a correlação — não explicar a causa, que e do autor no texto.
     """
     import numpy as np
-    st.subheader("Correlacoes — interacao entre instrumentos")
-    st.caption("Graficos que cruzam varias series da instrumentacao para "
+    st.subheader("Correlações — interação entre instrumentos")
+    st.caption("Gráficos que cruzam várias séries da instrumentação para "
                "mostrar como os movimentos acentuados acompanham os outros "
-               "dados (agua, escavacao, faseamento, carga nas ancoragens). "
-               "Demonstram a correlacao entre os dados; a interpretacao das "
+               "dados (água, escavação, faseamento, carga nas ancoragens). "
+               "Demonstram a correlação entre os dados; a interpretação das "
                "causas e do autor.")
 
     # =====================================================================
     # 1. DEFORMACAO x AGUA x ESCAVACAO x FASEAMENTO  (eixo de tempo comum)
     # =====================================================================
-    st.markdown("#### 1. Deformacao × Agua × Escavacao × Faseamento")
-    st.caption("Num so eixo de tempo: a deformacao medida (esquerda), a cota da "
-               "agua subterranea (direita), os marcos reais de escavacao DA "
-               "ZONA do alvo/inclinometro escolhido (E1-E..., no fundo) e as "
+    st.markdown("#### 1. Deformação × Água × Escavação × Faseamento")
+    st.caption("Num só eixo de tempo: a deformação medida (esquerda), a cota da "
+               "água subterrânea (direita), os marcos reais de escavação DA "
+               "ZONA do alvo/inclinómetro escolhido (E1-E..., no fundo) e as "
                "fases da obra (faixas de cor). Cada instrumento e cruzado com a "
-               "escavacao da frente que lhe fica em frente — nao com a do lado "
+               "escavação da frente que lhe fica em frente — não com a do lado "
                "oposto.")
 
     c1, c2 = st.columns(2)
     with c1:
-        tipo = st.radio("Serie de deformacao", ["Inclinometro", "Alvo"],
+        tipo = st.radio("Série de deformação", ["Inclinómetro", "Alvo"],
                         horizontal=True, key="corr_tipo")
-        st.checkbox("Marcos de escavacao da zona (datas reais)", value=True,
+        st.checkbox("Marcos de escavação da zona (datas do planeamento)", value=True,
                     key="corr_escav",
-                    help="Linhas verticais nas datas reais em que a escavacao "
+                    help="Linhas verticais nas datas (planeamento detalhado, adotado como real) em que a escavação "
                          "atingiu cada cota NA FRENTE do instrumento escolhido "
                          "(planeamento detalhado, por zona de estacas).")
     # --- serie de deformacao escolhida (e a sua zona de escavacao) ---
@@ -3631,18 +3741,18 @@ def separador_correlacoes(dados):
     lbl_def = ""
     zona_sel = None
     with c2:
-        if tipo == "Inclinometro":
+        if tipo == "Inclinómetro":
             res = dados.get("resumo")
             if res is not None and COLS["data"] in res.columns:
                 res = res.copy()
                 res[COLS["data"]] = pd.to_datetime(res[COLS["data"]], errors="coerce")
                 col_inc = "Inclinómetro"
                 incs = sorted(res[col_inc].dropna().unique())
-                sel = st.selectbox("Inclinometro", incs, key="corr_inc")
+                sel = st.selectbox("Inclinómetro", incs, key="corr_inc")
                 s = res[res[col_inc] == sel].sort_values(COLS["data"])
                 df_def = s[[COLS["data"], "Máx. desloc. acumulado total (mm)"]].rename(
                     columns={"Máx. desloc. acumulado total (mm)": "def"})
-                lbl_def = f"Desl. max. {sel} (mm)"
+                lbl_def = f"Desl. máx. {sel} (mm)"
                 zona_sel = INC_ZONA.get(str(sel))
         else:
             alv = dados["alvos"].copy()
@@ -3657,12 +3767,12 @@ def separador_correlacoes(dados):
             if not s.empty:
                 zona_sel = zona_escav_de_edificio(s[COLS["edificio"]].iloc[0])
     if zona_sel:
-        st.caption(f"↳ Frente de escavacao associada a **{sel}**: "
-                   f"**{ZONA_ESCAV_NOME[zona_sel]}**. Os marcos abaixo sao as "
+        st.caption(f"↳ Frente de escavação associada a **{sel}**: "
+                   f"**{ZONA_ESCAV_NOME[zona_sel]}**. Os marcos abaixo são as "
                    f"cotas atingidas nessa frente.")
     else:
-        st.caption("↳ Sem zona de escavacao associada a esta serie — mostram-se "
-                   "os marcos globais de escavacao.")
+        st.caption("↳ Sem zona de escavação associada a esta série — mostram-se "
+                   "os marcos globais de escavação.")
 
     # --- serie da agua (piezometro) ---
     pz = dados["piezo"].copy()
@@ -3676,7 +3786,7 @@ def separador_correlacoes(dados):
             columns={COLS["cota_agua"]: "agua"})
 
     if df_def is None or df_def.empty:
-        st.info("Sem dados de deformacao para a serie escolhida.")
+        st.info("Sem dados de deformação para a série escolhida.")
     else:
         fig = go.Figure()
         dt_min = df_def[COLS["data"]].min()
@@ -3708,7 +3818,7 @@ def separador_correlacoes(dados):
                 x=[pd.to_datetime(v) for v in df_agua[COLS["data"]].tolist()],
                 y=[float(v) for v in df_agua["agua"].tolist()],
                 mode="lines+markers",
-                name=f"Cota da agua {pz_sel} (m)", yaxis="y2",
+                name=f"Cota da água {pz_sel} (m)", yaxis="y2",
                 line=dict(color="#2563eb", width=2, dash="dot")))
 
         fig.update_layout(
@@ -3720,7 +3830,7 @@ def separador_correlacoes(dados):
             xaxis=dict(title="Data", type="date"),
             yaxis=dict(title=dict(text=lbl_def, font=dict(color="#c0140f")),
                        tickfont=dict(color="#c0140f")),
-            yaxis2=dict(title=dict(text="Cota da agua (m)",
+            yaxis2=dict(title=dict(text="Cota da água (m)",
                                    font=dict(color="#2563eb")),
                         tickfont=dict(color="#2563eb"),
                         overlaying="y", side="right", anchor="x"),
@@ -3734,7 +3844,7 @@ def separador_correlacoes(dados):
                  if cota is not None else
                  f"**E{k}** {rotulo} ({t.strftime('%d/%m')})")
                 for k, rotulo, t, cota in escav_visiveis)
-            st.caption("⛏ Escavacao na frente (cota atingida, data real): " + itens)
+            st.caption("⛏ Escavação na frente (cota atingida, data do planeamento): " + itens)
 
         if df_agua is not None and len(df_agua) >= 2 and len(df_def) >= 2:
             d_ini = df_def["def"].iloc[0]
@@ -3742,20 +3852,20 @@ def separador_correlacoes(dados):
             a_ini = df_agua["agua"].iloc[0]
             a_fim = df_agua["agua"].iloc[-1]
             st.markdown(
-                f"**Leitura:** no periodo, a deformacao evoluiu de {d_ini:.1f} "
-                f"para **{d_fim:.1f} mm** enquanto a cota da agua desceu de "
+                f"**Leitura:** no período, a deformação evoluiu de {d_ini:.1f} "
+                f"para **{d_fim:.1f} mm** enquanto a cota da água desceu de "
                 f"{a_ini:.2f} para **{a_fim:.2f} m** ({a_fim - a_ini:+.2f} m) — "
-                f"as duas series movem-se em sentido oposto ao longo do tempo.")
+                f"as duas séries movem-se em sentido oposto ao longo do tempo.")
 
     # =====================================================================
     # 2. DEFORMACAO x CARGA NA ANCORAGEM  (mesma zona)
     # =====================================================================
     st.divider()
-    st.markdown("#### 2. Deformacao × Carga na ancoragem")
-    st.caption("Cruza a CARGA medida numa celula de carga (ancoragem) com o "
-               "MOVIMENTO de um alvo, no mesmo eixo de tempo. So faz sentido "
-               "cruzar celula e alvo do MESMO alcado/zona. Criterio das "
-               "celulas: +15% (alerta), +25% (alarme) sobre a blocagem.")
+    st.markdown("#### 2. Deformação × Carga na ancoragem")
+    st.caption("Cruza a CARGA medida numa célula de carga (ancoragem) com o "
+               "MOVIMENTO de um alvo, no mesmo eixo de tempo. Só faz sentido "
+               "cruzar célula e alvo do MESMO alçado/zona. Critério das "
+               "células: +15% (alerta), +25% (alarme) sobre a blocagem.")
 
     alvos_c = dados.get("alvos")
     alvos_c = alvos_c.copy()
@@ -3767,12 +3877,12 @@ def separador_correlacoes(dados):
 
     cc = dados.get("celulas")
     if cc is None or cc.empty:
-        st.info("Sem dados de celulas de carga.")
+        st.info("Sem dados de células de carga.")
     else:
         cc = cc.copy()
         cc[COLS["data"]] = pd.to_datetime(cc[COLS["data"]], errors="coerce")
         cel_sel = st.selectbox(
-            "Celula de carga", sorted(cc[COLS["celula"]].dropna().unique()),
+            "Célula de carga", sorted(cc[COLS["celula"]].dropna().unique()),
             key="corr_celula")
         loc_cel = LOCALIZACAO_CELULAS.get(cel_sel)
         rotulo_zona = loc_cel[0] if loc_cel else None
@@ -3790,17 +3900,17 @@ def separador_correlacoes(dados):
             if not alvos_validos:
                 alvos_validos = alvos_disp2
             st.success(
-                f"✓ Localizacao confirmada: a celula {cel_sel} (ancoragem "
-                f"{anc}) esta na **{rotulo_zona}**. O seletor de alvos abaixo "
-                f"esta restrito a essa zona — o cruzamento e fisicamente valido.")
+                f"✓ Localização confirmada: a célula {cel_sel} (ancoragem "
+                f"{anc}) está na **{rotulo_zona}**. O seletor de alvos abaixo "
+                f"está restrito a essa zona — o cruzamento é fisicamente válido.")
         else:
             alvos_validos = alvos_disp2
             st.warning(
-                f"⚠ A localizacao da celula {cel_sel} (ancoragem {anc}) nao "
-                f"esta confirmada. O cruzamento so tem significado fisico se o "
-                f"alvo pertencer ao mesmo alcado da ancoragem.")
+                f"⚠ A localização da célula {cel_sel} (ancoragem {anc}) não "
+                f"está confirmada. O cruzamento só tem significado físico se o "
+                f"alvo pertencer ao mesmo alçado da ancoragem.")
 
-        alvo7 = st.selectbox("Alvo a sobrepor (mesma zona da celula)",
+        alvo7 = st.selectbox("Alvo a sobrepor (mesma zona da célula)",
                              alvos_validos, key="corr_alvo_celula")
         _mostrar_imagens_celula(cel_sel, key_suffix="_corr")
 
@@ -3809,8 +3919,8 @@ def separador_correlacoes(dados):
                              .str.contains("Santa Casa", case=False, na=False))]
         if not alvos_edi.empty:
             edi_nome = alvos_edi[COLS["edificio"]].iloc[0]
-            with st.expander(f"📍 Ver localizacao do alvo {alvo7} "
-                             f"(no edificio Santa Casa)"):
+            with st.expander(f"📍 Ver localização do alvo {alvo7} "
+                             f"(no edifício Santa Casa)"):
                 COR_ESTADO_LOC = {"Alarme": "#c0140f", "Alerta": "#e67e00",
                                   "Regular": "#1f9e55"}
                 mostrar_localizacao_alvo(alvos_edi, edi_nome, [alvo7],
@@ -3856,12 +3966,12 @@ def separador_correlacoes(dados):
         estado_fim = sc["Estado"].iloc[-1] if "Estado" in sc.columns else "?"
         cresceu = c1v > c0
         st.caption(
-            f"A ancoragem {anc} (celula {cel_sel}) "
+            f"A ancoragem {anc} (célula {cel_sel}) "
             f"{'ganhou' if cresceu else 'perdeu'} carga: {c0:.0f} → {c1v:.0f} kN "
             f"({(c1v/c0-1)*100:+.0f}%), terminando a {pct_fim:+.0f}% da blocagem "
             f"({estado_fim}).")
 
-        st.markdown("**Comparacao entre celulas (ancoragens)**")
+        st.markdown("**Comparação entre células (ancoragens)**")
         linhas_cmp = []
         for cl in sorted(cc[COLS["celula"]].dropna().unique()):
             s = cc[cc[COLS["celula"]] == cl].sort_values(COLS["data"])
@@ -3871,15 +3981,15 @@ def separador_correlacoes(dados):
             v_max = float(s[COLS["carga_atual"]].max())
             loc = LOCALIZACAO_CELULAS.get(cl)
             linhas_cmp.append({
-                "Celula": cl,
+                "Célula": cl,
                 "Ancoragem": s[COLS["ancoragem"]].iloc[0],
-                "Localizacao": (loc[0].split("—")[-1].strip() if loc else "?"),
-                "Periodo": (f"{s[COLS['data']].min().strftime('%d/%m/%y')}–"
+                "Localização": (loc[0].split("—")[-1].strip() if loc else "?"),
+                "Período": (f"{s[COLS['data']].min().strftime('%d/%m/%y')}–"
                             f"{s[COLS['data']].max().strftime('%d/%m/%y')}"),
                 "Blocagem (kN)": round(bl),
                 "Carga fim (kN)": round(v_fim),
-                "Variacao (%)": round((v_fim / v_ini - 1) * 100, 1),
-                "Max vs bloc. (%)": round((v_max / bl - 1) * 100, 1),
+                "Variação (%)": round((v_fim / v_ini - 1) * 100, 1),
+                "Máx vs bloc. (%)": round((v_max / bl - 1) * 100, 1),
                 "Estado": (s["Estado"].iloc[-1] if "Estado" in s.columns else "?"),
             })
         df_cmp = pd.DataFrame(linhas_cmp)
@@ -3891,22 +4001,22 @@ def separador_correlacoes(dados):
             mais_tarde = periodos.idxmax()
             dias_dif = (periodos.max() - periodos.min()).days
             st.warning(
-                f"⚠ As celulas NAO comecaram a medir na mesma data: a "
-                f"{mais_tarde} comecou ~{dias_dif} dias depois da {mais_cedo}, "
-                f"por isso perdeu a fase inicial de carregamento. A comparacao "
-                f"das variacoes (%) entre periodos diferentes deve ser lida com "
+                f"⚠ As células NÃO começaram a medir na mesma data: a "
+                f"{mais_tarde} começou ~{dias_dif} dias depois da {mais_cedo}, "
+                f"por isso perdeu a fase inicial de carregamento. A comparação "
+                f"das variações (%) entre períodos diferentes deve ser lida com "
                 f"esta ressalva.")
 
     # =====================================================================
     # 3. CORRELACAO DIRETA (XY) — deslocamento vs. cota da agua
     # =====================================================================
     st.divider()
-    st.markdown("#### 3. Correlacao direta — deslocamento vs. cota da agua")
-    st.caption("Cada ponto e uma campanha: no eixo X a cota da agua (interpolada "
-               "a data de cada leitura do alvo), no eixo Y o deslocamento "
-               "horizontal do alvo. Se os pontos alinham numa tendencia, ha "
-               "correlacao. O coeficiente r quantifica a forca da associacao "
-               "estatistica — nao prova a causa.")
+    st.markdown("#### 3. Correlação direta — deslocamento vs. cota da água")
+    st.caption("Cada ponto é uma campanha: no eixo X a cota da água (interpolada "
+               "à data de cada leitura do alvo), no eixo Y o deslocamento "
+               "horizontal do alvo. Se os pontos alinham numa tendência, há "
+               "correlação. O coeficiente r quantifica a forca da associação "
+               "estatística — não prova a causa.")
     alv3 = dados["alvos"].copy()
     alv3[COLS["data"]] = pd.to_datetime(alv3[COLS["data"]], errors="coerce")
     alvos_xy = sorted(alv3[COLS["alvo"]].dropna().unique())
@@ -3918,7 +4028,7 @@ def separador_correlacoes(dados):
     with cxy1:
         alvo_xy = st.selectbox("Alvo", alvos_xy, index=idx_a3, key="corr_xy_alvo")
     with cxy2:
-        pz_xy = st.selectbox("Piezometro", pzs3, key="corr_xy_pz") if pzs3 else None
+        pz_xy = st.selectbox("Piezómetro", pzs3, key="corr_xy_pz") if pzs3 else None
 
     if pz_xy is not None:
         sa3 = alv3[alv3[COLS["alvo"]] == alvo_xy].sort_values(COLS["data"])[
@@ -3948,11 +4058,11 @@ def separador_correlacoes(dados):
                 fig_xy.add_trace(go.Scatter(
                     x=[float(v) for v in xs.tolist()],
                     y=[float(b1 * v + b0) for v in xs.tolist()],
-                    mode="lines", name="Tendencia",
+                    mode="lines", name="Tendência",
                     line=dict(color="#2563eb", width=1, dash="dash")))
                 fig_xy.update_layout(
                     height=460,
-                    xaxis=dict(title=f"Cota da agua {pz_xy} (m)"),
+                    xaxis=dict(title=f"Cota da água {pz_xy} (m)"),
                     yaxis=dict(title=f"Desl. horizontal {alvo_xy} (mm)"),
                     margin=dict(t=30, b=40),
                     legend=dict(orientation="h", yanchor="bottom", y=1.02))
@@ -3961,26 +4071,26 @@ def separador_correlacoes(dados):
                          "moderada" if abs(r) >= 0.5 else "fraca")
                 sentido = "negativa" if r < 0 else "positiva"
                 st.markdown(
-                    f"**Correlacao:** r = **{r:.2f}** ({forca}, {sentido}), "
-                    f"em {len(xa_in)} campanhas. Uma correlacao negativa "
+                    f"**Correlação:** r = **{r:.2f}** ({forca}, {sentido}), "
+                    f"em {len(xa_in)} campanhas. Uma correlação negativa "
                     f"significa que o deslocamento sobe a medida que a cota da "
-                    f"agua desce. r mede a associacao estatistica, nao a causa.")
+                    f"água desce. r mede a associação estatística, não a causa.")
             else:
-                st.info("Poucos pontos na janela comum ao piezometro para "
-                        "calcular a correlacao.")
+                st.info("Poucos pontos na janela comum ao piezómetro para "
+                        "calcular a correlação.")
         else:
-            st.info("Serie insuficiente (alvo ou piezometro) para a correlacao.")
+            st.info("Série insuficiente (alvo ou piezómetro) para a correlação.")
 
     # =====================================================================
     # 4. DEFORMACAO x ESCAVACAO DA FRENTE LOCAL  (mesma zona de estacas)
     # =====================================================================
     st.divider()
-    st.markdown("#### 4. Deformacao × Escavacao da frente local")
-    st.caption("Cruza o movimento de um alvo com a COTA a que a escavacao chegou "
+    st.markdown("#### 4. Deformação × Escavação da frente local")
+    st.caption("Cruza o movimento de um alvo com a COTA a que a escavação chegou "
                "NA FRENTE desse alvo (planeamento detalhado, por zona de "
                "estacas). A cota (castanho) desce em degraus a medida que a "
-               "frente aprofunda; ve-se a deformacao (vermelho) crescer com o "
-               "aprofundamento local — e nao com a escavacao do lado oposto.")
+               "frente aprofunda; ve-se a deformação (vermelho) crescer com o "
+               "aprofundamento local — e não com a escavação do lado oposto.")
 
     alv4 = dados["alvos"].copy()
     alv4[COLS["data"]] = pd.to_datetime(alv4[COLS["data"]], errors="coerce")
@@ -3992,11 +4102,11 @@ def separador_correlacoes(dados):
              if not s4.empty else None)
 
     if not zona4 or zona4 not in ESCAVACAO_ZONAS:
-        st.info(f"O alvo {alvo4} nao tem frente de escavacao mapeada. Escolhe um "
-                f"alvo de um edificio/alcado com zona associada (Santa Casa, "
-                f"Cimas, Clinica, ou um alcado de contencao).")
+        st.info(f"O alvo {alvo4} não tem frente de escavação mapeada. Escolhe um "
+                f"alvo de um edifício/alçado com zona associada (Santa Casa, "
+                f"Cimas, Clinica, ou um alçado de contenção).")
     else:
-        st.caption(f"↳ Frente de escavacao: **{ZONA_ESCAV_NOME[zona4]}**")
+        st.caption(f"↳ Frente de escavação: **{ZONA_ESCAV_NOME[zona4]}**")
         # eventos de escavacao (cota) da zona -> frente monotona descendente
         esc_ev = sorted((pd.to_datetime(d), float(cota))
                         for d, tp, cota, rot in ESCAVACAO_ZONAS[zona4]
@@ -4055,12 +4165,12 @@ def separador_correlacoes(dados):
         if len(cotas_e) >= 2 and len(y_def) >= 2:
             st.markdown(
                 f"**Leitura:** na frente da {ZONA_ESCAV_NOME[zona4].split('—')[0].strip()}, "
-                f"a escavacao desceu de cota **{cotas_e[0]:.2f}** para "
+                f"a escavação desceu de cota **{cotas_e[0]:.2f}** para "
                 f"**{cotas_e[-1]:.2f} m** enquanto o {alvo4} evoluiu de "
                 f"{y_def[0]:.1f} para **{y_def[-1]:.1f} mm**.")
 
         # --- XY: deslocamento vs. cota escavada local (degrau) + coef. r ---
-        st.markdown("**Correlacao direta — deslocamento vs. cota escavada local**")
+        st.markdown("**Correlação direta — deslocamento vs. cota escavada local**")
         xe = np.array([pd.Timestamp(d).value for d in datas_e])
         pts_c, pts_d = [], []
         for d, y in zip(d_def, y_def):
@@ -4079,7 +4189,7 @@ def separador_correlacoes(dados):
             xs = np.linspace(min(pts_c), max(pts_c), 20)
             figx.add_trace(go.Scatter(
                 x=[float(v) for v in xs], y=[float(b1 * v + b0) for v in xs],
-                mode="lines", name="Tendencia",
+                mode="lines", name="Tendência",
                 line=dict(color="#8B4513", width=1, dash="dash")))
             figx.update_layout(
                 height=430,
@@ -4091,12 +4201,91 @@ def separador_correlacoes(dados):
             forca = ("forte" if abs(r4) >= 0.8 else
                      "moderada" if abs(r4) >= 0.5 else "fraca")
             st.markdown(
-                f"**Correlacao:** r = **{r4:.2f}** ({forca}), em {len(pts_c)} "
-                f"campanhas. Como a cota DESCE quando a escavacao aprofunda, um "
+                f"**Correlação:** r = **{r4:.2f}** ({forca}), em {len(pts_c)} "
+                f"campanhas. Como a cota DESCE quando a escavação aprofunda, um "
                 f"r negativo significa que o deslocamento sobe a medida que a "
-                f"frente local desce. r mede a associacao, nao a causa.")
+                f"frente local desce. r mede a associação, não a causa.")
         else:
-            st.info("Pontos insuficientes na janela da escavacao para o XY.")
+            st.info("Pontos insuficientes na janela da escavação para o XY.")
+
+    # =====================================================================
+    # 5. VELOCIDADE DO MOVIMENTO x APOIOS (travamento)
+    # =====================================================================
+    st.divider()
+    st.markdown("#### 5. Velocidade do movimento × apoios (travamento)")
+    st.caption("Velocidade (mm/dia entre campanhas) do alvo escolhido acima, com "
+               "os APOIOS da sua frente marcados: ⚓ ancoragens, ▭ bandas de "
+               "laje. Permite ver se o movimento ABRANDOU depois de cada apoio "
+               "entrar. Nota importante: a escavação aprofunda em simultâneo, "
+               "por isso a leitura é de COINCIDÊNCIA (se o apoio estancou ou não "
+               "o movimento), não de causa isolada.")
+    if not zona4 or zona4 not in ESCAVACAO_ZONAS:
+        st.info("Escolhe (na secção 4) um alvo com frente de escavação mapeada "
+                "para ver o efeito dos apoios.")
+    else:
+        sv = s4[[COLS["data"], COLS["desl_h"]]].dropna().sort_values(COLS["data"])
+        sv["dias"] = sv[COLS["data"]].diff().dt.days
+        sv["vel"] = sv[COLS["desl_h"]].diff() / sv["dias"]
+        sv = sv.dropna(subset=["vel"])
+        if sv.empty:
+            st.info("Sem leituras suficientes para a velocidade.")
+        else:
+            fig5 = go.Figure()
+            fig5.add_trace(go.Bar(
+                x=[pd.to_datetime(v) for v in sv[COLS["data"]].tolist()],
+                y=[float(v) for v in sv["vel"].tolist()],
+                name="Velocidade (mm/dia)", marker=dict(color="#1f78d1")))
+            dmin5 = sv[COLS["data"]].min()
+            dmax5 = sv[COLS["data"]].max()
+            for d, tp, cota, rot in ESCAVACAO_ZONAS[zona4]:
+                if tp == "escavacao":
+                    continue
+                t = pd.to_datetime(d)
+                if not (dmin5 <= t <= dmax5):
+                    continue
+                cor = "#7a1fa0" if tp == "ancoragem" else "#1f9e55"
+                fig5.add_vline(x=t, line=dict(color=cor, width=1, dash="dot"),
+                               annotation_text=("⚓" if tp == "ancoragem" else "▭"),
+                               annotation_position="top",
+                               annotation_font=dict(size=12, color=cor))
+            fig5.update_layout(
+                height=360, xaxis=dict(title="Data", type="date"),
+                yaxis=dict(title="Velocidade (mm/dia)"),
+                margin=dict(t=40, b=40),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02))
+            st.plotly_chart(fig5, use_container_width=True)
+
+            # tabela antes/depois (janela de 30 dias) por apoio
+            linhas5 = []
+            W = pd.Timedelta(days=30)
+            for d, tp, cota, rot in ESCAVACAO_ZONAS[zona4]:
+                if tp == "escavacao":
+                    continue
+                t = pd.to_datetime(d)
+                vb = sv[(sv[COLS["data"]] > t - W) &
+                        (sv[COLS["data"]] <= t)]["vel"].mean()
+                va = sv[(sv[COLS["data"]] > t) &
+                        (sv[COLS["data"]] <= t + W)]["vel"].mean()
+                if pd.isna(vb) and pd.isna(va):
+                    continue
+                if pd.isna(vb) or pd.isna(va):
+                    efeito = "sem janela completa"
+                else:
+                    efeito = "abranda" if va < vb else "não abranda"
+                linhas5.append({
+                    "Apoio": ("⚓ " if tp == "ancoragem" else "▭ ") + rot,
+                    "Data": t.strftime("%d/%m/%Y"),
+                    "v antes (mm/dia)": None if pd.isna(vb) else round(float(vb), 3),
+                    "v depois (mm/dia)": None if pd.isna(va) else round(float(va), 3),
+                    "Efeito": efeito,
+                })
+            if linhas5:
+                st.markdown("**Velocidade antes/depois de cada apoio** "
+                            "(média em janela de 30 dias):")
+                st.dataframe(pd.DataFrame(linhas5), use_container_width=True,
+                             hide_index=True)
+                st.caption("«sem janela completa» = apoio demasiado recente para "
+                           "a janela posterior (os alvos terminam a 05/02/2026).")
 
 
 def separador_home(dados):
@@ -4111,9 +4300,9 @@ def separador_home(dados):
         "<div style='font-size:1.2em; opacity:0.92; margin-top:8px;'>"
         "Instrumentation Monitoring System</div>"
         "<div style='font-size:0.95em; opacity:0.8; margin-top:12px; "
-        "max-width:560px;'>Analise e visualizacao de instrumentacao geotecnica "
+        "max-width:560px;'>Análise e visualização de instrumentação geotécnica "
         "— deslocamentos, velocidades, sinais precursores, geologia e "
-        "sequencia de obra.</div>"
+        "sequência de obra.</div>"
         "</div></div>"
     )
     st.markdown(banner, unsafe_allow_html=True)
@@ -4122,8 +4311,10 @@ def separador_home(dados):
     st.markdown(
         "Esta aplicação apoia a **análise inversa** (*back-analysis*) da "
         "contenção periférica da reformulação do **Hotel Eden**, no Monte "
-        "Estoril. A obra compreende uma escavação profunda — cerca de 16 m — "
-        "executada ao abrigo de uma cortina de contenção, num contexto "
+        "Estoril. A obra compreende uma escavação profunda — fundo à cota "
+        "4,55 m, cerca de 16 m abaixo do piso 1 (cota 20,95 m) e mais nas zonas "
+        "em que o terreno natural é mais alto — executada ao abrigo de uma "
+        "cortina de estacas ancorada e travada por bandas de laje, num contexto "
         "exigente: confina com **edifícios sensíveis**, em particular a Santa "
         "Casa da Misericórdia, o Restaurante Cimas e a Clínica Abreu Loureiro, "
         "e desenvolve-se **abaixo do nível freático** de repouso. A "
@@ -4133,14 +4324,12 @@ def separador_home(dados):
         "como nos edifícios vizinhos.")
     st.markdown(
         "O propósito da ferramenta não se esgota na visualização das leituras: "
-        "procura sobretudo **relacionar a deformação medida com as suas "
-        "causas** — o avanço da escavação, o rebaixamento do nível freático e "
-        "a natureza do maciço. A leitura conjunta destes fatores sustenta que "
-        "a deformação da contenção é governada pelo **grau de consolidação "
-        "crescente do grés** — e não por qualquer camada mole, que não existe "
-        "— acentuando-se à medida que a escavação progride abaixo do nível "
-        "freático. O separador **Síntese** reúne estes três fatores num único "
-        "eixo temporal, tornando essa relação diretamente legível.")
+        "procura sobretudo **relacionar a deformação medida com os "
+        "acontecimentos da obra** — o avanço da escavação, o rebaixamento do nível freático, "
+        "a execução das ancoragens e a natureza do maciço. O separador "
+        "**Correlações** cruza estas séries num eixo temporal comum; a "
+        "interpretação das causas cabe ao engenheiro, e uma correlação "
+        "temporal não demonstra, por si só, causalidade.")
 
     # ---- identificacao da obra + numeros-chave --------------------------
     col_id, col_num = st.columns([1.3, 2])
@@ -4148,12 +4337,12 @@ def separador_home(dados):
         st.markdown("#### Obra")
         st.markdown(
             "**Hotel Eden, Estoril**  \n"
-            "Reformulacao — escavacao e contencao periferica  \n"
+            "Reformulação — escavação e contenção periférica  \n"
             "Monte Estoril, Cascais  \n"
-            "_Back-analysis de instrumentacao_")
+            "_Back-analysis de instrumentação_")
 
     with col_num:
-        st.markdown("#### Instrumentacao monitorizada")
+        st.markdown("#### Instrumentação monitorizada")
         # calcular numeros reais a partir dos dados
         n_inc = dados["perfis"][COLS["inclinometro"]].nunique() if not dados["perfis"].empty else 0
         n_alvos = dados["alvos"][COLS["alvo"]].nunique() if not dados["alvos"].empty else 0
@@ -4161,47 +4350,47 @@ def separador_home(dados):
         n_cel = dados["celulas"][COLS["celula"]].nunique() if not dados["celulas"].empty else 0
         n_pz = dados["piezo"][COLS["piezometro"]].nunique() if not dados["piezo"].empty else 0
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Inclinometros", n_inc)
+        c1.metric("Inclinómetros", n_inc)
         c2.metric("Alvos topogr.", n_alvos)
         c3.metric("Campanhas", n_camp)
-        c4.metric("Celulas carga", n_cel)
-        c5.metric("Piezometros", n_pz)
+        c4.metric("Células carga", n_cel)
+        c5.metric("Piezómetros", n_pz)
 
     st.divider()
 
     # ---- cartoes das areas de analise -----------------------------------
     st.markdown("#### O que podes explorar")
-    st.caption("Ha duas componentes, selecionaveis na barra lateral: **Dados** "
-               "(ilustracao dos resultados de cada instrumento, geologia e "
-               "planeamento, sem analise) e **Analise** (leitura dos resultados "
-               "e correlacao entre instrumentos). Usa os separadores no topo "
+    st.caption("Há duas componentes, selecionáveis na barra lateral: **Dados** "
+               "(ilustração dos resultados de cada instrumento, geologia e "
+               "planeamento, sem análise) e **Análise** (leitura dos resultados "
+               "e correlação entre instrumentos). Usa os separadores no topo "
                "para navegar dentro de cada componente.")
 
     cartoes = [
-        ("Dados · Inclinometros", "Perfil deformado em profundidade, evolucao "
-         "no tempo, velocidade e sinais precursores. Sobreposicao da geologia."),
-        ("Dados · Alvos (2D)", "Series temporais de deslocamento horizontal e "
-         "assentamento vertical, por edificio e por alvo."),
-        ("Dados · Celulas de carga", "Carga nas ancoragens vs. blocagem, com "
+        ("Dados · Inclinómetros", "Perfil deformado em profundidade, evolução "
+         "no tempo, velocidade e sinais precursores. Sobreposição da geologia."),
+        ("Dados · Alvos (2D)", "Séries temporais de deslocamento horizontal e "
+         "assentamento vertical, por edifício e por alvo."),
+        ("Dados · Células de carga", "Carga nas ancoragens vs. blocagem, com "
          "limiares de alerta (15%) e alarme (25%)."),
-        ("Dados · Piezometros", "Evolucao da cota da agua subterranea."),
-        ("Dados · Geologia", "Colunas litologicas das sondagens, ensaios SPT em "
-         "profundidade e zonamento geotecnico (ZG1-ZG6)."),
-        ("Dados · Obra", "Cronograma do plano de trabalhos (real e contratual), "
-         "com a janela de instrumentacao assinalada."),
-        ("Dados · Planta (DXF)", "Leitura de plantas de escavacao em DXF, com "
-         "opcao de alinhamento aos alvos por pontos de referencia."),
-        ("Analise · Terreno + Alvos 3D", "Alvos no espaco com a geometria da "
-         "obra: contorno do recinto, edificios vizinhos e vetores de "
+        ("Dados · Piezómetros", "Evolução da cota da água subterrânea."),
+        ("Dados · Geologia", "Colunas litológicas das sondagens, ensaios SPT em "
+         "profundidade e zonamento geotécnico (ZG1-ZG6)."),
+        ("Dados · Obra", "Cronograma do plano de trabalhos (impactado e contratual), "
+         "com a janela de instrumentação assinalada."),
+        ("Dados · Planta (DXF)", "Leitura de plantas de escavação em DXF, com "
+         "opção de alinhamento aos alvos por pontos de referência."),
+        ("Análise · Terreno + Alvos 3D", "Alvos no espaço com a geometria da "
+         "obra: contorno do recinto, edifícios vizinhos e vetores de "
          "deslocamento amplificados."),
-        ("Analise · Resultados", "Magnitude, distribuicao espacial, ritmo e "
-         "profundidade das movimentacoes, e observado vs. previsto. Ilustracao "
+        ("Análise · Resultados", "Magnitude, distribuição espacial, ritmo e "
+         "profundidade das movimentações, e observado vs. previsto. Ilustração "
          "factual dos resultados, para a escrita da tese."),
-        ("Analise · Correlacoes", "Graficos de interacao entre instrumentos: "
-         "deformacao vs. agua vs. escavacao vs. faseamento; deformacao vs. "
-         "carga na ancoragem; e a correlacao direta (XY) com coeficiente r."),
-        ("Analise · Pressupostos", "O que e medido vs. o que e assumido: "
-         "inferencias, limitacoes e qualidade dos dados."),
+        ("Análise · Correlações", "Gráficos de interação entre instrumentos: "
+         "deformação vs. água vs. escavação vs. faseamento; deformação vs. "
+         "carga na ancoragem; e a correlação direta (XY) com coeficiente r."),
+        ("Análise · Pressupostos", "O que é medido vs. o que é assumido: "
+         "inferências, limitações e qualidade dos dados."),
     ]
     # desenhar em grelha de 2 colunas
     for i in range(0, len(cartoes), 2):
@@ -4220,23 +4409,24 @@ def separador_home(dados):
                         unsafe_allow_html=True)
 
     st.divider()
-    st.caption("Nota metodologica: a integracao dos perfis inclinometricos "
-               "assume a base fixa. Datas da sequencia de obra sao as previstas "
-               "no plano de trabalhos. Superficie 3D e interpolada entre alvos "
-               "medidos — apoio visual, nao modelo do macico.")
+    st.caption("Nota metodológica: a integração dos perfis inclinométricos "
+               "assume a base fixa. As datas da sequência de obra provem do "
+               "plano de trabalhos impactado e do planeamento detalhado, "
+               "adotados como aproximação da execução real. A posição dos alvos "
+               "no 3D é aproximada — apoio visual, não modelo do maciço.")
 
 
 # =========================================================================
 # PRINCIPAL
 # =========================================================================
 def main():
-    st.sidebar.title("The Eden - Instrumentacao")
+    st.sidebar.title("The Eden - Instrumentação")
     fonte_op = st.sidebar.radio("Ficheiro de dados",
                                 ["Usar o ficheiro ao lado do script", "Carregar manualmente"])
     if fonte_op == "Carregar manualmente":
-        up = st.sidebar.file_uploader("Excel de instrumentacao", type=["xlsx"])
+        up = st.sidebar.file_uploader("Excel de instrumentação", type=["xlsx"])
         if up is None:
-            st.info("Carrega o Excel na barra lateral para comecar.")
+            st.info("Carrega o Excel na barra lateral para começar.")
             st.stop()
         fonte = up
     else:
@@ -4248,24 +4438,24 @@ def main():
             if Path(FICHEIRO_EXCEL).exists():
                 fonte = FICHEIRO_EXCEL
             else:
-                st.error(f"Nao encontrei '{FICHEIRO_EXCEL}'. Poe o Excel na pasta "
+                st.error(f"Não encontrei '{FICHEIRO_EXCEL}'. Poe o Excel na pasta "
                          f"do script ou usa 'Carregar manualmente'.")
                 st.stop()
     try:
         dados = carregar_dados(fonte)
     except Exception as e:
-        st.error(f"Nao consegui ler o Excel. Detalhe: {e}")
+        st.error(f"Não consegui ler o Excel. Detalhe: {e}")
         st.stop()
 
     st.sidebar.divider()
-    st.sidebar.subheader("Detecao de precursores")
+    st.sidebar.subheader("Deteção de precursores")
     limiar_vel = st.sidebar.slider("Limiar de velocidade (mm/dia)", 0.1, 3.0,
                                    LIMIAR_VEL_DEFEITO, 0.05)
-    fator_acel = st.sidebar.slider("Fator de aceleracao (x)", 1.2, 3.0,
+    fator_acel = st.sidebar.slider("Fator de aceleração (x)", 1.2, 3.0,
                                    FATOR_ACEL_DEFEITO, 0.1)
 
     if not TEM_SCIPY:
-        st.sidebar.info("Instala 'scipy' para ativar a superficie 3D interpolada.")
+        st.sidebar.info("Instala 'scipy' para ativar a superfície 3D interpolada.")
 
     if not TEM_EZDXF:
         st.sidebar.info("Instala 'ezdxf' para ativar a leitura de plantas DXF.")
@@ -4282,19 +4472,19 @@ def main():
     # O separador Inicio esta sempre acessivel (primeiro de cada componente).
     # -------------------------------------------------------------------
     st.sidebar.divider()
-    st.sidebar.subheader("Navegacao")
+    st.sidebar.subheader("Navegação")
     frente = st.sidebar.radio(
         "Componente",
-        ["Dados — instrumentacao, geologia e planeamento",
-         "Analise — analise de resultados"],
-        help="Dados: ilustracao dos resultados (cada instrumento, a geologia e "
-             "o planeamento), sem analise. Analise: leitura dos resultados e "
-             "correlacao entre os dados dos varios instrumentos.")
+        ["Dados — instrumentação, geologia e planeamento",
+         "Análise — análise de resultados"],
+        help="Dados: ilustração dos resultados (cada instrumento, a geologia e "
+             "o planeamento), sem análise. Análise: leitura dos resultados e "
+             "correlação entre os dados dos vários instrumentos.")
 
     if frente.startswith("Dados"):
         thome, tinc, talv, tcc, tpz, tgeo, tobra, tplan = st.tabs(
-            ["Inicio", "Inclinometros", "Alvos (2D)", "Celulas de carga",
-             "Piezometros", "Geologia", "Obra", "Planta (DXF)"])
+            ["Início", "Inclinómetros", "Alvos (2D)", "Células de carga",
+             "Piezómetros", "Geologia", "Obra", "Planta (DXF)"])
         with thome:
             separador_home(dados)
         with tinc:
@@ -4313,7 +4503,7 @@ def main():
             separador_planta(dados)
     else:
         thome, t3d, tres, tcorr, tpress = st.tabs(
-            ["Inicio", "Terreno + Alvos 3D", "Resultados", "Correlacoes",
+            ["Início", "Terreno + Alvos 3D", "Resultados", "Correlações",
              "Pressupostos"])
         with thome:
             separador_home(dados)
