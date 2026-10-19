@@ -3613,6 +3613,47 @@ def _marcos_escavacao_zona(fig, zona, dt_min, dt_max, so_escavacao=True):
     return vis
 
 
+def _driver_em(alvo_ns, drv_ns, drv_val, modo="linear"):
+    """Valor de um 'input' (água, cota de escavação, carga) nas datas de um
+    alvo. 'linear' interpola; 'step' usa o último valor <= data (degrau). Fora
+    da janela do input devolve NaN (não extrapola)."""
+    import numpy as np
+    out = np.full(len(alvo_ns), np.nan)
+    drv_ns = np.asarray(drv_ns)
+    drv_val = np.asarray(drv_val, dtype=float)
+    if len(drv_ns) == 0:
+        return out
+    lo, hi = drv_ns.min(), drv_ns.max()
+    for i, t in enumerate(alvo_ns):
+        if t < lo or t > hi:
+            continue
+        if modo == "step":
+            idx = np.where(drv_ns <= t)[0]
+            if len(idx):
+                out[i] = drv_val[idx[-1]]
+        else:
+            out[i] = float(np.interp(t, drv_ns, drv_val))
+    return out
+
+
+def _corr_par(x, y):
+    """Devolve (r Pearson, r Spearman, n) de dois vetores, ignorando NaN.
+    Spearman = Pearson dos postos (sem dependência de scipy)."""
+    import numpy as np
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    m = ~(np.isnan(x) | np.isnan(y))
+    x, y = x[m], y[m]
+    n = int(len(x))
+    if n < 3 or len(np.unique(x)) < 2 or len(np.unique(y)) < 2:
+        return (float("nan"), float("nan"), n)
+    r = float(np.corrcoef(x, y)[0, 1])
+    rx = pd.Series(x).rank().to_numpy()
+    ry = pd.Series(y).rank().to_numpy()
+    rs = float(np.corrcoef(rx, ry)[0, 1])
+    return (r, rs, n)
+
+
 def separador_correlacoes(dados):
     """
     CORRELAÇÕES — gráficos de interação entre instrumentos. Cruzam, num eixo de
@@ -3985,9 +4026,11 @@ def separador_correlacoes(dados):
                 sentido = "negativa" if r < 0 else "positiva"
                 st.markdown(
                     f"**Correlação:** r = **{r:.2f}** ({forca}, {sentido}), "
-                    f"em {len(xa_in)} campanhas. Uma correlação negativa "
-                    f"significa que o deslocamento sobe a medida que a cota da "
-                    f"água desce. r mede a associação estatística, não a causa.")
+                    f"R² = **{r**2:.2f}**, em {len(xa_in)} campanhas. Reta de "
+                    f"tendência: desl = {b1:.2f}·(cota água) + {b0:.1f}. Uma "
+                    f"correlação negativa significa que o deslocamento sobe à "
+                    f"medida que a cota da água desce. r/R² medem a associação "
+                    f"estatística, não a causa.")
             else:
                 st.info("Poucos pontos na janela comum ao piezómetro para "
                         "calcular a correlação.")
@@ -4114,10 +4157,12 @@ def separador_correlacoes(dados):
             forca = ("forte" if abs(r4) >= 0.8 else
                      "moderada" if abs(r4) >= 0.5 else "fraca")
             st.markdown(
-                f"**Correlação:** r = **{r4:.2f}** ({forca}), em {len(pts_c)} "
-                f"campanhas. Como a cota DESCE quando a escavação aprofunda, um "
-                f"r negativo significa que o deslocamento sobe a medida que a "
-                f"frente local desce. r mede a associação, não a causa.")
+                f"**Correlação:** r = **{r4:.2f}** ({forca}), R² = **{r4**2:.2f}**, "
+                f"em {len(pts_c)} campanhas. Reta de tendência: desl = "
+                f"{b1:.2f}·(cota escavada) + {b0:.1f}. Como a cota DESCE quando a "
+                f"escavação aprofunda, um r negativo significa que o deslocamento "
+                f"sobe à medida que a frente local desce. r/R² medem a "
+                f"associação, não a causa.")
         else:
             st.info("Pontos insuficientes na janela da escavação para o XY.")
 
@@ -4288,8 +4333,340 @@ def separador_correlacoes(dados):
                    "vizinhos movem-se muito menos, o que aponta para movimentação "
                    "localizada e não geral. Em «Alvo mais deslocado», as próprias "
                    "cortinas de contenção (alçados) movem-se mais do que os "
-                   "edifícios. A comparação com a estimativa de projeto está no "
-                   "separador Resultados (Observado vs. Previsto).")
+                   "edifícios. A comparação com a estimativa de projeto está em "
+                   "Dados → Alvos (2D) → Observado vs. Previsto.")
+
+    # =====================================================================
+    # 7. EVIDENCIA DE CORRELACAO — resumo por alvo (Pearson + Spearman)
+    # =====================================================================
+    st.divider()
+    st.markdown("#### 7. Evidência de correlação — resumo por alvo")
+    st.caption("Para o alvo escolhido, a força da associação do seu deslocamento "
+               "com cada «input» da sua frente: água, cota de escavação local e "
+               "carga na ancoragem. **r de Pearson** mede associação linear; "
+               "**r de Spearman** mede associação monótona (robusto a "
+               "não-linearidade). |r| perto de 1 = associação forte. Mede "
+               "associação, não causa.")
+    alvE = dados["alvos"].copy()
+    alvE[COLS["data"]] = pd.to_datetime(alvE[COLS["data"]], errors="coerce")
+    alvos_ev = sorted(alvE[COLS["alvo"]].dropna().unique())
+    idxE = alvos_ev.index("A3") if "A3" in alvos_ev else 0
+    alvo_ev = st.selectbox("Alvo", alvos_ev, index=idxE, key="corr_ev_alvo")
+    sE = alvE[alvE[COLS["alvo"]] == alvo_ev].sort_values(
+        COLS["data"])[[COLS["data"], COLS["desl_h"]]].dropna()
+    zonaE = zona_escav_de_edificio(
+        alvE[alvE[COLS["alvo"]] == alvo_ev][COLS["edificio"]].iloc[0])
+    t_ns = sE[COLS["data"]].values.astype("datetime64[ns]").astype("int64")
+    desl = sE[COLS["desl_h"]].to_numpy(float)
+
+    # preparar os 3 drivers (cada um: (ns, vals, modo) ou None) — partilhados 7+8
+    drv_agua = drv_escav = drv_carga = None
+    nome_carga = None
+    pzE = dados["piezo"].copy()
+    pzE[COLS["data"]] = pd.to_datetime(pzE[COLS["data"]], errors="coerce")
+    pzsE = sorted(pzE[COLS["piezometro"]].dropna().unique())
+    if pzsE:
+        sp = pzE[pzE[COLS["piezometro"]] == pzsE[0]].sort_values(
+            COLS["data"])[[COLS["data"], COLS["cota_agua"]]].dropna()
+        drv_agua = (sp[COLS["data"]].values.astype("datetime64[ns]").astype("int64"),
+                    sp[COLS["cota_agua"]].to_numpy(float), "linear")
+    if zonaE in ESCAVACAO_ZONAS:
+        ev = sorted((pd.to_datetime(d), float(c))
+                    for d, tp, c, r in ESCAVACAO_ZONAS[zonaE]
+                    if tp == "escavacao" and c is not None)
+        if ev:
+            ed = [pd.Timestamp(d).value for d, c in ev]
+            ec, mm = [], None
+            for _, c in ev:
+                mm = c if mm is None else min(mm, c)
+                ec.append(mm)
+            import numpy as _np
+            drv_escav = (_np.array(ed), _np.array(ec), "step")
+    ccE = dados.get("celulas")
+    if ccE is not None and not ccE.empty and zonaE:
+        ccE = ccE.copy()
+        ccE[COLS["data"]] = pd.to_datetime(ccE[COLS["data"]], errors="coerce")
+        cel_z = [c for c, z in CELULA_ZONA.items()
+                 if z == zonaE and c in set(ccE[COLS["celula"]])]
+        if cel_z:
+            nome_carga = cel_z[0]
+            scc = ccE[ccE[COLS["celula"]] == cel_z[0]].sort_values(
+                COLS["data"])[[COLS["data"], COLS["carga_atual"]]].dropna()
+            drv_carga = (scc[COLS["data"]].values.astype("datetime64[ns]").astype("int64"),
+                         scc[COLS["carga_atual"]].to_numpy(float), "linear")
+
+    linhasE = []
+    for rotulo, drv in [("Cota da água", drv_agua),
+                        ("Cota de escavação (frente)", drv_escav),
+                        (f"Carga ({nome_carga})" if nome_carga else "Carga", drv_carga)]:
+        if drv is None:
+            continue
+        dv = _driver_em(t_ns, drv[0], drv[1], drv[2])
+        r, rs, n = _corr_par(desl, dv)
+        linhasE.append({
+            "Input": rotulo,
+            "r Pearson": round(r, 2) if r == r else None,
+            "r Spearman": round(rs, 2) if rs == rs else None,
+            "n campanhas": n,
+        })
+    if linhasE:
+        dfE = pd.DataFrame(linhasE)
+        dfE["_o"] = dfE["r Pearson"].abs().fillna(-1)
+        dfE = dfE.sort_values("_o", ascending=False).drop(columns="_o")
+        st.dataframe(dfE, use_container_width=True, hide_index=True)
+        frente_lbl = ZONA_ESCAV_NOME.get(zonaE, "não mapeada") if zonaE else "não mapeada"
+        st.caption(f"Frente do alvo {alvo_ev}: **{frente_lbl}**. Correlação "
+                   f"negativa com água/escavação = o deslocamento sobe quando a "
+                   f"cota desce; positiva com a carga = sobem juntas.")
+    else:
+        st.info("Sem inputs suficientes para a tabela de evidência deste alvo.")
+
+    # =====================================================================
+    # 8. DESFASAMENTO (LAG) — tempo de resposta
+    # =====================================================================
+    st.divider()
+    st.markdown("#### 8. Desfasamento (lag) — tempo de resposta")
+    st.caption("Desliza o «input» no tempo e recalcula r para cada atraso Δ "
+               "(deslocamento de hoje vs input de há Δ dias). O Δ que dá |r| "
+               "máximo é o tempo de resposta aparente. Ressalva: campanhas "
+               "~8/8 dias e séries colineares no tempo → resolução grosseira e "
+               "pico pouco nítido. É evidência, não prova.")
+    import numpy as np
+    if len(sE) >= 4 and (drv_agua or drv_escav):
+        t0, t1 = sE[COLS["data"]].min(), sE[COLS["data"]].max()
+        grid = pd.date_range(t0, t1, freq="7D")
+        gns = grid.values.astype("datetime64[ns]").astype("int64")
+        desl_g = np.interp(gns, t_ns, desl)
+        lags = list(range(0, 61, 7))
+
+        def _rlag(drv):
+            drvg = _driver_em(gns, drv[0], drv[1], drv[2])
+            out = []
+            for L in lags:
+                sh = L // 7
+                if sh == 0:
+                    xx, yy = drvg, desl_g
+                else:
+                    xx, yy = drvg[:-sh], desl_g[sh:]
+                r, _, _ = _corr_par(yy, xx)
+                out.append(r)
+            return out
+
+        figL = go.Figure()
+        picos = []
+        if drv_agua:
+            ra = _rlag(drv_agua)
+            figL.add_trace(go.Scatter(x=lags, y=ra, mode="lines+markers",
+                                      name="vs água", line=dict(color="#2563eb")))
+            ia = int(np.nanargmax(np.abs(ra)))
+            picos.append(f"água: |r| máx a Δ={lags[ia]} d (r={ra[ia]:.2f})")
+        if drv_escav:
+            re = _rlag(drv_escav)
+            figL.add_trace(go.Scatter(x=lags, y=re, mode="lines+markers",
+                                      name="vs escavação", line=dict(color="#8B4513")))
+            ie = int(np.nanargmax(np.abs(re)))
+            picos.append(f"escavação: |r| máx a Δ={lags[ie]} d (r={re[ie]:.2f})")
+        figL.update_layout(
+            height=360, xaxis=dict(title="Desfasamento Δ (dias)"),
+            yaxis=dict(title="r (deslocamento vs input desfasado)"),
+            margin=dict(t=30, b=40),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02))
+        st.plotly_chart(figL, use_container_width=True)
+        if picos:
+            st.caption("Pico de correlação — " + " · ".join(picos) +
+                       ". Se o pico está a Δ=0, a resposta é praticamente "
+                       "imediata à escala das campanhas.")
+    else:
+        st.info("Série do alvo demasiado curta (ou sem inputs) para a análise "
+                "de lag.")
+
+
+def separador_alerta_precoce(dados):
+    """ALERTA PRECOCE — a instrumentação como ferramenta de segurança (método
+    observacional, Peck 1969): quando o sistema teria levantado bandeiras, com
+    que antecedência, que movimento ocorreu depois do 1.º aviso, e técnicas de
+    previsão. A app quantifica os avisos; a decisão de intervir e o seu efeito
+    são interpretação do autor."""
+    import numpy as np
+    st.subheader("Alerta precoce — monitorização como ferramenta de segurança")
+    st.caption("O método observacional (Peck, 1969): a instrumentação não só "
+               "regista, como pode AVISAR a tempo de intervir. Aqui: quando cada "
+               "alvo cruzou o alerta/alarme, quanto movimento ocorreu DEPOIS do "
+               "1.º aviso (potencialmente evitável) e técnicas de previsão. Nota: "
+               "a app quantifica os avisos; se uma intervenção teria evitado a "
+               "evolução é interpretação do autor — e não há evidência de colapso "
+               "iminente, apenas de movimento em alarme.")
+
+    alvos = dados.get("alvos")
+    if alvos is None or alvos.empty:
+        st.info("Sem dados de alvos.")
+        return
+    alvos = anexar_estado_calculado(alvos.copy())
+    alvos[COLS["data"]] = pd.to_datetime(alvos[COLS["data"]], errors="coerce")
+
+    # ---- 1. JANELA DE INTERVENCAO ----
+    st.markdown("#### 1. Janela de intervenção — antecedência dos avisos")
+    linhas = []
+    for a, g in alvos.groupby(COLS["alvo"]):
+        g = g.sort_values(COLS["data"])
+        est = g["Estado calculado"]
+        mask_av = est.isin(["Alerta", "Alarme"])
+        if not mask_av.any():
+            continue
+        i_av = mask_av.idxmax()
+        d_av = g.loc[i_av, COLS["data"]]
+        desl_av = g.loc[i_av, COLS["desl_h"]]
+        mask_al = est == "Alarme"
+        d_al = g.loc[mask_al.idxmax(), COLS["data"]] if mask_al.any() else None
+        gh = g.dropna(subset=[COLS["desl_h"]])
+        if gh.empty:
+            continue
+        desl_fim = float(gh[COLS["desl_h"]].iloc[-1])
+        d_fim = gh[COLS["data"]].iloc[-1]
+        if d_al is not None and d_al > d_av:
+            antec_lbl = f"{(d_al - d_av).days} d (até alarme)"
+        else:
+            antec_lbl = f"{(d_fim - d_av).days} d (até à última leitura)"
+        linhas.append({
+            "Alvo": a,
+            "Edifício": g[COLS["edificio"]].iloc[0],
+            "1.º aviso": d_av.strftime("%d/%m/%Y"),
+            "Desl. no aviso (mm)": round(float(desl_av), 1),
+            "1.º alarme": d_al.strftime("%d/%m/%Y") if d_al is not None else "—",
+            "Antecedência": antec_lbl,
+            "Mov. após 1.º aviso (mm)": round(desl_fim - float(desl_av), 1),
+            "Desl. final (mm)": round(desl_fim, 1),
+        })
+    if linhas:
+        dfb = pd.DataFrame(linhas).sort_values("Mov. após 1.º aviso (mm)",
+                                               ascending=False)
+        st.dataframe(dfb, use_container_width=True, hide_index=True)
+        st.caption("«Mov. após 1.º aviso» = deslocamento acumulado depois de o "
+                   "alvo entrar em alerta — a parte que, em tese, uma intervenção "
+                   "atempada poderia ter limitado. «Antecedência» = a janela "
+                   "temporal que a monitorização deu.")
+        pior = dfb.iloc[0]
+        st.markdown(f"**Leitura:** o alvo {pior['Alvo']} ({pior['Edifício']}) deu "
+                    f"o 1.º aviso a {pior['1.º aviso']} com "
+                    f"{pior['Desl. no aviso (mm)']:.0f} mm e ainda acumulou "
+                    f"**{pior['Mov. após 1.º aviso (mm)']:.0f} mm** depois disso.")
+
+        # curva de um alvo com os limiares e a janela sombreada
+        st.markdown("Ver a janela de intervenção de um alvo:")
+        crit_alvos = sorted(dfb["Alvo"].tolist())
+        asel = st.selectbox("Alvo", crit_alvos, key="ap_alvo")
+        g = alvos[alvos[COLS["alvo"]] == asel].sort_values(COLS["data"])
+        crit, _rot, _ac = criterios_do_alvo(g[COLS["edificio"]].iloc[0])
+        Ha, Hm = crit[0], crit[1]
+        row = dfb[dfb["Alvo"] == asel].iloc[0]
+        d_av = pd.to_datetime(row["1.º aviso"], format="%d/%m/%Y")
+        figb = go.Figure()
+        figb.add_trace(go.Scatter(
+            x=[pd.to_datetime(v) for v in g[COLS["data"]].tolist()],
+            y=[float(v) if pd.notna(v) else None for v in g[COLS["desl_h"]].tolist()],
+            mode="lines+markers", name=f"Desl. H {asel}",
+            line=dict(color="#c0140f", width=2)))
+        figb.add_hline(y=Ha, line=dict(color="#e67e00", dash="dash"),
+                       annotation_text=f"Alerta {Ha}", annotation_position="right")
+        figb.add_hline(y=Hm, line=dict(color="#c0140f", dash="dash"),
+                       annotation_text=f"Alarme {Hm}", annotation_position="right")
+        figb.add_vrect(x0=d_av, x1=g[COLS["data"]].max(),
+                       fillcolor="#e67e00", opacity=0.08, line_width=0)
+        figb.add_vline(x=d_av, line=dict(color="#e67e00", width=1, dash="dot"),
+                       annotation_text="1.º aviso", annotation_position="top")
+        figb.update_layout(
+            height=400, xaxis=dict(title="Data", type="date"),
+            yaxis=dict(title="Desl. horizontal (mm)"), margin=dict(t=40, b=40),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02))
+        st.plotly_chart(figb, use_container_width=True)
+    else:
+        st.info("Nenhum alvo atingiu alerta/alarme.")
+        return
+
+    # ---- 2. VELOCIDADE INVERSA (FUKUZONO) ----
+    st.divider()
+    st.markdown("#### 2. Velocidade inversa (método de Fukuzono) — previsão")
+    st.caption("Técnica clássica de monitorização (Fukuzono, 1985): quando o "
+               "inverso da velocidade (1/v) decresce linearmente para zero, "
+               "prevê-se a rotura nesse instante. RESSALVA FORTE: concebida para "
+               "rotura progressiva de taludes; aqui é ILUSTRATIVA — a deformação "
+               "da cortina pode estabilizar com o fim da escavação e não há "
+               "evidência de trajetória de rotura. Usar como discussão de "
+               "método, não como previsão real.")
+    asel2 = st.selectbox("Alvo", crit_alvos, key="ap_fuku",
+                         index=crit_alvos.index("A3") if "A3" in crit_alvos else 0)
+    gf = alvos[alvos[COLS["alvo"]] == asel2].sort_values(
+        COLS["data"])[[COLS["data"], COLS["desl_h"]]].dropna()
+    gf["v"] = gf[COLS["desl_h"]].diff() / gf[COLS["data"]].diff().dt.days
+    gv = gf[gf["v"] > 0.01].copy()
+    if len(gv) >= 3:
+        gv["inv"] = 1.0 / gv["v"]
+        figf = go.Figure()
+        figf.add_trace(go.Scatter(
+            x=[pd.to_datetime(v) for v in gv[COLS["data"]].tolist()],
+            y=[float(v) for v in gv["inv"].tolist()], mode="lines+markers",
+            name="1/velocidade (dia/mm)", line=dict(color="#7a1fa0", width=2)))
+        K = min(4, len(gv))
+        ult = gv.tail(K)
+        xns = ult[COLS["data"]].values.astype("datetime64[ns]").astype("int64").astype(float)
+        yv = ult["inv"].to_numpy(float)
+        b1, b0 = np.polyfit(xns, yv, 1)
+        nota = ("Nos últimos pontos 1/v não está a descer — pelo método, não há "
+                "tendência para rotura (o movimento não está a acelerar para "
+                "colapso).")
+        if b1 < 0:
+            x0 = -b0 / b1
+            lim = xns.max() + 2 * 365 * 24 * 3600 * 1e9
+            if xns.max() < x0 < lim:
+                xr = np.linspace(xns.min(), x0, 20)
+                figf.add_trace(go.Scatter(
+                    x=[pd.to_datetime(int(v)) for v in xr],
+                    y=[float(b1 * v + b0) for v in xr], mode="lines",
+                    name="Extrapolação (ilustrativa)",
+                    line=dict(color="#999", dash="dash")))
+                figf.add_hline(y=0, line=dict(color="#333", width=1))
+                d0 = pd.to_datetime(int(x0))
+                nota = (f"Se a tendência dos últimos {K} pontos continuasse, 1/v "
+                        f"chegaria a zero por volta de "
+                        f"**{d0.strftime('%d/%m/%Y')}** — data ILUSTRATIVA, não "
+                        f"uma previsão de rotura.")
+        figf.update_layout(
+            height=400, xaxis=dict(title="Data", type="date"),
+            yaxis=dict(title="1/velocidade (dia/mm)"), margin=dict(t=40, b=40),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02))
+        st.plotly_chart(figf, use_container_width=True)
+        st.markdown("**Leitura:** " + nota)
+    else:
+        st.info("Sem velocidades positivas suficientes para o método de Fukuzono.")
+
+    # ---- 3. MAPA DE ESTADOS NO TEMPO ----
+    st.divider()
+    st.markdown("#### 3. Mapa de estados no tempo")
+    st.caption("Estado de cada alvo que alguma vez entrou em alerta, ao longo "
+               "das campanhas: verde = Regular, laranja = Alerta, vermelho = "
+               "Alarme, cinza = sem leitura. Mostra quando e onde o sistema teria "
+               "levantado bandeiras.")
+    alvos_crit = alvos[alvos["Estado calculado"].isin(
+        ["Alerta", "Alarme"])][COLS["alvo"]].unique()
+    sub = alvos[alvos[COLS["alvo"]].isin(alvos_crit)].copy()
+    MAP = {"Regular": 0, "Alerta": 1, "Alarme": 2, "Sem leitura": -1}
+    sub["code"] = sub["Estado calculado"].map(MAP).fillna(-1)
+    piv = sub.pivot_table(index=COLS["alvo"], columns=COLS["data"],
+                          values="code", aggfunc="max")
+    piv = piv.reindex(sorted(piv.columns), axis=1)
+    datas_lbl = [pd.to_datetime(c).strftime("%d/%m") for c in piv.columns]
+    figh = go.Figure(data=go.Heatmap(
+        z=piv.values.tolist(), x=datas_lbl, y=list(piv.index),
+        colorscale=[[0.0, "#9aa7b5"], [0.25, "#9aa7b5"], [0.25, "#1f9e55"],
+                    [0.5, "#1f9e55"], [0.5, "#e67e00"], [0.75, "#e67e00"],
+                    [0.75, "#c0140f"], [1.0, "#c0140f"]],
+        zmin=-1, zmax=2, showscale=False, xgap=1, ygap=1))
+    figh.update_layout(
+        height=max(320, 22 * len(piv.index) + 120),
+        xaxis=dict(title="Campanha"),
+        yaxis=dict(title="Alvo", autorange="reversed"),
+        margin=dict(t=30, b=40, l=60))
+    st.plotly_chart(figh, use_container_width=True)
 
 
 def separador_home(dados):
@@ -4387,15 +4764,18 @@ def separador_home(dados):
         ("Análise · Terreno + Alvos 3D", "Alvos no espaço com a geometria da "
          "obra: contorno do recinto, edifícios vizinhos e vetores de "
          "deslocamento amplificados."),
-        ("Análise · Resultados", "Magnitude, distribuição espacial, ritmo e "
-         "profundidade das movimentações, e observado vs. previsto. Ilustração "
-         "factual dos resultados, para a escrita da tese."),
         ("Análise · Correlações", "Gráficos de interação entre instrumentos: "
-         "deformação vs. água vs. escavação vs. faseamento; deformação vs. "
-         "carga na ancoragem; e a correlação direta (XY) com coeficiente r."),
-        ("Análise · Pressupostos", "O que é medido vs. o que é assumido: "
-         "inferências, limitações e qualidade dos dados."),
+         "deformação vs. água vs. escavação vs. faseamento; vs. carga; "
+         "correlação direta (XY) com r/R²; tabela de evidência (Pearson e "
+         "Spearman); e desfasamento (lag)."),
+        ("Análise · Alerta precoce", "A monitorização como ferramenta de "
+         "segurança (método observacional): antecedência dos avisos e movimento "
+         "após o 1.º alerta, velocidade inversa (Fukuzono) e mapa de estados."),
+        ("Pressupostos (opcional)", "Ativa «Ver pressupostos» na barra lateral: "
+         "o que é medido vs. assumido, inferências e limitações dos dados."),
     ]
+    # nota: a magnitude, distribuição espacial, ritmo, profundidade e observado-
+    # vs-previsto dos alvos estão agora em Dados → Alvos (2D) e Inclinómetros.
     # desenhar em grelha de 2 colunas
     for i in range(0, len(cartoes), 2):
         cols = st.columns(2)
@@ -4511,7 +4891,7 @@ def main():
         with tplan:
             separador_planta(dados)
     else:
-        labels = ["Início", "Terreno + Alvos 3D", "Correlações"]
+        labels = ["Início", "Terreno + Alvos 3D", "Correlações", "Alerta precoce"]
         if ver_press:
             labels.append("Pressupostos")
         taba = st.tabs(labels)
@@ -4521,8 +4901,10 @@ def main():
             separador_terreno_alvos_3d(dados)
         with taba[2]:
             separador_correlacoes(dados)
+        with taba[3]:
+            separador_alerta_precoce(dados)
         if ver_press:
-            with taba[3]:
+            with taba[4]:
                 separador_pressupostos(dados)
 
 
