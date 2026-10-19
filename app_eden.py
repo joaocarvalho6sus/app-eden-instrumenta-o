@@ -1379,6 +1379,25 @@ def separador_inclinometros(dados, limiar_vel, fator_acel):
     if not ok:
         return
 
+    # resumo de conjunto: deslocamento maximo e profundidade a que ocorre, por
+    # inclinometro (ultima leitura). Vem do antigo separador Resultados.
+    res_all = resumo.copy()
+    res_all[COLS["data"]] = pd.to_datetime(res_all[COLS["data"]], errors="coerce")
+    linhas_ri = []
+    for i_ in sorted(res_all[COLS["inclinometro"]].dropna().unique()):
+        si = res_all[res_all[COLS["inclinometro"]] == i_].sort_values(
+            COLS["data"]).iloc[-1]
+        linhas_ri.append({
+            "Inclinómetro": i_,
+            "Desl. máx (mm)": round(float(si[COLS["desl_max_global"]]), 1),
+            "Profundidade do máx (m)": round(float(si[COLS["prof_do_max"]]), 1),
+        })
+    if linhas_ri:
+        st.caption("Resumo (última leitura de cada inclinómetro) — deslocamento "
+                   "máximo e profundidade a que ocorre:")
+        st.dataframe(pd.DataFrame(linhas_ri), use_container_width=True,
+                     hide_index=True)
+
     inc = st.selectbox("Inclinómetro",
                        sorted(perfis[COLS["inclinometro"]].dropna().unique()))
     p_inc = perfis[perfis[COLS["inclinometro"]] == inc].copy()
@@ -1832,6 +1851,139 @@ def separador_alvos_2d(dados):
             legend=dict(orientation="v", yanchor="top", y=1,
                         xanchor="left", x=1.02, font=dict(size=11)))
         st.plotly_chart(fig2, use_container_width=True)
+
+    # =====================================================================
+    # VISAO DE CONJUNTO DOS ALVOS (vindo do antigo separador Resultados)
+    # Factual, sem interpretacao de causas.
+    # =====================================================================
+    st.divider()
+    st.markdown("### Visão de conjunto dos alvos")
+    ult_vc = alvos[alvos[COLS["data"]] == alvos[COLS["data"]].max()].copy()
+
+    # ---- Onde — distribuicao espacial ----
+    st.markdown("#### Onde — distribuição espacial")
+    g = ult_vc.groupby(COLS["edificio"])[COLS["desl_h"]].agg(
+        media="mean", maximo="max", n="count").reset_index()
+    g = g.sort_values("maximo", ascending=False)
+    g_plot = g.head(12)
+    fig_onde = go.Figure()
+    fig_onde.add_trace(go.Bar(
+        y=g_plot[COLS["edificio"]], x=g_plot["maximo"].round(1),
+        orientation="h", name="Máximo", marker=dict(color="#c0140f"),
+        text=g_plot["maximo"].round(1), textposition="auto"))
+    fig_onde.add_trace(go.Bar(
+        y=g_plot[COLS["edificio"]], x=g_plot["media"].round(1),
+        orientation="h", name="Média", marker=dict(color="#f0a080")))
+    fig_onde.update_layout(
+        height=460, barmode="overlay",
+        xaxis=dict(title="Desl. horizontal (mm)"),
+        yaxis=dict(autorange="reversed"),
+        margin=dict(l=10, r=10, t=30, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02))
+    st.plotly_chart(fig_onde, use_container_width=True)
+    if not g.empty:
+        lider = g.iloc[0]
+        seg = g.iloc[1] if len(g) > 1 else None
+        txt = (f"Elemento com maior movimentação: «{lider[COLS['edificio']]}» "
+               f"(máx {lider['maximo']:.1f} mm, média {lider['media']:.1f} mm).")
+        if seg is not None and seg["maximo"]:
+            txt += (f" Segundo: «{seg[COLS['edificio']]}» (máx "
+                    f"{seg['maximo']:.1f} mm) — o primeiro move-se "
+                    f"{lider['maximo']/seg['maximo']:.1f}x mais.")
+        st.caption(txt)
+
+    # ---- Velocidade de movimentacao ----
+    st.divider()
+    st.markdown("#### Velocidade de movimentação")
+    st.caption("Velocidade (mm/dia entre campanhas) do deslocamento horizontal "
+               "de um alvo. Mostra quando o movimento acelerou.")
+    alvos_vel = sorted(ult_vc.nlargest(15, COLS["desl_h"])[COLS["alvo"]]
+                       .astype(str).tolist())
+    alvo_v = st.selectbox("Alvo (velocidade)", alvos_vel, key="alv_vc_vel")
+    sv = alvos[alvos[COLS["alvo"]].astype(str) == alvo_v].copy()
+    sv[COLS["data"]] = pd.to_datetime(sv[COLS["data"]], errors="coerce")
+    sv = sv.sort_values(COLS["data"])[[COLS["data"], COLS["desl_h"]]].dropna()
+    sv["vel"] = sv[COLS["desl_h"]].diff() / sv[COLS["data"]].diff().dt.days
+    sv = sv.dropna(subset=["vel"])
+    if not sv.empty:
+        figv = go.Figure(go.Bar(
+            x=[pd.to_datetime(v) for v in sv[COLS["data"]].tolist()],
+            y=[float(v) for v in sv["vel"].tolist()],
+            marker=dict(color="#1f78d1"), name="Velocidade (mm/dia)"))
+        figv.update_layout(
+            height=340, xaxis=dict(title="Data", type="date"),
+            yaxis=dict(title="Velocidade (mm/dia)"), margin=dict(t=30, b=40))
+        st.plotly_chart(figv, use_container_width=True)
+        pico = sv.loc[sv["vel"].idxmax()]
+        st.caption(f"Velocidade máxima do alvo {alvo_v}: {pico['vel']:.2f} "
+                   f"mm/dia, no intervalo terminado a "
+                   f"{pico[COLS['data']].strftime('%d/%m/%Y')}.")
+
+    # ---- Observado vs. Previsto ----
+    st.divider()
+    st.markdown("#### Observado vs. Previsto — comparação com o projeto")
+    st.caption(
+        "Deslocamento horizontal OBSERVADO vs. ESTIMATIVA DE PROJETO (memória "
+        "descritiva JETsj: ~20 mm na cortina poente/norte, ~10 mm na "
+        "nascente/sul — valor de CÁLCULO para a última fase de escavação), "
+        "atribuída pela frente de escavação adjacente. Para os edifícios "
+        "vizinhos a comparação é INDIRETA: a estimativa refere-se à cortina, "
+        "não ao edifício.")
+    Mc = ult_vc[COLS["M0"]].mean()
+    Pc = ult_vc[COLS["P0"]].mean()
+    linhas_ov = []
+    for chave, grp in ult_vc.groupby(COLS["edificio"]):
+        frente = zona_escav_de_edificio(chave)
+        if frente in PREVISTO_POR_FRENTE:
+            prev = PREVISTO_POR_FRENTE[frente]
+            zona = NOME_FRENTE[frente]
+        else:
+            M = grp[COLS["M0"]].mean()
+            P = grp[COLS["P0"]].mean()
+            zona_key = "poente_norte" if (M < Mc or P > Pc) else "nascente_sul"
+            prev = DEFORM_PROJETO[zona_key]
+            zona = ("poente/norte" if zona_key == "poente_norte"
+                    else "nascente/sul") + " (inferida)"
+        tipo = ("direta (cortina)"
+                if "contenç" in str(chave).lower() or "contenc" in str(chave).lower()
+                else "indireta (edifício vizinho)")
+        obs = grp[COLS["desl_h"]].max()
+        dif = obs - prev
+        pct = (dif / prev * 100) if prev else float("nan")
+        linhas_ov.append({
+            "Grupo": chave, "Frente": zona, "Comparação": tipo,
+            "Previsto (mm)": prev, "Observado máx (mm)": round(obs, 1),
+            "Diferença (mm)": round(dif, 1), "Excesso (%)": round(pct, 0),
+        })
+    df_ov = pd.DataFrame(linhas_ov).sort_values("Observado máx (mm)",
+                                                ascending=False)
+    st.dataframe(df_ov, use_container_width=True, hide_index=True)
+    top_ov = df_ov.head(12)
+    fig_ov = go.Figure()
+    fig_ov.add_trace(go.Bar(
+        y=top_ov["Grupo"], x=top_ov["Previsto (mm)"], orientation="h",
+        name="Previsto (projeto)", marker=dict(color="#9aa7b5")))
+    fig_ov.add_trace(go.Bar(
+        y=top_ov["Grupo"], x=top_ov["Observado máx (mm)"], orientation="h",
+        name="Observado (máx)", marker=dict(color="#c0140f")))
+    fig_ov.add_vline(x=40, line=dict(color="#8B0000", width=1, dash="dash"),
+                     annotation_text="Alarme contenção (40)",
+                     annotation_position="top")
+    fig_ov.update_layout(
+        height=460, barmode="group",
+        xaxis=dict(title="Desl. horizontal (mm)"),
+        yaxis=dict(autorange="reversed"),
+        margin=dict(l=10, r=10, t=40, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02))
+    st.plotly_chart(fig_ov, use_container_width=True)
+    if not df_ov.empty:
+        pior = df_ov.iloc[0]
+        st.caption(
+            f"Maior excedência: «{pior['Grupo']}» — observado "
+            f"{pior['Observado máx (mm)']:.1f} mm vs. previsto "
+            f"{pior['Previsto (mm)']:.0f} mm (frente {pior['Frente']}; "
+            f"comparação {pior['Comparação']}), ~{pior['Excesso (%)']:.0f}% "
+            f"acima da estimativa de projeto.")
 
 
 # =========================================================================
@@ -3410,245 +3562,6 @@ def separador_terreno_alvos_3d(dados):
                     "junto com a app.")
 
 
-def separador_resultados(dados):
-    """
-    RESULTADOS — quantificação factual das movimentações observadas pela
-    instrumentação. Magnitude, distribuição espacial, ritmo, profundidade e
-    comparação com a estimativa de projeto. São ILUSTRACOES DOS RESULTADOS,
-    sem interpretação de causas: a correlação entre instrumentos esta no
-    separador Correlações; a interpretação do PORQUE e do autor no texto.
-    """
-    import numpy as np
-    st.subheader("Resultados — movimentações observadas")
-    st.caption("Quantificação factual do que a instrumentação mediu: quanto, "
-               "onde, a que ritmo e a que profundidade, e como se compara com a "
-               "estimativa de projeto. Ilustração de resultados, sem "
-               "interpretação de causas.")
-
-    alvos = dados.get("alvos")
-    if alvos is None or alvos.empty:
-        st.info("Sem dados de alvos.")
-        return
-    alvos = alvos.copy()
-    alvos[COLS["data"]] = pd.to_datetime(alvos[COLS["data"]], errors="coerce")
-    ult_data = alvos[COLS["data"]].max()
-    ult = anexar_estado_calculado(alvos[alvos[COLS["data"]] == ult_data].copy())
-
-    # ---- 1. QUANTO ----
-    st.markdown("#### 1. Quanto — magnitude das movimentações")
-    n_alarme = int((ult["Estado calculado"] == "Alarme").sum())
-    n_alerta = int((ult["Estado calculado"] == "Alerta").sum())
-    dh = ult[COLS["desl_h"]]
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Alvos monitorizados", ult[COLS["alvo"]].nunique())
-    c2.metric("Desl. H máximo (mm)", f"{dh.max():.1f}")
-    c3.metric("Em alarme", n_alarme)
-    c4.metric("Em alerta", n_alerta)
-
-    top = ult.nlargest(10, COLS["desl_h"])[
-        [COLS["alvo"], COLS["edificio"], COLS["desl_h"], COLS["dZ"],
-         "Estado calculado"]].copy()
-    top.columns = ["Alvo", "Edifício / elemento", "Desl. H (mm)",
-                   "Desl. V ΔZ (mm)", "Estado"]
-    top["Desl. H (mm)"] = top["Desl. H (mm)"].round(1)
-    top["Desl. V ΔZ (mm)"] = top["Desl. V ΔZ (mm)"].round(1)
-    st.markdown("**Ranking dos 10 alvos mais deslocados** (última campanha, "
-                f"{ult_data.strftime('%d/%m/%Y')}):")
-    st.dataframe(top, use_container_width=True, hide_index=True)
-    top1 = top.iloc[0]
-    st.caption(f"Maior deslocamento horizontal: alvo {top1['Alvo']} "
-               f"({top1['Desl. H (mm)']:.1f} mm), no elemento "
-               f"«{top1['Edifício / elemento']}».")
-
-    # ---- 2. ONDE ----
-    st.divider()
-    st.markdown("#### 2. Onde — distribuição espacial")
-    g = ult.groupby(COLS["edificio"])[COLS["desl_h"]].agg(
-        media="mean", maximo="max", n="count").reset_index()
-    g = g.sort_values("maximo", ascending=False)
-    g_plot = g.head(12)
-    fig_b = go.Figure()
-    fig_b.add_trace(go.Bar(
-        y=g_plot[COLS["edificio"]], x=g_plot["maximo"].round(1),
-        orientation="h", name="Máximo",
-        marker=dict(color="#c0140f"),
-        text=g_plot["maximo"].round(1), textposition="auto"))
-    fig_b.add_trace(go.Bar(
-        y=g_plot[COLS["edificio"]], x=g_plot["media"].round(1),
-        orientation="h", name="Média",
-        marker=dict(color="#f0a080")))
-    fig_b.update_layout(
-        height=460, barmode="overlay",
-        xaxis=dict(title="Desl. horizontal (mm)"),
-        yaxis=dict(autorange="reversed"),
-        margin=dict(l=10, r=10, t=30, b=40),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02))
-    st.plotly_chart(fig_b, use_container_width=True)
-    lider = g.iloc[0]
-    seg = g.iloc[1] if len(g) > 1 else None
-    txt_onde = (f"Elemento com maior movimentação: «{lider[COLS['edificio']]}» "
-                f"(máx {lider['maximo']:.1f} mm, média {lider['media']:.1f} mm).")
-    if seg is not None:
-        racio = lider["maximo"] / seg["maximo"] if seg["maximo"] else float("nan")
-        txt_onde += (f" O segundo é «{seg[COLS['edificio']]}» (máx "
-                     f"{seg['maximo']:.1f} mm) — o primeiro move-se "
-                     f"{racio:.1f}x mais.")
-    st.caption(txt_onde)
-
-    # ---- 3. QUANDO / RITMO ----
-    st.divider()
-    st.markdown("#### 3. Quando e a que ritmo — velocidade de movimentação")
-    st.caption("Velocidade (mm/dia entre campanhas) do deslocamento horizontal "
-               "de um alvo. Mostra quando o movimento acelerou.")
-    alvos_disp = sorted(ult.nlargest(15, COLS["desl_h"])[COLS["alvo"]]
-                        .astype(str).tolist())
-    alvo_sel = st.selectbox("Alvo a analisar (velocidade)", alvos_disp,
-                            key="res_alvo_vel")
-    s = alvos[alvos[COLS["alvo"]].astype(str) == alvo_sel].sort_values(
-        COLS["data"])[[COLS["data"], COLS["desl_h"]]].dropna()
-    s["dias"] = (s[COLS["data"]] - s[COLS["data"]].shift()).dt.days
-    s["dincr"] = s[COLS["desl_h"]].diff()
-    s["vel"] = s["dincr"] / s["dias"]
-    s_v = s.dropna(subset=["vel"])
-    if not s_v.empty:
-        fig_c = go.Figure()
-        fig_c.add_trace(go.Bar(
-            x=[pd.to_datetime(v) for v in s_v[COLS["data"]].tolist()],
-            y=[float(v) for v in s_v["vel"].tolist()],
-            name="Velocidade (mm/dia)", marker=dict(color="#1f78d1")))
-        fig_c.update_layout(
-            height=340, xaxis=dict(title="Data", type="date"),
-            yaxis=dict(title="Velocidade (mm/dia)"),
-            margin=dict(t=30, b=40),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02))
-        st.plotly_chart(fig_c, use_container_width=True)
-        pico = s_v.loc[s_v["vel"].idxmax()]
-        st.caption(f"Velocidade máxima do alvo {alvo_sel}: {pico['vel']:.2f} "
-                   f"mm/dia, no intervalo terminado a "
-                   f"{pico[COLS['data']].strftime('%d/%m/%Y')}.")
-
-    # ---- 4. PROFUNDIDADE ----
-    st.divider()
-    st.markdown("#### 4. A que profundidade — perfil inclinométrico")
-    st.caption("Profundidade do deslocamento máximo de cada inclinómetro e "
-               "evolução da deformada ao longo do tempo.")
-    res = dados.get("resumo")
-    if res is not None and not res.empty:
-        res = res.copy()
-        res[COLS["data"]] = pd.to_datetime(res[COLS["data"]], errors="coerce")
-        linhas = []
-        for inc in sorted(res[COLS["inclinometro"]].dropna().unique()):
-            si = res[res[COLS["inclinometro"]] == inc].sort_values(
-                COLS["data"]).iloc[-1]
-            linhas.append({
-                "Inclinómetro": inc,
-                "Desl. máx (mm)": round(float(si[COLS["desl_max_global"]]), 1),
-                "Profundidade do máx (m)": round(float(si[COLS["prof_do_max"]]), 1),
-            })
-        df_d = pd.DataFrame(linhas)
-        st.dataframe(df_d, use_container_width=True, hide_index=True)
-    else:
-        st.info("Sem dados de inclinómetros para o perfil de profundidade.")
-
-    # deformada do inclinometro ao longo do tempo (ilustracao do resultado)
-    perfis = dados.get("perfis")
-    if perfis is not None and not perfis.empty:
-        perfis = perfis.copy()
-        perfis[COLS["data"]] = pd.to_datetime(perfis[COLS["data"]], errors="coerce")
-        incs = sorted(perfis[COLS["inclinometro"]].dropna().unique())
-        inc_sel = st.selectbox("Inclinómetro (deformada no tempo)", incs,
-                               key="res_inc_deformada")
-        pi = perfis[perfis[COLS["inclinometro"]] == inc_sel]
-        datas_i = sorted(pi[COLS["data"]].dropna().unique())
-        if len(datas_i) > 6:
-            idx = np.linspace(0, len(datas_i) - 1, 6).astype(int)
-            datas_plot = [datas_i[i] for i in idx]
-        else:
-            datas_plot = datas_i
-        fig8 = go.Figure()
-        n = len(datas_plot)
-        for k, d in enumerate(datas_plot):
-            sp = pi[pi[COLS["data"]] == d].sort_values(COLS["profundidade"])
-            frac = k / max(n - 1, 1)
-            cor = f"rgb({int(150+105*frac)},{int(180-150*frac)},{int(200-150*frac)})"
-            fig8.add_trace(go.Scatter(
-                x=[float(v) for v in sp[COLS["desl_total"]].tolist()],
-                y=[float(v) for v in sp[COLS["profundidade"]].tolist()],
-                mode="lines+markers", name=pd.to_datetime(d).strftime("%d/%m/%Y"),
-                line=dict(color=cor, width=2), marker=dict(size=3)))
-        fig8.update_layout(
-            height=560,
-            xaxis=dict(title="Deslocamento acumulado (mm)"),
-            yaxis=dict(title="Profundidade (m)", autorange="reversed"),
-            margin=dict(t=30, b=40),
-            legend=dict(title="Campanha", orientation="v", x=1.02, y=1))
-        st.plotly_chart(fig8, use_container_width=True)
-        st.caption(f"Deformada do {inc_sel} em várias campanhas (cor mais clara "
-                   f"= mais antiga; mais escura = mais recente).")
-
-    # ---- 5. OBSERVADO vs PREVISTO ----
-    st.divider()
-    st.markdown("#### 5. Observado vs. Previsto — comparação com o projeto")
-    st.caption(
-        "Deslocamento horizontal OBSERVADO vs. ESTIMATIVA DE PROJETO (memória "
-        "descritiva JETsj: ~20 mm na cortina poente/norte, ~10 mm na "
-        "nascente/sul — valor de CÁLCULO para a última fase de escavação), "
-        "atribuida pela frente de escavação adjacente. Para os edifícios "
-        "vizinhos a comparação e INDIRETA: a estimativa refere-se a cortina, "
-        "não ao edifício.")
-    Mc = ult[COLS["M0"]].mean()
-    Pc = ult[COLS["P0"]].mean()
-    linhas = []
-    for chave, grp in ult.groupby(COLS["edificio"]):
-        frente = zona_escav_de_edificio(chave)
-        if frente in PREVISTO_POR_FRENTE:
-            prev = PREVISTO_POR_FRENTE[frente]
-            zona = NOME_FRENTE[frente]
-        else:
-            M = grp[COLS["M0"]].mean()
-            P = grp[COLS["P0"]].mean()
-            zona_key = "poente_norte" if (M < Mc or P > Pc) else "nascente_sul"
-            prev = DEFORM_PROJETO[zona_key]
-            zona = ("poente/norte" if zona_key == "poente_norte" else "nascente/sul") + " (inferida)"
-        tipo = ("direta (cortina)" if "contencao" in str(chave).lower()
-                or "contenção" in str(chave).lower() else "indireta (edifício vizinho)")
-        obs = grp[COLS["desl_h"]].max()
-        dif = obs - prev
-        pct = (dif / prev * 100) if prev else float("nan")
-        linhas.append({
-            "Grupo": chave, "Frente": zona, "Comparação": tipo,
-            "Previsto (mm)": prev, "Observado máx (mm)": round(obs, 1),
-            "Diferença (mm)": round(dif, 1), "Excesso (%)": round(pct, 0),
-        })
-    df5 = pd.DataFrame(linhas).sort_values("Observado máx (mm)", ascending=False)
-    st.dataframe(df5, use_container_width=True, hide_index=True)
-    top5 = df5.head(12)
-    fig5 = go.Figure()
-    fig5.add_trace(go.Bar(
-        y=top5["Grupo"], x=top5["Previsto (mm)"], orientation="h",
-        name="Previsto (projeto)", marker=dict(color="#9aa7b5")))
-    fig5.add_trace(go.Bar(
-        y=top5["Grupo"], x=top5["Observado máx (mm)"], orientation="h",
-        name="Observado (máx)", marker=dict(color="#c0140f")))
-    fig5.add_vline(x=40, line=dict(color="#8B0000", width=1, dash="dash"),
-                   annotation_text="Alarme contenção (40)",
-                   annotation_position="top")
-    fig5.update_layout(
-        height=460, barmode="group",
-        xaxis=dict(title="Desl. horizontal (mm)"),
-        yaxis=dict(autorange="reversed"),
-        margin=dict(l=10, r=10, t=40, b=40),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02))
-    st.plotly_chart(fig5, use_container_width=True)
-    pior = df5.iloc[0]
-    st.caption(
-        f"Maior excedência: «{pior['Grupo']}» — observado "
-        f"{pior['Observado máx (mm)']:.1f} mm vs. previsto "
-        f"{pior['Previsto (mm)']:.0f} mm (frente {pior['Frente']}; comparação "
-        f"{pior['Comparação']}), ~{pior['Excesso (%)']:.0f}% acima da "
-        f"estimativa de projeto.")
-
-
 def zona_escav_de_edificio(edif):
     """Frente de escavação (poente_sul / norte / nascente_sul) do edifício ou
     elemento de um alvo; None se não mapeavel. Edifícios vizinhos por nome
@@ -4572,6 +4485,11 @@ def main():
              "o planeamento), sem análise. Análise: leitura dos resultados e "
              "correlação entre os dados dos vários instrumentos.")
 
+    ver_press = st.sidebar.checkbox(
+        "Ver pressupostos", value=False,
+        help="Mostra, na componente Análise, um separador com os pressupostos: "
+             "o que é medido vs. assumido, inferências e limitações dos dados.")
+
     if frente.startswith("Dados"):
         thome, tinc, talv, tcc, tpz, tgeo, tobra, tplan = st.tabs(
             ["Início", "Inclinómetros", "Alvos (2D)", "Células de carga",
@@ -4593,19 +4511,19 @@ def main():
         with tplan:
             separador_planta(dados)
     else:
-        thome, t3d, tres, tcorr, tpress = st.tabs(
-            ["Início", "Terreno + Alvos 3D", "Resultados", "Correlações",
-             "Pressupostos"])
-        with thome:
+        labels = ["Início", "Terreno + Alvos 3D", "Correlações"]
+        if ver_press:
+            labels.append("Pressupostos")
+        taba = st.tabs(labels)
+        with taba[0]:
             separador_home(dados)
-        with t3d:
+        with taba[1]:
             separador_terreno_alvos_3d(dados)
-        with tres:
-            separador_resultados(dados)
-        with tcorr:
+        with taba[2]:
             separador_correlacoes(dados)
-        with tpress:
-            separador_pressupostos(dados)
+        if ver_press:
+            with taba[3]:
+                separador_pressupostos(dados)
 
 
 if __name__ == "__main__":
