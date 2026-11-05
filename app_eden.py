@@ -85,6 +85,8 @@ FOLHAS = {
     "perfis": "Inclinometros_Perfis",
     "celulas": "Celulas_Carga",
     "piezo": "Piezometros",
+    "ancoragens": "Ancoragens",      # registos de execução (opcional)
+    "fissuro": "Fissurometros",      # fissurómetros da Santa Casa (opcional)
 }
 
 COLS = {
@@ -125,14 +127,16 @@ FATOR_ACEL_DEFEITO = 1.8
 #   (H_alerta, H_alarme, V_alerta, V_alarme)  em mm
 #
 # EDIFICIOS ADJACENTES (Santa Casa, Cimas, Clinica): H 15/25, V 10/20.
-#   -> CONFIRMADO no relatorio (Cap. 4, "Criterios de Alerta e de Alarme
-#      (Edificios Adjacentes)"). Reproduz a coluna Estado do Excel a 100%.
-# CONTENCAO 17 m (alcados AB, CD, BF, PQ): H 20/40, V 10/15.
-# CONTENCAO 24 m (alcados FG, GH, JK, KL, MNO, OP): H 30/40, V 10/15.
-#   -> Estes reproduzem a coluna Estado a 100% nos respetivos alcados.
-# ALCADO DE: classificado provisoriamente como 17 m. Os deslocamentos
-#   observados sao ~0 (tudo Regular), pelo que os dados NAO permitem
-#   distinguir 17 de 24 m. A CONFIRMAR com o projeto de contencao.
+#   -> Capitulo 4 dos relatorios de alvos, desde o R00 (12/05/2025); os
+#      relatorios nao indicam a origem destes valores.
+# CONTENCAO 17 m (alcados AB, CD, DE, BF, PQ): H 20/40, V 10/15.
+# CONTENCAO 24 m (alcados FG, GH, JK, KL, LM, MNO, OP): H 30/40, V 10/15.
+#   -> Valores da memoria descritiva (secao 14.6); atribuicao a cada alcado
+#      segundo o capitulo 4 dos relatorios de alvos, desde o R06 (06/10/2025).
+#      Os alcados DE (17 m) e LM (24 m) so constam a partir do R36
+#      (16/03/2026). Valores inalterados do R00 ao R67.
+# NOTA: MNO e OP tem 17 a 20 m de cortina, mas os relatorios classificam-nos
+#   como 24 m; com 17 m entrariam em alerta mais cedo (fev. 2026).
 # =========================================================================
 CRIT_VIZINHOS   = (15, 25, 10, 20)   # edificios adjacentes (OFICIAL)
 CRIT_CONT_17    = (20, 40, 10, 15)   # contencao 17 m
@@ -197,9 +201,31 @@ IMAGENS_CELULAS = {
     ],
 }
 
-ALCADOS_24M = {"FG", "GH", "JK", "KL", "MNO", "OP"}
-ALCADOS_17M = {"AB", "CD", "BF", "PQ"}
-ALCADOS_A_CONFIRMAR = {"DE"}         # sem deslocamento -> grupo nao distinguivel
+ALCADOS_24M = {"FG", "GH", "JK", "KL", "LM", "MNO", "OP"}   # relatorios de alvos (LM desde o R36)
+ALCADOS_17M = {"AB", "CD", "DE", "BF", "PQ"}               # relatorios de alvos (DE desde o R36)
+
+# -------------------------------------------------------------------------
+# ALTURA DA CORTINA H POR ALCADO (m) — Tabela 3.7 da dissertacao (topo das
+# estacas ao fundo de escavacao, 4,55 m; sem muros/taludes acima do
+# coroamento). Alguns alcados tem intervalo: guarda-se (Hmin, Hmax) e usa-se
+# o ponto medio na representacao. Fonte: projeto JETsj [52].
+ALTURA_CORTINA = {
+    "AB": (16.3, 16.3), "BF": (16.3, 16.7), "CD": (16.3, 16.7),
+    "DE": (16.3, 16.7), "FG": (21.1, 22.0), "GH": (20.1, 20.1),
+    "JK": (20.1, 23.6), "KL": (22.35, 22.35), "LM": (20.1, 22.35),
+    "MNO": (17.05, 20.1), "OP": (17.05, 17.05), "PQ": (17.05, 17.05),
+}
+# Altura da cortina no alcado onde se situa cada inclinometro (Tabela 5.2).
+H_INCLINOMETRO = {"I1": (16.3, 16.3), "I2": (20.1, 22.35), "I3": (16.3, 16.3)}
+
+# Referenciais empiricos do deslocamento horizontal maximo, em % de H
+# (Tabela 2.1): (rotulo, min%, max%, cor RGB). Clough & O'Rourke e um valor
+# medio (~0,2 %). Fontes: Clough & O'Rourke [21], Long [24], Yoo [26].
+REFERENCIAS_EMPIRICAS = [
+    ("Long (2001) — solos rígidos (0,05–0,25 %)", 0.05, 0.25, "31,119,180"),
+    ("Yoo (2001) — terreno sobre rocha (0,05–0,15 %)", 0.05, 0.15, "44,160,44"),
+    ("Clough & O'Rourke — média ≈ 0,2 %", 0.20, 0.20, "214,39,40"),
+]
 
 
 def _extrair_alcado(edif):
@@ -223,8 +249,8 @@ def criterios_do_alvo(edif):
         return CRIT_CONT_24, f"Contenção 24 m — Alçado {alc} (30/40 · 10/15)", False
     if alc in ALCADOS_17M:
         return CRIT_CONT_17, f"Contenção 17 m — Alçado {alc} (20/40 · 10/15)", False
-    # alcado sem classificacao segura
-    return CRIT_CONT_17, f"Alçado {alc} (17 m assumido — A CONFIRMAR)", True
+    # alcado sem classificacao nos relatorios (nao ocorre nos dados atuais)
+    return CRIT_CONT_17, f"Alçado {alc} (17 m assumido — não consta dos relatórios)", True
 
 
 def estado_calculado(h, v, criterio):
@@ -518,6 +544,90 @@ ESCAVACAO_ZONAS = {
         ("2026-04-14", "escavacao", 4.55,  "fundo de escavação"),
     ],
 }
+import copy as _copy
+ESCAVACAO_ZONAS_PLANO = _copy.deepcopy(ESCAVACAO_ZONAS)   # base (plano impactado)
+
+# Datas do PLANO para cada lote de ancoragens (execução e tensionamento), para a
+# comparação com os registos de execução (folha «Ancoragens»).
+ANC_PLANO = {
+    "A37–A42": ("28/08–09/09/2025 (tarefa única)", "não discriminado"),
+    "A19–A24": ("22–26/09/2025", "06/10/2025"),
+    "A25–A30": ("09–16/12/2025 (VD, 2 lados)", "24–25/12/2025"),
+    "A31–A36": ("22–29/01/2026 (VD, 2 lados)", "06–09/02/2026"),
+    "A1–A6": ("30/10–03/11/2025 (coroamento E8_51–E8_35)?", "11/11/2025?"),
+    "A7–A12": ("09–16/12/2025 (VD, 2 lados)?", "24–25/12/2025?"),
+    "A13–A18": ("22–29/01/2026 (VD, 2 lados)?", "06–09/02/2026?"),
+    "A7G, A8G": ("com a escavação de 12–25/11/2025", "—"),
+    "A3G, A6G": ("com a escavação de 10–25/02/2026", "—"),
+}
+
+# Ocorrências e medidas indicadas pela obra (ponto 4). Datas None = a confirmar.
+MEDIDAS_OBRA = [
+    ("2025-06-02", "Ancoragens", "Injeção repetitiva (IR) em vez da IRS do projeto, com o acordo do projetista", "Confirmada"),
+    ("2026-01-19", "Santa Casa", "Fissurómetros em cinco fissuras do edifício (zeragem)", "Confirmada"),
+    ("2026-01-26", "Monitorização", "Leituras dos alvos duas vezes por semana", "Confirmada nos dados"),
+    ("2026-02-13", "Alçado GH", "Água abundante numa ancoragem junto à célula da A26; recomendadas furação de drenagem entre estacas e tirante preventivo", "Confirmada"),
+    ("2026-02-16", "Alçado GH / A26", "Avaliação da carga da A26 pelo projetista; estudado um escoramento «pé de galinha» entre AB e GH (não executado)", "Confirmada"),
+    ("2026-02-16", "Monitorização", "Leituras das células de carga duas vezes por semana", "Confirmada nos dados"),
+    (None, "Alçado GH", "Tirantes nos muros sobre as vigas de coroamento", "Data a confirmar"),
+    (None, "Alçado GH", "Um nível de carotes Ø80 mm ao nível do piso 1, entre estacas, para aliviar a pressão da água", "Data a confirmar"),
+    (None, "Alçado GH", "Dois perfis HEB300 contra a viga de distribuição, apoiados na sapata do Núcleo 1 (após o fundo)", "Data a confirmar"),
+    (None, "Santa Casa", "Leituras por cordas no edifício", "Data a confirmar"),
+    (None, "Bandas de laje", "Escavação para as bandas dos pisos 2 e 1 até 4,0 m (previstos 2,5 m)", "Data a confirmar"),
+    (None, "Bandas de laje", "Banda do piso −2 contra o terreno só no alçado da Santa Casa; nas restantes, escavação e escoramento", "Alçado e data a confirmar"),
+    (None, "Anel (LM)", "Supressão de um dos perfis de ligação do anel de compressão às fundações", "Data a confirmar"),
+]
+
+
+def _col_nivel(df):
+    for c in ("Alçado e nível", "Nível provável (inferido)"):
+        if c in df.columns:
+            return c
+    return "Lote"
+
+
+def aplicar_registos_ancoragens(dados):
+    """Substitui, na frente poente/sul, os marcos de ancoragens do plano pelos
+    tensionamentos registados (folha «Ancoragens»), quando a folha existe.
+    Dentro de cada lote, datas separadas por até 2 dias úteis formam um só
+    marco, colocado no último dia (tensionamento concluído)."""
+    base = _copy.deepcopy(ESCAVACAO_ZONAS_PLANO)
+    anc = dados.get("ancoragens")
+    col_t = "Tensionamento e ensaio (adotado)"
+    if anc is not None and not anc.empty and col_t in anc.columns:
+        a = anc.copy()
+        a[col_t] = pd.to_datetime(a[col_t], errors="coerce")
+        a = a.dropna(subset=[col_t])
+        ev = []
+        for lote, g in a.groupby("Lote", sort=False):
+            nivel = str(g[_col_nivel(g)].iloc[0])
+            datas = sorted(g[col_t].unique())
+            grupos, cur = [], [datas[0]]
+            for d in datas[1:]:
+                gap = np.busday_count(pd.Timestamp(cur[-1]).date(), pd.Timestamp(d).date())
+                if gap <= 2:
+                    cur.append(d)
+                else:
+                    grupos.append(cur); cur = [d]
+            grupos.append(cur)
+            for gr in grupos:
+                t0, t1 = pd.Timestamp(gr[0]), pd.Timestamp(gr[-1])
+                nomes = g.loc[g[col_t].isin(gr), "Ancoragem"].tolist()
+                nomes = lote if len(nomes) == len(g) else ", ".join(nomes)
+                per = (f"{t1:%d/%m/%Y}" if t0 == t1 else f"{t0:%d/%m} a {t1:%d/%m/%Y}")
+                ev.append((f"{t1:%Y-%m-%d}", "ancoragem", None,
+                           f"Ancoragens {nomes} — {nivel}: tensionamento {per} (registo)"))
+        zs = []
+        for d, tp, cota, rot in base["poente_sul"]:
+            if tp == "ancoragem":
+                continue
+            if tp == "escavacao":
+                rot = rot.replace(" + VD da grua (2 ancoragens)", "")
+            zs.append((d, tp, cota, rot))
+        base["poente_sul"] = sorted(zs + ev, key=lambda e: e[0])
+    ESCAVACAO_ZONAS.clear(); ESCAVACAO_ZONAS.update(base)
+
+
 ZONA_ESCAV_NOME = {
     "poente_sul":   "Poente/Sul — cortina da Santa Casa",
     "norte":        "Norte — cortina da Clinica",
@@ -1804,8 +1914,8 @@ def separador_alvos_2d(dados):
     st.caption(f"Critério aplicado: **{rotulo_edi}**. As linhas tracejadas nos "
                f"gráficos marcam os limiares de alerta e alarme.")
     if ac_edi:
-        st.warning("Este alçado está com critério ASSUMIDO (a confirmar com o "
-                   "projeto de contenção).")
+        st.warning("Este alçado não consta da lista de critérios dos relatórios "
+                   "de alvos; o critério de 17 m é assumido.")
     data_rezerag = pd.to_datetime("2025-10-20")
 
     # --- controlo de zoom temporal (util quando as fases da obra estao ligadas)
@@ -1882,6 +1992,76 @@ def separador_alvos_2d(dados):
                         xanchor="left", x=1.02, font=dict(size=11)))
         st.plotly_chart(fig2, use_container_width=True)
 
+    # ---- direção (roseta) e razão ΔZ/δh na última campanha --------------
+    st.divider()
+    st.markdown("#### Direção e proporção do movimento (última campanha)")
+    _ultv = []
+    for a in sel:
+        sa = sub[sub[COLS["alvo"]] == a].sort_values(COLS["data"])
+        sa = sa[sa[COLS["desl_h"]].notna()]
+        if sa.empty:
+            continue
+        r = sa.iloc[-1]
+        _ultv.append((a, float(r[COLS["desl_h"]]), r.get(COLS["dZ"]),
+                      r.get(COLS["dM"]), r.get(COLS["dP"]),
+                      pd.to_datetime(r[COLS["data"]])))
+    if _ultv:
+        colr, colt = st.columns([1, 1])
+        with colr:
+            figp = go.Figure()
+            _tem_dir = False
+            for a, dh, dz, dm, dp, dt in _ultv:
+                if pd.notna(dm) and pd.notna(dp) and dh > 0:
+                    az = float(np.degrees(np.arctan2(dm, dp)) % 360)
+                    figp.add_trace(go.Scatterpolar(
+                        r=[0, dh], theta=[az, az], mode="lines+markers", name=a))
+                    _tem_dir = True
+            if _tem_dir:
+                figp.update_layout(
+                    height=420, margin=dict(t=30, b=20),
+                    polar=dict(radialaxis=dict(title="δh (mm)"),
+                               angularaxis=dict(rotation=90, direction="clockwise")),
+                    legend=dict(font=dict(size=10)))
+                st.plotly_chart(figp, use_container_width=True)
+                st.caption("Vetores do deslocamento horizontal (componentes ΔM/ΔP) "
+                           "na última campanha. 0° = Norte (+P), 90° = Este (+M). "
+                           "O desvio do rumo face à direção do alçado é leitura do "
+                           "autor (a tese obtém ≤ 26°).")
+            else:
+                st.info("Sem componentes ΔM/ΔP para desenhar a roseta destes alvos.")
+        with colt:
+            st.markdown("**Razão assentamento/horizontal (|ΔZ|/δh)**")
+            _rows = []
+            for a, dh, dz, dm, dp, dt in _ultv:
+                razao = (abs(float(dz)) / dh) if (pd.notna(dz) and dh > 0) else np.nan
+                _rows.append({"Alvo": a, "δh (mm)": round(dh, 1),
+                              "ΔZ (mm)": (round(float(dz), 1) if pd.notna(dz) else None),
+                              "|ΔZ|/δh": (round(razao, 2) if pd.notna(razao) else None)})
+            st.dataframe(pd.DataFrame(_rows), use_container_width=True,
+                         hide_index=True)
+            st.caption("Na Santa Casa, a tese obtém ≈ 0,2 em A1/A2 e 0,4–0,5 nos "
+                       "restantes alvos.")
+
+    fis = dados.get("fissuro")
+    if e_santa_casa and fis is not None and not fis.empty and "Fissurómetro" in fis.columns:
+        st.markdown("#### Fissurómetros da Santa Casa (F1–F5)")
+        f_ = fis.copy(); f_["Data"] = pd.to_datetime(f_["Data"], errors="coerce")
+        fig3 = go.Figure()
+        for nome, g in f_.groupby("Fissurómetro"):
+            loc = str(g["Localização"].iloc[0]).split(" - ")[-1] if "Localização" in g.columns else ""
+            fig3.add_trace(go.Scatter(x=g["Data"], y=g["Leitura acumulada (mm)"], mode="lines+markers",
+                                      name=f"{nome} — {loc}", line=dict(shape="hv")))
+        for d, z, o, e in MEDIDAS_OBRA:
+            if d and pd.to_datetime(d) >= f_["Data"].min() - pd.Timedelta(days=7):
+                fig3.add_vline(x=pd.to_datetime(d), line=dict(color="#7a1fa0", width=1, dash="dot"))
+        fig3.update_layout(height=420, margin=dict(r=60, t=30, b=40),
+                           yaxis_title="Leitura acumulada (mm)", xaxis_title="Data",
+                           legend=dict(orientation="h", yanchor="top", y=-0.2))
+        st.plotly_chart(fig3, use_container_width=True)
+        st.caption("Zeragem a 19/01/2026. A grandeza medida e a convenção de sinal não constam do quadro "
+                   "de leituras (a confirmar); variações de 0,5 mm estão no limite da resolução. Linhas "
+                   "roxas: medidas com data indicadas pela obra (separador «Obra»).")
+
 
 # =========================================================================
 # SEPARADOR 4 — CELULAS DE CARGA
@@ -1920,7 +2100,20 @@ def separador_celulas(dados):
     st.subheader("Células de carga")
     cel = st.selectbox("Célula", sorted(cc[COLS["celula"]].dropna().unique()))
     _mostrar_imagens_celula(cel, key_suffix="_inputs")
-    sub = cc[cc[COLS["celula"]] == cel].sort_values(COLS["data"])
+    sub = cc[cc[COLS["celula"]] == cel].sort_values(COLS["data"]).copy()
+    ref = st.radio("Referência da variação de carga",
+                   ["Blocagem indicada nos relatórios", "Primeira leitura da monitorização"],
+                   horizontal=True, key="cc_ref",
+                   help="Os relatórios calculam a variação sobre a «blocagem». Na A26, esse valor "
+                        "(833,5 kN) é a leitura da célula no patamar de 1,0P do ensaio, e não a "
+                        "carga de cravação: a primeira leitura da monitorização é 957,4 kN.")
+    if ref.startswith("Primeira"):
+        c0 = float(sub[COLS["carga_atual"]].iloc[0])
+        sub[COLS["variacao"]] = (sub[COLS["carga_atual"]] - c0) / c0
+        sub[COLS["estado"]] = np.where(sub[COLS["variacao"]] > CC_ALARME, "Alarme",
+                                       np.where(sub[COLS["variacao"]] >= CC_ALERTA, "Alerta", "Regular"))
+        st.caption(f"Variação calculada em relação à primeira leitura ({c0:.1f} kN, "
+                   f"{sub[COLS['data']].iloc[0]:%d/%m/%Y}).")
     col1, col2 = st.columns(2)
     with col1:
         fig = go.Figure()
@@ -1947,6 +2140,39 @@ def separador_celulas(dados):
                         COLS["blocagem"], COLS["variacao"], COLS["estado"]]
             if c in sub.columns]
     st.dataframe(sub[cols], use_container_width=True)
+
+    # ---- carga × temperatura (coluna no modelo; hoje sem dados) ---------
+    _tcol = "Temperatura (°C)"
+    st.markdown("##### Efeito térmico")
+    if _tcol in sub.columns and sub[_tcol].notna().sum() >= 3:
+        _stc = sub[[COLS["carga_atual"], _tcol]].dropna()
+        figt = go.Figure(go.Scatter(
+            x=_stc[_tcol], y=_stc[COLS["carga_atual"]], mode="markers",
+            marker=dict(color="#c0140f", size=8), name="Leituras"))
+        if _stc[_tcol].nunique() >= 2:
+            _b1, _b0 = np.polyfit(_stc[_tcol], _stc[COLS["carga_atual"]], 1)
+            _xs = np.linspace(_stc[_tcol].min(), _stc[_tcol].max(), 20)
+            figt.add_trace(go.Scatter(
+                x=_xs, y=_b1 * _xs + _b0, mode="lines",
+                line=dict(dash="dash", color="#1f3a5f"),
+                name=f"Deriva ≈ {_b1:.2f} kN/°C"))
+        figt.update_layout(height=380, xaxis_title="Temperatura (°C)",
+                           yaxis_title="Carga (kN)", margin=dict(t=30, b=40),
+                           legend=dict(orientation="h", yanchor="bottom", y=1.02))
+        st.plotly_chart(figt, use_container_width=True)
+        st.caption("Carga da célula em função da temperatura; a deriva ajustada "
+                   "compara-se com a do certificado de calibração.")
+    else:
+        st.info(
+            "A coluna **Temperatura (°C)** existe no modelo mas está vazia, por "
+            "isso a app não consegue separar o efeito térmico do estrutural. É a "
+            "dúvida da Secção 5.2.8: as duas células subiram em simultâneo entre "
+            "as leituras de final de junho e a de 06/07/2026 — a A26 +27,6 kN e a "
+            "da ancoragem DE +24,2 kN. Com a deriva do sensor da A26 (0,75 kN/°C, "
+            "certificado de calibração), seria preciso ≈ 37 °C de variação para "
+            "explicar o salto só por temperatura. Este gráfico (carga × "
+            "temperatura) aparece automaticamente quando carregares as "
+            "temperaturas das células.")
 
 
 # =========================================================================
@@ -2554,6 +2780,143 @@ def separador_obra(dados):
         "frente norte e a escavação da frente nascente/sul em 32. A escavação "
         "termina a **15/04/2026** em vez de 02/03/2026 e a conclusão da 1.ª fase "
         "passa de 11/01/2027 para 01/03/2027.")
+    anc = dados.get("ancoragens")
+    if anc is not None and not anc.empty and "Lote" in anc.columns:
+        st.markdown("#### Ancoragens — plano impactado vs. registos de execução")
+        a = anc.copy()
+        for c in ("Furação e selagem (adotada)", "Tensionamento e ensaio (adotado)", "Fim da injeção"):
+            a[c] = pd.to_datetime(a[c], errors="coerce")
+        lin = []
+        for lote, g in a.groupby("Lote", sort=False):
+            f0, f1 = g["Furação e selagem (adotada)"].min(), g["Furação e selagem (adotada)"].max()
+            t0, t1 = g["Tensionamento e ensaio (adotado)"].min(), g["Tensionamento e ensaio (adotado)"].max()
+            dd = g["Dias entre o fim da injeção e o tensionamento"].dropna()
+            fmt = lambda x, y: (f"{x:%d/%m/%Y}" if x == y else f"{x:%d/%m} a {y:%d/%m/%Y}")
+            pl = ANC_PLANO.get(lote, ("—", "—"))
+            lin.append({"Lote": lote, "Alçado e nível": g[_col_nivel(g)].iloc[0],
+                        "Plano: execução": pl[0], "Plano: tensionamento": pl[1],
+                        "Registo: furação": fmt(f0, f1), "Registo: tensionamento": fmt(t0, t1),
+                        "Dias fim da injeção → tensionamento":
+                            (f"{int(dd.min())} a {int(dd.max())}" if len(dd) else "—")})
+        st.table(pd.DataFrame(lin).set_index("Lote"))
+        st.caption("Registos do empreiteiro (furação e selagem, multi-injeção e ensaios). Alçado GH "
+                   "segundo o alçado com a numeração das ancoragens; no troço poente do AB, o nível é "
+                   "inferido e a correspondência com o plano (?) está por confirmar. O plano trata as "
+                   "ancoragens dos dois lados de cada nível numa só tarefa. O procedimento de execução "
+                   "prevê o tensionamento 7 a 8 dias após o fim das injeções. Datas incoerentes nos "
+                   "registos foram estimadas (folha Qualidade_Dados).")
+    # ---- CRONOLOGIA VISUAL DAS ANCORAGENS --------------------------------
+    anc2 = dados.get("ancoragens")
+    if anc2 is not None and not anc2.empty and "Ancoragem" in anc2.columns:
+        import re as _re
+        st.markdown("#### Cronologia de execução das ancoragens")
+        st.caption(
+            "Para cada ancoragem: furação/selagem (○), injeção (barra roxa, do "
+            "início ao fim) e tensionamento/ensaio (◆). A cor do tensionamento "
+            "indica o intervalo entre o FIM da injeção e o tensionamento — o "
+            "procedimento prevê 7 a 8 dias. Datas adotadas (folha Qualidade_Dados "
+            "corrige registos incoerentes).")
+
+        b = anc2.copy()
+        for _c in ("Furação e selagem (adotada)", "Início da injeção",
+                   "Fim da injeção", "Tensionamento e ensaio (adotado)"):
+            b[_c] = pd.to_datetime(b[_c], errors="coerce")
+        b["_dias"] = pd.to_numeric(
+            b["Dias entre o fim da injeção e o tensionamento"], errors="coerce")
+
+        def _alc_anc(x):
+            s = str(x)
+            m = _re.match(r"\s*([A-Z]{2})\b", s)
+            if m:
+                return m.group(1)
+            return "Viga da grua" if "grua" in s.lower() else "Outros"
+
+        b["_alc"] = b["Alçado e nível"].apply(_alc_anc)
+        _opts = ["Todos"] + sorted(b["_alc"].dropna().unique())
+        _fa = st.selectbox("Alçado", _opts, key="anc_tl_alc")
+        bb = b if _fa == "Todos" else b[b["_alc"] == _fa]
+        bb = bb.sort_values("Início da injeção")
+
+        if bb.empty:
+            st.info("Sem ancoragens para o alçado escolhido.")
+        else:
+            ordem = bb["Ancoragem"].astype(str).tolist()
+            figA = go.Figure()
+            # barras de injeção (uma linha roxa por ancoragem, com None a separar)
+            xi, yi = [], []
+            for _, r in bb.iterrows():
+                i0, i1 = r["Início da injeção"], r["Fim da injeção"]
+                if pd.notna(i0) and pd.notna(i1):
+                    xi += [i0, i1, None]
+                    yi += [str(r["Ancoragem"]), str(r["Ancoragem"]), None]
+            if xi:
+                figA.add_trace(go.Scatter(
+                    x=xi, y=yi, mode="lines",
+                    line=dict(color="#7c3aed", width=7),
+                    name="Injeção", hoverinfo="skip"))
+            # furação (círculo)
+            fm = bb[bb["Furação e selagem (adotada)"].notna()]
+            figA.add_trace(go.Scatter(
+                x=fm["Furação e selagem (adotada)"],
+                y=fm["Ancoragem"].astype(str), mode="markers",
+                marker=dict(symbol="circle-open", size=9, color="#1f2a44",
+                            line=dict(width=2)),
+                name="Furação/selagem",
+                hovertemplate="%{y} · furação %{x|%d/%m/%Y}<extra></extra>"))
+            # tensionamento (losango), cor por intervalo
+            _buckets = [("≤ 8 dias", "#15803d", lambda d: d <= 8),
+                        ("9–20 dias", "#ea8a00", lambda d: 8 < d <= 20),
+                        ("> 20 dias", "#c0140f", lambda d: d > 20)]
+            for _nm, _cor, _cond in _buckets:
+                sub = bb[bb["_dias"].notna() & bb["_dias"].apply(
+                    lambda d: _cond(d) if pd.notna(d) else False)]
+                if not sub.empty:
+                    figA.add_trace(go.Scatter(
+                        x=sub["Tensionamento e ensaio (adotado)"],
+                        y=sub["Ancoragem"].astype(str), mode="markers",
+                        marker=dict(symbol="diamond", size=11, color=_cor,
+                                    line=dict(width=1, color="white")),
+                        name=f"Tensionamento ({_nm})",
+                        customdata=sub["_dias"],
+                        hovertemplate="%{y} · tensionamento %{x|%d/%m/%Y}"
+                                      "<br>%{customdata:.0f} dias após injeção"
+                                      "<extra></extra>"))
+            semd = bb[bb["_dias"].isna() & bb["Tensionamento e ensaio (adotado)"].notna()]
+            if not semd.empty:
+                figA.add_trace(go.Scatter(
+                    x=semd["Tensionamento e ensaio (adotado)"],
+                    y=semd["Ancoragem"].astype(str), mode="markers",
+                    marker=dict(symbol="diamond-open", size=10, color="#888",
+                                line=dict(width=1)),
+                    name="Tensionamento (sem registo do intervalo)",
+                    hovertemplate="%{y} · tensionamento %{x|%d/%m/%Y}<extra></extra>"))
+            figA.update_layout(
+                height=140 + 20 * len(ordem),
+                xaxis=dict(title="Data"),
+                yaxis=dict(categoryarray=ordem, categoryorder="array",
+                           autorange="reversed", title="Ancoragem"),
+                margin=dict(l=10, r=10, t=30, b=40),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02))
+            st.plotly_chart(figA, use_container_width=True)
+
+            _d = bb["_dias"].dropna()
+            if len(_d):
+                _n8 = int((_d > 8).sum())
+                _n20 = int((_d > 20).sum())
+                st.caption(
+                    f"Nos registos mostrados, **{_n8} de {len(_d)}** ancoragens "
+                    f"ultrapassam a janela de 7–8 dias entre injeção e "
+                    f"tensionamento e **{_n20}** ultrapassam 20 dias (até "
+                    f"{int(_d.max())}). Os maiores intervalos concentram-se no "
+                    f"alçado GH (viga de distribuição do piso −2) e no troço "
+                    f"poente do AB (piso −1), onde o tensionamento foi diferido.")
+
+    st.markdown("#### Ocorrências e medidas indicadas pela obra")
+    med = pd.DataFrame([{"Data": (pd.to_datetime(d).strftime("%d/%m/%Y") if d else "—"), "Zona": z,
+                         "Ocorrência ou medida": o, "Estado": e} for d, z, o, e in MEDIDAS_OBRA])
+    st.table(med.set_index("Data"))
+    st.caption("As medidas com data são assinaladas nos gráficos dos fissurómetros da Santa Casa "
+               "(separador «Alvos (2D)»).")
     st.caption("Dias úteis contados de segunda a sexta. O impacto 3 (Restaurante "
                "Cimas) não está ligado a tarefas seguintes no plano, e as estacas "
                "E6_21–E6_27 aparecem executadas a partir de 07/08/2025, antes do "
@@ -2593,19 +2956,32 @@ def separador_pressupostos(dados):
                             "por PROFUNDIDADE, não por cota (cota da boca dos "
                             "tubos desconhecida).",
          "Estado": "A confirmar com a equipa de instrumentação"},
-        {"Item": "Critério do alçado DE",
-         "O que se assume": "Classificado como contenção 17 m; os deslocamentos "
-                            "são ~0, pelo que os dados não distinguem 17 de 24 m.",
-         "Estado": "A confirmar com o projeto de contenção"},
+        {"Item": "Critério de alerta e alarme de cada alçado",
+         "O que se assume": "Valores da memória descritiva (17 m: 20/40 · 10/15 mm; 24 m: "
+                            "30/40 · 10/15 mm), atribuídos a cada alçado segundo os relatórios "
+                            "de alvos: 17 m em AB, CD, DE, BF e PQ; 24 m em FG, GH, JK, KL, LM, "
+                            "MNO e OP (DE e LM a partir do R36, de 16/03/2026). MNO e OP têm "
+                            "17 a 20 m de cortina, mas são tratados como 24 m.",
+         "Estado": "Documentado nos relatórios; motivo da classificação de MNO e OP a confirmar"},
+        {"Item": "Alçado e nível de cada ancoragem",
+         "O que se assume": "Alçado GH (A19–A42): segundo o alçado com a numeração das ancoragens "
+                            "(A26 no piso −1, cota 15,90). Troço poente do AB (A1–A18): nível "
+                            "inferido da cronologia e do comprimento livre.",
+         "Estado": "GH confirmado; AB a confirmar"},
+        {"Item": "Fissurómetros da Santa Casa",
+         "O que se assume": "Leituras acumuladas em mm desde 19/01/2026, tal como recebidas.",
+         "Estado": "Grandeza medida e convenção de sinal a confirmar"},
+        {"Item": "Referência das células de carga",
+         "O que se assume": "Os relatórios calculam a variação sobre a «blocagem»; na A26 "
+                            "esse valor (833,5 kN) é a leitura no patamar de ensaio. A app "
+                            "permite usar a primeira leitura (957,4 kN).",
+         "Estado": "Pressuposto declarado"},
         {"Item": "Faseamento da obra",
          "O que se assume": "Datas do plano de trabalhos impactado (o plano "
                             "contratual com três suspensões de frentes, mantendo as "
                             "durações contratuais); não há registo diário de obra. "
-                            "Incoerências conhecidas: a célula da A26 tem carga a "
-                            "09/12/2025, no dia em que o plano inicia as ancoragens "
-                            "do piso -1 (tensionamento a 24-25/12); a célula da DE "
-                            "tem carga a 26/01/2026, antes do tensionamento previsto "
-                            "do piso -2 (06-09/02).",
+                            "As ancoragens usam as datas dos registos de execução "
+                            "(folha «Ancoragens»), que diferem do plano em semanas.",
          "Estado": "Pressuposto declarado"},
         {"Item": "Zona geotécnica no perfil SPT",
          "O que se assume": "A cor da zona (ZG) é a provável pelo valor de N; o "
@@ -3693,6 +4069,108 @@ def separador_resultados(dados):
         f"{pior['Comparação']}), ~{pior['Excesso (%)']:.0f}% acima da "
         f"estimativa de projeto.")
 
+    # ---- 6. ENVELOPES EMPIRICOS -----------------------------------------
+    st.divider()
+    st.markdown("#### 6. Envelopes empíricos — δ_h,máx em função de H")
+    st.caption(
+        "Deslocamento horizontal máximo de cada alçado (máximo dos prismas em "
+        "todas as campanhas) e de cada inclinómetro (máximo do perfil), em "
+        "função da altura da cortina H (Tabela 3.7), face aos referenciais "
+        "empíricos e às estimativas do projeto. As linhas a tracejado são "
+        "δ_h = p%·H; a sombra marca as faixas de Long e de Yoo. Reproduz a "
+        "Figura 5.3 da dissertação.")
+
+    import numpy as _np
+    _pts_alc, _pts_inc = [], []
+    _cont = dados["alvos"].copy()
+    _cont["_alc"] = _cont[COLS["edificio"]].apply(_extrair_alcado)
+    for _alc, _g in _cont[_cont["_alc"].notna()].groupby("_alc"):
+        if _alc not in ALTURA_CORTINA:
+            continue
+        _dh = _g[COLS["desl_h"]].max()
+        if pd.isna(_dh):
+            continue
+        _hmin, _hmax = ALTURA_CORTINA[_alc]
+        _zona = zona_escav_de_edificio(f"Alçado {_alc}")
+        _proj = PREVISTO_POR_FRENTE.get(_zona)
+        _pts_alc.append((_alc, (_hmin + _hmax) / 2, _hmin, _hmax, float(_dh), _proj))
+    _res = dados.get("resumo")
+    if _res is not None and not _res.empty:
+        for _inc, _g in _res.groupby(COLS["inclinometro"]):
+            if _inc not in H_INCLINOMETRO:
+                continue
+            _dh = _g[COLS["desl_max_global"]].max()
+            if pd.isna(_dh):
+                continue
+            _hmin, _hmax = H_INCLINOMETRO[_inc]
+            _pts_inc.append((_inc, (_hmin + _hmax) / 2, _hmin, _hmax, float(_dh)))
+
+    if not _pts_alc and not _pts_inc:
+        st.info("Sem dados suficientes para os envelopes empíricos.")
+    else:
+        _Hs = [p[1] for p in _pts_alc] + [p[1] for p in _pts_inc]
+        _xx = _np.linspace(min(_Hs) - 1.0, max(_Hs) + 1.0, 50)
+        figE = go.Figure()
+        for _rot, _pmin, _pmax, _rgb in REFERENCIAS_EMPIRICAS:
+            if _pmin == _pmax:
+                figE.add_trace(go.Scatter(
+                    x=_xx, y=_pmax * _xx * 10.0, mode="lines",
+                    line=dict(color=f"rgb({_rgb})", width=2, dash="dash"),
+                    name=_rot))
+            else:
+                figE.add_trace(go.Scatter(
+                    x=list(_xx) + list(_xx[::-1]),
+                    y=list(_pmax * _xx * 10.0) + list((_pmin * _xx * 10.0)[::-1]),
+                    fill="toself", fillcolor=f"rgba({_rgb},0.12)",
+                    line=dict(color=f"rgba({_rgb},0.6)", width=1),
+                    name=_rot, hoverinfo="skip"))
+        if _pts_alc:
+            figE.add_trace(go.Scatter(
+                x=[p[1] for p in _pts_alc], y=[p[4] for p in _pts_alc],
+                mode="markers+text", text=[p[0] for p in _pts_alc],
+                textposition="top center", textfont=dict(size=9),
+                marker=dict(size=11, color="#b45309", symbol="circle",
+                            line=dict(width=1, color="white")),
+                name="Alçados (prismas)",
+                customdata=[[p[2], p[3], p[4] / p[1] / 10.0] for p in _pts_alc],
+                hovertemplate=("Alçado %{text}<br>H = %{customdata[0]:.1f}"
+                               "–%{customdata[1]:.1f} m<br>δ_h = %{y:.1f} mm"
+                               "<br>δ_h/H = %{customdata[2]:.2f} %<extra></extra>")))
+        if _pts_inc:
+            figE.add_trace(go.Scatter(
+                x=[p[1] for p in _pts_inc], y=[p[4] for p in _pts_inc],
+                mode="markers+text", text=[p[0] for p in _pts_inc],
+                textposition="top center", textfont=dict(size=9),
+                marker=dict(size=12, color="#1f2a44", symbol="diamond",
+                            line=dict(width=1, color="white")),
+                name="Inclinómetros",
+                customdata=[[p[4] / p[1] / 10.0] for p in _pts_inc],
+                hovertemplate=("%{text}<br>H = %{x:.1f} m<br>δ_h = %{y:.1f} mm"
+                               "<br>δ_h/H = %{customdata[0]:.2f} %<extra></extra>")))
+        _projx = [p[1] for p in _pts_alc if p[5] is not None]
+        _projy = [p[5] for p in _pts_alc if p[5] is not None]
+        if _projx:
+            figE.add_trace(go.Scatter(
+                x=_projx, y=_projy, mode="markers", name="Estimativa de projeto",
+                marker=dict(size=9, color="#888", symbol="x",
+                            line=dict(width=1, color="#888"))))
+        figE.update_layout(
+            height=520, xaxis=dict(title="Altura da cortina H (m)"),
+            yaxis=dict(title="δ_h,máx (mm)", rangemode="tozero"),
+            margin=dict(l=10, r=10, t=30, b=40),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02))
+        st.plotly_chart(figE, use_container_width=True)
+        _acima = [p[0] for p in _pts_alc if p[4] / p[1] / 10.0 > 0.25] + \
+                 [p[0] for p in _pts_inc if p[4] / p[1] / 10.0 > 0.25]
+        _txt = ("Acima do limite superior de Long (0,25 % de H): "
+                + ", ".join(_acima) + ". ") if _acima else ""
+        st.caption(
+            _txt + "Os alçados mais deslocados situam-se em torno de 0,2 % de H "
+            "(Clough & O'Rourke), acima das estimativas de projeto; os troços "
+            "curtos travados por escoras de canto (FG, BF) e o anel (LM) ficam "
+            "abaixo de 0,1 %. Valores subestimados: excluem o movimento "
+            "anterior à zeragem de cada instrumento.")
+
 
 def zona_escav_de_edificio(edif):
     """Frente de escavação (poente_sul / norte / nascente_sul) do edifício ou
@@ -4254,6 +4732,393 @@ def separador_correlacoes(dados):
         else:
             st.info("Pontos insuficientes na janela da escavação para o XY.")
 
+    # =====================================================================
+    # 5. MATRIZ DE CORRELAÇÕES — visão sistemática (reproduz a Tabela 5.3)
+    # =====================================================================
+    st.divider()
+    st.markdown("#### 5. Matriz de correlações entre instrumentos")
+    st.caption(
+        "Coeficiente de Pearson r entre as séries temporais da instrumentação, "
+        "calculado sobre o período comum a cada par (interpolação linear nas "
+        "datas da primeira série). À esquerda, os valores ACUMULADOS; à direita, "
+        "os INCREMENTOS entre campanhas (variação período-a-período), que medem "
+        "se os instrumentos se MOVEM ao mesmo tempo, não apenas se cresceram "
+        "ambos. Reproduz a Tabela 5.3 da dissertação.")
+
+    _ser = {}
+
+    def _add_serie(label, df, col, datecol=COLS["data"]):
+        if df is None or df.empty or col not in df.columns:
+            return
+        d = df[[datecol, col]].copy()
+        d[datecol] = pd.to_datetime(d[datecol], errors="coerce")
+        d = d.dropna(subset=[datecol, col]).sort_values(datecol)
+        if d.empty:
+            return
+        s = d.groupby(datecol)[col].mean()
+        if len(s) >= 3:
+            _ser[label] = s
+
+    _resm = dados.get("resumo")
+    if _resm is not None and not _resm.empty:
+        for _inc in sorted(_resm[COLS["inclinometro"]].dropna().unique()):
+            _add_serie(str(_inc), _resm[_resm[COLS["inclinometro"]] == _inc],
+                       COLS["desl_max_global"])
+    _pzm = dados.get("piezo")
+    if _pzm is not None and not _pzm.empty:
+        for _p in sorted(_pzm[COLS["piezometro"]].dropna().unique()):
+            _add_serie(f"Água {_p}", _pzm[_pzm[COLS["piezometro"]] == _p],
+                       COLS["cota_agua"])
+    _ccm = dados.get("celulas")
+    if _ccm is not None and not _ccm.empty:
+        for _c in sorted(_ccm[COLS["celula"]].dropna().unique()):
+            _add_serie(f"Carga {_c}", _ccm[_ccm[COLS["celula"]] == _c],
+                       COLS["carga_atual"])
+
+    _alvm = dados["alvos"].copy()
+    _alvos_disp = sorted(_alvm[COLS["alvo"]].dropna().unique())
+    _def_alvos = [a for a in ["CD1", "A3", "GH1"] if a in _alvos_disp][:3]
+    _sel_alvos = st.multiselect(
+        "Alvos a incluir na matriz", _alvos_disp, default=_def_alvos,
+        key="corr_matriz_alvos")
+    for _a in _sel_alvos:
+        _add_serie(_a, _alvm[_alvm[COLS["alvo"]] == _a], COLS["desl_h"])
+
+    if len(_ser) < 2:
+        st.info("São precisas pelo menos duas séries para construir a matriz.")
+    else:
+        _labels = list(_ser.keys())
+
+        def _r_par(sa, sb, incr=False):
+            ta = sa.index.astype("int64").to_numpy().astype(float)
+            tb = sb.index.astype("int64").to_numpy().astype(float)
+            lo, hi = max(ta.min(), tb.min()), min(ta.max(), tb.max())
+            m = (ta >= lo) & (ta <= hi)
+            if m.sum() < 3:
+                return np.nan
+            base = ta[m]
+            ya = sa.to_numpy().astype(float)[m]
+            yb = np.interp(base, tb, sb.to_numpy().astype(float))
+            if incr:
+                ya, yb = np.diff(ya), np.diff(yb)
+            if len(ya) < 2 or np.std(ya) == 0 or np.std(yb) == 0:
+                return np.nan
+            return float(np.corrcoef(ya, yb)[0, 1])
+
+        def _matriz(incr):
+            n = len(_labels)
+            M = np.full((n, n), np.nan)
+            for i in range(n):
+                M[i, i] = 1.0
+                for j in range(i + 1, n):
+                    r = _r_par(_ser[_labels[i]], _ser[_labels[j]], incr)
+                    M[i, j] = M[j, i] = r
+            return M
+
+        for _incr, _tit in [(False, "Acumulados"), (True, "Incrementos")]:
+            M = _matriz(_incr)
+            txt = [[("" if np.isnan(v) else f"{v:.2f}") for v in row]
+                   for row in M]
+            figM = go.Figure(go.Heatmap(
+                z=M, x=_labels, y=_labels, zmid=0, zmin=-1, zmax=1,
+                colorscale="RdBu_r", text=txt, texttemplate="%{text}",
+                textfont=dict(size=10), colorbar=dict(title="r"),
+                hovertemplate="%{y} × %{x}<br>r = %{z:.2f}<extra></extra>"))
+            figM.update_layout(
+                title=f"Correlação — {_tit}",
+                height=140 + 44 * len(_labels),
+                xaxis=dict(side="top", tickangle=-45),
+                yaxis=dict(autorange="reversed"),
+                margin=dict(l=10, r=10, t=90, b=10))
+            st.plotly_chart(figM, use_container_width=True)
+        st.caption(
+            "r > 0: as séries sobem juntas; r < 0: uma sobe enquanto a outra "
+            "desce (típico da água, cuja cota desce quando o rebaixamento "
+            "acompanha a escavação). A matriz de incrementos é a mais exigente: "
+            "só fica alta se os movimentos coincidirem no tempo. Correlação não "
+            "é causa — a leitura das causas é do autor no texto.")
+
+
+def _velocidades_serie(datas, valores, janela7=False):
+    """Velocidade (mm/dia) por campanha. Se janela7, cada leitura é comparada
+    com a última feita há pelo menos 7 dias; caso contrário, com a anterior.
+    Devolve (datas_ordenadas, lista de velocidades alinhada)."""
+    d = pd.DataFrame({"data": pd.to_datetime(list(datas)),
+                      "val": [float(v) if pd.notna(v) else np.nan for v in valores]})
+    d = d.sort_values("data").reset_index(drop=True)
+    n = len(d)
+    vel = [np.nan] * n
+    for i in range(1, n):
+        if janela7:
+            j = i - 1
+            while j >= 0 and (d["data"][i] - d["data"][j]).days < 7:
+                j -= 1
+            if j < 0:
+                continue
+        else:
+            j = i - 1
+        dias = (d["data"][i] - d["data"][j]).days
+        if dias > 0 and pd.notna(d["val"][i]) and pd.notna(d["val"][j]):
+            vel[i] = (d["val"][i] - d["val"][j]) / dias
+    return d["data"].tolist(), vel
+
+
+def _sinais_serie(vel, limv, usar_vel, usar_acel, fator, dois_seguidos):
+    """Lista de bool (sinal precursor por campanha) dada a série de velocidades.
+    Regra: vᵢ ≥ limv (velocidade) ou vᵢ₋₁>0 e vᵢ ≥ fator·vᵢ₋₁ (aceleração)."""
+    n = len(vel)
+    base = [False] * n
+    for i in range(1, n):
+        v, va = vel[i], vel[i - 1]
+        sv = usar_vel and pd.notna(v) and v >= limv
+        sa = (usar_acel and pd.notna(v) and pd.notna(va) and va > 0
+              and v >= fator * va)
+        base[i] = bool(sv or sa)
+    if dois_seguidos:
+        return [bool(i >= 1 and base[i] and base[i - 1]) for i in range(n)]
+    return base
+
+
+def separador_precursores(dados, limiar_vel, fator_acel, usar_janela7=False):
+    """
+    PRECURSORES — leitura em tempo real simulada (antecedência face aos
+    critérios) e análise de sensibilidade/seletividade da regra nos alvos.
+    Reproduz as Secções 5.1.5 e 5.3.5 e a Tabela 5.4 da dissertação.
+    """
+    st.subheader("Sinais precursores — antecedência e seletividade")
+    st.caption(
+        "Um sinal precursor ocorre quando a velocidade do deslocamento "
+        "horizontal entre leituras atinge o limiar (velocidade) ou acelera "
+        "para o fator definido (aceleração). Os limiares da barra lateral "
+        f"(v ≥ {limiar_vel:g} mm/dia; aceleração ≥ {fator_acel:g}×) aplicam-se "
+        "à réplica em tempo real; a tabela de sensibilidade usa os valores da "
+        "dissertação.")
+
+    alvos_est = anexar_estado_calculado(dados["alvos"])
+
+    # =====================================================================
+    # A. RÉPLICA EM TEMPO REAL — antecedência por alvo (Secção 5.1.5)
+    # =====================================================================
+    st.markdown("#### A. Leitura em tempo real simulada")
+    st.caption(
+        "Para um alvo, percorre-se o tempo usando apenas as leituras "
+        "disponíveis até cada data. Marca-se o primeiro sinal, a entrada em "
+        "alerta/alarme (critérios dos relatórios, ΔH ou ΔV) e a antecedência "
+        "entre ambos.")
+
+    alvos_disp = sorted(alvos_est[COLS["alvo"]].dropna().unique())
+    _idx = alvos_disp.index("A3") if "A3" in alvos_disp else 0
+    a_sel = st.selectbox("Alvo", alvos_disp, index=_idx, key="prec_alvo")
+    g = alvos_est[alvos_est[COLS["alvo"]] == a_sel].sort_values(COLS["data"])
+    g = g[g[COLS["desl_h"]].notna()]
+    if len(g) < 3:
+        st.info("Série curta de mais para a réplica.")
+    else:
+        datas = pd.to_datetime(g[COLS["data"]]).tolist()
+        if usar_janela7:
+            _dd, _vel = _velocidades_serie(g[COLS["data"]], g[COLS["desl_h"]], True)
+            _sig = _sinais_serie(_vel, limiar_vel, True, True, fator_acel, False)
+            vdf = pd.DataFrame({"data": _dd, "velocidade": _vel, "precursor": _sig})
+        else:
+            vdf = calcular_velocidade(g[COLS["data"]], g[COLS["desl_h"]],
+                                      limiar_vel, fator_acel)
+        st.caption("Janela de velocidade: " + ("**≥ 7 dias** (regra melhorada)."
+                   if usar_janela7 else "**entre leituras consecutivas**. "
+                   "Ativa a opção ≥ 7 dias na barra lateral para reduzir o ruído."))
+        dmin, dmax = datas[0].date(), datas[-1].date()
+        d_corte = st.slider("Data da análise (replay)", min_value=dmin,
+                            max_value=dmax, value=dmax, format="DD/MM/YY",
+                            key="prec_corte")
+        dc = pd.Timestamp(d_corte)
+
+        est = g["Estado calculado"].tolist()
+        def _primeira(cond_datas):
+            return cond_datas[0] if cond_datas else None
+        d_alerta = _primeira([d for d, e in zip(datas, est)
+                              if e in ("Alerta", "Alarme")])
+        d_alarme = _primeira([d for d, e in zip(datas, est) if e == "Alarme"])
+        datas_sinal = [pd.Timestamp(r["data"]) for _, r in vdf.iterrows()
+                       if r["precursor"]]
+        d_sinal = _primeira(datas_sinal)
+        # até à data de corte (o que se saberia nessa data)
+        d_sinal_ate = _primeira([d for d in datas_sinal if d <= dc])
+        d_alerta_ate = _primeira([d for d, e in zip(datas, est)
+                                  if e in ("Alerta", "Alarme") and d <= dc])
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("1.º sinal", d_sinal.strftime("%d/%m/%Y") if d_sinal else "—")
+        m2.metric("Entrada em alerta",
+                  d_alerta.strftime("%d/%m/%Y") if d_alerta is not None else "—")
+        if d_sinal is not None and d_alerta is not None:
+            ant = (d_alerta - d_sinal).days
+            m3.metric("Antecedência", f"{ant} dias" if ant >= 0 else "sinal após alerta",
+                      delta=f"≈ {ant/7:.0f} semanas" if ant >= 0 else None)
+        else:
+            m3.metric("Antecedência", "—")
+
+        fig = go.Figure()
+        xx = [pd.Timestamp(d) for d in datas]
+        yy = [float(v) for v in g[COLS["desl_h"]].tolist()]
+        fig.add_trace(go.Scatter(x=xx, y=yy, mode="lines+markers",
+                                 name="δh acumulado", line=dict(color="#1f3a5f")))
+        sig_x = [pd.Timestamp(r["data"]) for _, r in vdf.iterrows() if r["precursor"]]
+        sig_y = []
+        for sx in sig_x:
+            k = datas.index(sx) if sx in datas else None
+            sig_y.append(yy[k] if k is not None else np.nan)
+        if sig_x:
+            fig.add_trace(go.Scatter(x=sig_x, y=sig_y, mode="markers",
+                          name="Sinal precursor",
+                          marker=dict(color="#c0140f", size=11, symbol="triangle-up")))
+        if d_alerta is not None:
+            fig.add_vline(x=d_alerta, line=dict(color="#e67e00", width=1.5, dash="dash"),
+                          annotation_text="Alerta", annotation_position="top")
+        if d_alarme is not None:
+            fig.add_vline(x=d_alarme, line=dict(color="#c0140f", width=1.5, dash="dash"),
+                          annotation_text="Alarme", annotation_position="top")
+        fig.add_vrect(x0=xx[0], x1=dc, fillcolor="#1f3a5f", opacity=0.05, line_width=0)
+        fig.add_vline(x=dc, line=dict(color="#1f3a5f", width=1, dash="dot"),
+                      annotation_text="Análise", annotation_position="bottom right")
+        fig.update_layout(height=430, xaxis=dict(title="Data"),
+                          yaxis=dict(title="δh acumulado (mm)"),
+                          margin=dict(l=10, r=10, t=30, b=40),
+                          legend=dict(orientation="h", yanchor="bottom", y=1.02))
+        st.plotly_chart(fig, use_container_width=True)
+
+        if d_sinal_ate is not None:
+            txt_ate = (f"Até **{d_corte:%d/%m/%Y}**, o primeiro sinal já teria sido "
+                       f"lido a **{d_sinal_ate:%d/%m/%Y}**")
+            if d_alerta_ate is not None:
+                txt_ate += f" e o alvo já teria entrado em alerta ({d_alerta_ate:%d/%m/%Y})."
+            else:
+                txt_ate += ", antes de qualquer alerta."
+            st.caption(txt_ate)
+        else:
+            st.caption(f"Até {d_corte:%d/%m/%Y}, nenhum sinal precursor teria sido lido.")
+
+    # =====================================================================
+    # B. SENSIBILIDADE E SELETIVIDADE — Tabela 5.4 (Secção 5.3.5)
+    # =====================================================================
+    st.divider()
+    st.markdown("#### B. Sensibilidade e seletividade da regra (todos os alvos)")
+    st.caption(
+        "A regra e as suas variantes aplicadas ao deslocamento horizontal de "
+        "todos os alvos e prismas. Contam-se os sinais anteriores ao primeiro "
+        "alerta de cada alvo (todos, nos alvos sem alerta). Um alerta diz-se "
+        "antecipado se teve um sinal nas 4 semanas anteriores; um sinal é "
+        "acerto se o alerta do mesmo alvo se seguiu nesse prazo. Reproduz a "
+        "Tabela 5.4.")
+
+    # pré-computar, por alvo: datas, δh e data do 1.º alerta (ΔH ou ΔV)
+    por_alvo = {}
+    for a, gg in alvos_est.groupby(COLS["alvo"]):
+        gg = gg.sort_values(COLS["data"])
+        gg = gg[gg[COLS["desl_h"]].notna()]
+        if len(gg) < 2:
+            continue
+        ds = pd.to_datetime(gg[COLS["data"]]).tolist()
+        dh = gg[COLS["desl_h"]].tolist()
+        est = gg["Estado calculado"].tolist()
+        d_al = None
+        for dt, e in zip(ds, est):
+            if e in ("Alerta", "Alarme"):
+                d_al = dt
+                break
+        por_alvo[a] = (ds, dh, d_al)
+
+    FATOR_TAB = 1.8
+    VARIANTES = [
+        ("Velocidade entre leituras consecutivas", None, None),
+        ("  Regra da aplicação (v ≥ 0,5 ou acel. ≥ 1,8)",
+         dict(janela7=False, limv=0.5, usar_vel=True, usar_acel=True, dois=False), None),
+        ("  Só velocidade, v ≥ 0,3",
+         dict(janela7=False, limv=0.3, usar_vel=True, usar_acel=False, dois=False), None),
+        ("  Só velocidade, v ≥ 0,5",
+         dict(janela7=False, limv=0.5, usar_vel=True, usar_acel=False, dois=False), None),
+        ("  Só velocidade, v ≥ 1,0",
+         dict(janela7=False, limv=1.0, usar_vel=True, usar_acel=False, dois=False), None),
+        ("  Só aceleração, ≥ 1,8×",
+         dict(janela7=False, limv=0.5, usar_vel=False, usar_acel=True, dois=False), None),
+        ("Velocidade sobre intervalo ≥ 7 dias", None, None),
+        ("  Regra da aplicação (v ≥ 0,5 ou acel. ≥ 1,8)",
+         dict(janela7=True, limv=0.5, usar_vel=True, usar_acel=True, dois=False), None),
+        ("  Só velocidade, v ≥ 0,5",
+         dict(janela7=True, limv=0.5, usar_vel=True, usar_acel=False, dois=False), None),
+        ("  Só velocidade, v ≥ 0,3, dois sinais seguidos",
+         dict(janela7=True, limv=0.3, usar_vel=True, usar_acel=False, dois=True), None),
+    ]
+
+    def _computar(cfg):
+        sinais_tot = acertos = 0
+        al_4s = al_antes = sem_al_sinal = 0
+        alvos_sinal = alvos_sinal_alerta = 0
+        antec = []
+        n_al = n_sem = 0
+        for ds, dh, d_al in por_alvo.values():
+            _, vel = _velocidades_serie(ds, dh, cfg["janela7"])
+            sig = _sinais_serie(vel, cfg["limv"], cfg["usar_vel"],
+                                cfg["usar_acel"], FATOR_TAB, cfg["dois"])
+            ds_sinal = [ds[i] for i in range(len(ds)) if sig[i]]
+            if d_al is not None:
+                n_al += 1
+                antes = [d for d in ds_sinal if d < d_al]
+                sinais_tot += len(antes)
+                acertos += sum(1 for d in antes if 0 < (d_al - d).days <= 28)
+                if antes:
+                    al_antes += 1
+                    alvos_sinal += 1
+                    alvos_sinal_alerta += 1
+                    antec.append((d_al - antes[0]).days)
+                if any(0 < (d_al - d).days <= 28 for d in antes):
+                    al_4s += 1
+            else:
+                n_sem += 1
+                sinais_tot += len(ds_sinal)
+                if ds_sinal:
+                    sem_al_sinal += 1
+                    alvos_sinal += 1
+        return dict(
+            sinais=sinais_tot,
+            pct_seg=round(100 * acertos / sinais_tot) if sinais_tot else 0,
+            al_4s=al_4s, al_antes=al_antes, sem=sem_al_sinal,
+            pct_alvos=round(100 * alvos_sinal_alerta / alvos_sinal) if alvos_sinal else 0,
+            antec=int(np.median(antec)) if antec else None,
+            n_al=n_al, n_sem=n_sem)
+
+    linhas = []
+    base_ref = None
+    for rotulo, cfg, _ in VARIANTES:
+        if cfg is None:
+            linhas.append({"Regra": f"▸ {rotulo.strip()}", "Sinais": "",
+                           "Sinais seguidos de alerta (%)": "",
+                           "Alertas c/ sinal ≤4 sem.": "",
+                           "Alertas c/ sinal antes": "",
+                           "Alvos s/ alerta c/ sinal": "",
+                           "Alvos c/ sinal → alerta (%)": ""})
+            continue
+        r = _computar(cfg)
+        if base_ref is None:
+            base_ref = r
+        linhas.append({
+            "Regra": rotulo,
+            "Sinais": r["sinais"],
+            "Sinais seguidos de alerta (%)": r["pct_seg"],
+            "Alertas c/ sinal ≤4 sem.": r["al_4s"],
+            "Alertas c/ sinal antes": r["al_antes"],
+            "Alvos s/ alerta c/ sinal": r["sem"],
+            "Alvos c/ sinal → alerta (%)": r["pct_alvos"]})
+    st.table(pd.DataFrame(linhas).set_index("Regra"))
+    if base_ref is not None:
+        st.caption(
+            f"Dos {base_ref['n_al'] + base_ref['n_sem']} alvos, "
+            f"**{base_ref['n_al']} atingiram o alerta** e {base_ref['n_sem']} "
+            f"nunca o atingiram (contagens «de 38» e «de 66» na dissertação). "
+            f"Com a regra da aplicação, a antecedência mediana entre o primeiro "
+            f"sinal e o alerta é de **{base_ref['antec']} dias**. A regra é "
+            f"sensível mas pouco seletiva: a maioria dos alvos que nunca "
+            f"alertaram também gerou sinais, e calcular a velocidade sobre ≥7 "
+            f"dias melhora a seletividade à custa de antecipar menos alertas.")
+
 
 def separador_home(dados):
     # ---- BANNER no topo: gradiente azul ---------------------------------
@@ -4324,6 +5189,58 @@ def separador_home(dados):
         c5.metric("Piezómetros", n_pz)
 
     st.divider()
+
+    # ---- cobertura das leituras / avisos de atraso (Tabela 6.1) ---------
+    st.markdown("#### Cobertura das leituras — avisos de atraso")
+    _fontes = [("alvos", COLS["alvo"], "Alvo"),
+               ("resumo", COLS["inclinometro"], "Inclinómetro"),
+               ("celulas", COLS["celula"], "Célula"),
+               ("piezo", COLS["piezometro"], "Piezómetro")]
+    _ultimas, _regs = [], []
+    for _chave, _colid, _sis in _fontes:
+        _df = dados.get(_chave)
+        if _df is None or _df.empty or COLS["data"] not in _df.columns:
+            continue
+        _dd = _df.copy()
+        _dd[COLS["data"]] = pd.to_datetime(_dd[COLS["data"]], errors="coerce")
+        _ultimas.append(_dd[COLS["data"]].max())
+    _data_estado = max([d for d in _ultimas if pd.notna(d)]) if _ultimas else None
+    if _data_estado is not None:
+        for _chave, _colid, _sis in _fontes:
+            _df = dados.get(_chave)
+            if _df is None or _df.empty or _colid not in _df.columns:
+                continue
+            _dd = _df.copy()
+            _dd[COLS["data"]] = pd.to_datetime(_dd[COLS["data"]], errors="coerce")
+            for _inst, _gi in _dd.groupby(_colid):
+                _gi = _gi.sort_values(COLS["data"])
+                _ult = _gi[COLS["data"]].max()
+                _difs = _gi[COLS["data"]].diff().dt.days.dropna()
+                _cad = float(_difs.median()) if len(_difs) else np.nan
+                _atraso = int((_data_estado - _ult).days)
+                _flag = bool(pd.notna(_cad) and _cad > 0
+                             and _atraso > 2 * _cad and _atraso >= 10)
+                _regs.append({"Instrumento": str(_inst), "Sistema": _sis,
+                              "Última leitura": _ult.strftime("%d/%m/%Y"),
+                              "Cadência (d)": (round(_cad) if pd.notna(_cad) else "—"),
+                              "Dias desde a última": _atraso, "_f": _flag})
+        _reg = pd.DataFrame(_regs)
+        _n_atraso = int(_reg["_f"].sum()) if not _reg.empty else 0
+        st.caption(
+            f"Data de estado (última leitura global): **{_data_estado:%d/%m/%Y}**. "
+            "Um instrumento é assinalado quando o intervalo desde a sua última "
+            "leitura excede o dobro da sua cadência habitual.")
+        if _n_atraso:
+            _atr = _reg[_reg["_f"]].sort_values("Dias desde a última", ascending=False)
+            st.warning(f"⚠ {_n_atraso} instrumento(s) com leitura em atraso face à "
+                       f"data de estado.")
+            st.dataframe(_atr.drop(columns="_f"), use_container_width=True,
+                         hide_index=True)
+            st.caption("As células de carga terminaram a 06/07/2026 (fim das leituras "
+                       "indicado pela obra, a confirmar o motivo); os restantes casos "
+                       "são instrumentos cuja série termina antes da data de estado.")
+        else:
+            st.success("Sem instrumentos em atraso face à data de estado.")
 
     # ---- cartoes das areas de analise -----------------------------------
     st.markdown("#### O que podes explorar")
@@ -4413,6 +5330,7 @@ def main():
     except Exception as e:
         st.error(f"Não consegui ler o Excel. Detalhe: {e}")
         st.stop()
+    aplicar_registos_ancoragens(dados)
 
     st.sidebar.divider()
     st.sidebar.subheader("Deteção de precursores")
@@ -4420,6 +5338,11 @@ def main():
                                    LIMIAR_VEL_DEFEITO, 0.05)
     fator_acel = st.sidebar.slider("Fator de aceleração (x)", 1.2, 3.0,
                                    FATOR_ACEL_DEFEITO, 0.1)
+    usar_janela7 = st.sidebar.checkbox(
+        "Velocidade sobre ≥ 7 dias (reduz ruído)", value=False,
+        help="Regra melhorada (Secção 5.3.5): compara cada leitura com a última "
+             "feita há pelo menos 7 dias, em vez da leitura imediatamente "
+             "anterior. Aplica-se à réplica em tempo real dos precursores.")
 
     if not TEM_SCIPY:
         st.sidebar.info("Instala 'scipy' para ativar a superfície 3D interpolada.")
@@ -4469,9 +5392,9 @@ def main():
         with tplan:
             separador_planta(dados)
     else:
-        thome, t3d, tres, tcorr, tpress = st.tabs(
+        thome, t3d, tres, tcorr, tprec, tpress = st.tabs(
             ["Início", "Terreno + Alvos 3D", "Resultados", "Correlações",
-             "Pressupostos"])
+             "Precursores", "Pressupostos"])
         with thome:
             separador_home(dados)
         with t3d:
@@ -4480,6 +5403,8 @@ def main():
             separador_resultados(dados)
         with tcorr:
             separador_correlacoes(dados)
+        with tprec:
+            separador_precursores(dados, limiar_vel, fator_acel, usar_janela7)
         with tpress:
             separador_pressupostos(dados)
 
