@@ -86,7 +86,7 @@ FOLHAS = {
     "celulas": "Celulas_Carga",
     "piezo": "Piezometros",
     "ancoragens": "Ancoragens",      # registos de execução (opcional)
-    "fissuro": "Fissurometros",      # fissurómetros da Santa Casa (opcional)
+    "fissuro": "Fissurometros",      # fissurómetros do Edifício 1 (opcional)
 }
 
 COLS = {
@@ -126,7 +126,7 @@ FATOR_ACEL_DEFEITO = 1.8
 #
 #   (H_alerta, H_alarme, V_alerta, V_alarme)  em mm
 #
-# EDIFICIOS ADJACENTES (Santa Casa, Cimas, Clinica): H 15/25, V 10/20.
+# EDIFICIOS ADJACENTES (Edifício 1, Edifício 2, Edifício 3): H 15/25, V 10/20.
 #   -> Capitulo 4 dos relatorios de alvos, desde o R00 (12/05/2025); os
 #      relatorios nao indicam a origem destes valores.
 # CONTENCAO 17 m (alcados AB, CD, DE, BF, PQ): H 20/40, V 10/15.
@@ -158,29 +158,80 @@ DEFORM_PROJETO = {
 
 # A estimativa de projeto e atribuida pela FRENTE DE ESCAVACAO adjacente,
 # a mesma usada nas Correlacoes (zona_escav_de_edificio / ALCADO_ZONA):
-#   frente poente (alcados CD, BF, DE, EF, FG, GH; Santa Casa) -> 20 mm
-#   frente norte  (alcados HI-KL; Clinica)                      -> 20 mm
-#   frente nascente/sul (alcados AB, LM-QR; Cimas)              -> 10 mm
-# Assim, Cimas (frente nascente, alcado PQ a ~8 m) compara com 10 mm.
+#   frente poente (alcados CD, BF, DE, EF, FG, GH; Edifício 1) -> 20 mm
+#   frente norte  (alcados HI-KL; Edifício 3)                      -> 20 mm
+#   frente nascente/sul (alcados AB, LM-QR; Edifício 2)              -> 10 mm
+# Assim, Edifício 2 (frente nascente, alcado PQ a ~8 m) compara com 10 mm.
 # NOTA: para edificios vizinhos a comparacao e INDIRETA — a estimativa de
 # projeto refere-se ao deslocamento da cortina, nao ao do edificio.
 PREVISTO_POR_FRENTE = {"poente_sul": 20.0, "norte": 20.0, "nascente_sul": 10.0}
+
+# ZONA DO PROJETO de cada alcado (memoria descritiva: ~20 mm na cortina
+# poente/norte e ~10 mm na nascente/sul; figuras de calculo: ~16 mm a norte e
+# a poente e ~4 mm a sul). Atribuicao INFERIDA da posicao de cada alcado (a
+# memoria nao lista os alcados de cada zona); os do canto sudoeste (BF, CD,
+# DE) sao os de atribuicao menos segura. Difere das FRENTES DE ESCAVACAO do
+# plano (ALCADO_ZONA), que servem as Correlacoes: o LM, por exemplo, e da
+# frente de escavacao nascente/sul, mas fica no lado norte da cortina.
+ZONA_PROJETO_ALCADO = {
+    "BF": "poente_norte", "CD": "poente_norte", "DE": "poente_norte",
+    "EF": "poente_norte", "FG": "poente_norte", "GH": "poente_norte",
+    "HI": "poente_norte", "IJ": "poente_norte", "JK": "poente_norte",
+    "KL": "poente_norte", "LM": "poente_norte",
+    "AB": "nascente_sul", "MN": "nascente_sul", "MNO": "nascente_sul",
+    "OP": "nascente_sul", "PQ": "nascente_sul", "QR": "nascente_sul",
+}
+NOME_ZONA_PROJETO = {"poente_norte": "poente/norte", "nascente_sul": "nascente/sul"}
+
+
+def previsto_do_grupo(grupo):
+    """(estimativa do projeto em mm, zona, tipo de comparação) de um grupo de
+    alvos. Alçados: zona do projeto (comparação direta). Edifícios vizinhos:
+    frente de escavação adjacente (comparação indireta, a estimativa é da
+    cortina). (None, None, None) se não houver correspondência."""
+    alc = _extrair_alcado(grupo)
+    if alc:
+        z = ZONA_PROJETO_ALCADO.get(alc)
+        if z is None:
+            return None, None, None
+        return DEFORM_PROJETO[z], NOME_ZONA_PROJETO[z], "direta"
+    fr = zona_escav_de_edificio(grupo)
+    if fr in PREVISTO_POR_FRENTE:
+        return PREVISTO_POR_FRENTE[fr], NOME_FRENTE[fr], "indireta"
+    return None, None, None
+
+
+def data_ultrapassagem(serie_datas, serie_valores, limiar):
+    """Primeira data em que o máximo dos alvos (por campanha) atinge o limiar."""
+    d = pd.DataFrame({"t": pd.to_datetime(serie_datas), "v": serie_valores}).dropna()
+    if d.empty:
+        return None, None
+    m = d.groupby("t")["v"].max().sort_index()
+    acima = m[m >= limiar]
+    if acima.empty:
+        return None, None
+    return acima.index[0], float(acima.iloc[0])
+
+
+def nome_curto_grupo(g):
+    alc = _extrair_alcado(g)
+    return f"Alçado {alc}" if alc else str(g)
 NOME_FRENTE = {"poente_sul": "poente", "norte": "norte",
                "nascente_sul": "nascente/sul"}
 
 # Localizacao das CELULAS DE CARGA (alcado/zona onde esta a ancoragem).
 # So faz sentido cruzar a carga de uma celula com o movimento de alvos do
 # MESMO alcado/zona. CONFIRMADO em planta e modelo 3D do projeto: ambas as
-# celulas estao na cortina sob o edificio da Santa Casa (lado poente,
+# celulas estao na cortina sob o Edifício 1 (lado poente,
 # junto a ancoragem A26). Nota: o alcado da 33GRADOS assinala "ZG2" nesta zona,
 # mas as sondagens SC6/Pz e SC8/Pz e os perfis interpretativos da ENGGEO nao o
-# confirmam — por isso a zona geotecnica NAO e indicada na app. Por isso cruzam validamente com os alvos da Santa
-# Casa (A1-A8...). Cada entrada: (rotulo da zona, filtro de grupo de alvos).
-#   - CC 2501796 / A26: cortina da Santa Casa (Piso -1, cota 15,90)
-#   - CC 200792  / DE : cortina da Santa Casa (proxima da A26)
+# confirmam — por isso a zona geotecnica NAO e indicada na app. Por isso cruzam validamente com os alvos do Edifício 1
+# (A1-A8...). Cada entrada: (rotulo da zona, filtro de grupo de alvos).
+#   - CC 2501796 / A26: cortina do Edifício 1 (Piso -1, cota 15,90)
+#   - CC 200792  / DE : cortina do Edifício 1 (proxima da A26)
 LOCALIZACAO_CELULAS = {
-    "CC 2501796": ("Cortina sob a Santa Casa — Piso -1 (cota 15,90), junto a A26", "Santa Casa"),
-    "CC 200792":  ("Cortina sob a Santa Casa — Piso -2 (cota 12,45), perto da A26", "Santa Casa"),
+    "CC 2501796": ("Cortina sob o Edifício 1 — Piso -1 (cota 15,90), junto a A26", "Edifício 1"),
+    "CC 200792":  ("Cortina sob o Edifício 1 — Piso -2 (cota 12,45), perto da A26", "Edifício 1"),
 }
 
 # Imagens de localizacao de cada celula (planta/alcado do projeto + contexto).
@@ -191,13 +242,13 @@ IMAGENS_CELULAS = {
         ("cc_2501796_planta.jpg",
          "Planta de localização das células — A26 (Piso -1, cota 15,90)"),
         ("cc_2501796_3d.jpg",
-         "Modelo 3D do projeto — localização da célula A26; Santa Casa assinalada"),
+         "Modelo 3D do projeto — localização da célula A26; Edifício 1 assinalado"),
     ],
     "CC 200792": [
         ("cc_200792_alcado.jpg",
          "Alçado D-E — ancoragem DE (Piso -2, cota 12,45)"),
         ("planta_geral.jpg",
-         "Planta de localização geral (recinto) — Santa Casa assinalada"),
+         "Planta de localização geral (recinto) — Edifício 1 assinalado"),
     ],
 }
 
@@ -222,7 +273,7 @@ H_INCLINOMETRO = {"I1": (16.3, 16.3), "I2": (20.1, 22.35), "I3": (16.3, 16.3)}
 # (Tabela 2.1): (rotulo, min%, max%, cor RGB). Clough & O'Rourke e um valor
 # medio (~0,2 %). Fontes: Clough & O'Rourke [21], Long [24], Yoo [26].
 REFERENCIAS_EMPIRICAS = [
-    ("Long (2001) — solos rígidos (0,05–0,25 %)", 0.05, 0.25, "31,119,180"),
+    ("Long (2001) — solos rijos (0,05–0,25 %)", 0.05, 0.25, "31,119,180"),
     ("Yoo (2001) — terreno sobre rocha (0,05–0,15 %)", 0.05, 0.15, "44,160,44"),
     ("Clough & O'Rourke — média ≈ 0,2 %", 0.20, 0.20, "214,39,40"),
 ]
@@ -274,7 +325,7 @@ def anexar_estado_calculado(df):
       'Critério'          — rotulo legível do critério aplicado
       'Estado calculado'  — estado recalculado de ΔH/ΔV com os critérios oficiais
       'Confere'           — True se coincide com a coluna 'Estado' do Excel
-      'Fachada SC'        — 'Frente escavação' | 'Lateral (mar)' | '' (só Santa Casa)
+      'Fachada'        — 'Frente escavação' | 'Lateral (mar)' | '' (só Edifício 1)
     Não altera a coluna 'Estado' original: serve de auditoria lado a lado.
     """
     d = df.copy()
@@ -291,18 +342,18 @@ def anexar_estado_calculado(df):
             confere.append(ec == est_excel)
         else:
             confere.append(None)
-        fachadas.append(fachada_santa_casa(r.get(COLS["edificio"]), r.get(COLS["alvo"])))
+        fachadas.append(fachada_edificio1(r.get(COLS["edificio"]), r.get(COLS["alvo"])))
     d["Critério"] = rotulos
     d["Estado calculado"] = estados
     d["Confere"] = confere
-    d["Fachada SC"] = fachadas
+    d["Fachada"] = fachadas
     return d
 
 
 # =========================================================================
-# SANTA CASA — DUAS FACHADAS E SUBSTITUICAO DE ALVOS
+# EDIFÍCIO 1 — DUAS FACHADAS E SUBSTITUICAO DE ALVOS
 # -------------------------------------------------------------------------
-# O edificio da Santa Casa da Misericordia tem duas fachadas instrumentadas:
+# O Edifício 1 tem duas fachadas instrumentadas:
 #   Fachada 1 (frente a escavacao): alvos A1, A2, A3, A4
 #   Fachada 2 (lateral, virada ao mar): A5/A5b, A6/A6b, A7/A7b, A8/A8b
 # Os alvos A5-A8 foram tapados por um painel publicitario (out/2025) e
@@ -316,9 +367,9 @@ SC_FACHADA_2 = {"A5", "A6", "A7", "A8", "A5b", "A6b", "A7b", "A8b"}
 SC_SUBSTITUIDOS = {"A5": "A5b", "A6": "A6b", "A7": "A7b", "A8": "A8b"}
 
 
-def fachada_santa_casa(edif, alvo):
-    """Devolve a fachada da Santa Casa a que o alvo pertence, ou '' se não aplicar."""
-    if not (isinstance(edif, str) and "Santa Casa" in edif):
+def fachada_edificio1(edif, alvo):
+    """Devolve a fachada do Edifício 1 a que o alvo pertence, ou '' se não aplicar."""
+    if not (isinstance(edif, str) and "Edifício 1" in edif):
         return ""
     a = str(alvo)
     if a in SC_FACHADA_1:
@@ -401,7 +452,7 @@ COTAS_PISOS = [
 COTA_FUNDO_ESCAVACAO = 4.55          # cota final de escavacao (dominante nos cortes)
 COTA_COROAMENTO_PADRAO = 20.85       # coroamento da cortina (alcados correntes)
 COTA_COROAMENTO_ALTA = 24.65         # coroamento na zona alta (piso 2)
-COTA_MURO_SCML = 22.50               # muro tradicional na fronteira com a Santa Casa
+COTA_MURO_EDIF1 = 22.50               # muro tradicional na fronteira com o Edifício 1
 
 # Cores oficiais das bandas de laje por espessura, lidas da legenda das pecas
 # desenhadas do projeto de contencao (JETsj, EDN-JET-...-DR-U-0021 e seg.).
@@ -437,7 +488,7 @@ NF_REPOUSO = [
 INC_META = {
     "I1": {"sondagem": "SC6/Pz", "confianca": "média",
            "azimute": 330, "posicao": "canto SO (poente)"},
-    # I1: a SC8/Pz fica no canto NE da Santa Casa, longe do canto SO; a
+    # I1: a SC8/Pz fica no canto NE do Edifício 1, longe do canto SO; a
     # sondagem de 2022 mais proxima do I1 e a SC6/Pz (as sondagens da 2.a fase,
     # incluindo a SC3/Pz junto ao canto SO, nao estavam executadas em 2022).
     "I2": {"sondagem": "SC9/Pz", "confianca": "alta",
@@ -469,7 +520,7 @@ FASES_OBRA = [
     ("Contenção periférica",                    "2025-05-13", "2026-04-15"),
     ("Estacas Poente e Norte",                  "2025-05-13", "2025-08-12"),
     ("Estacas Central e Nascente",              "2025-08-13", "2025-10-07"),
-    ("Estacas Cimas",                           "2025-05-13", "2025-09-25"),
+    ("Estacas junto ao Edifício 2",                           "2025-05-13", "2025-09-25"),
     ("Escavação + bandas de laje + ancoragens", "2025-07-08", "2026-04-15"),
     ("Viga coroamento + muros contenção",       "2025-07-08", "2025-11-13"),
     ("Fundação e laje de fundo",                "2026-03-10", "2026-05-04"),
@@ -500,9 +551,9 @@ ESCAVACAO_COTAS = [
 # paredes de forro e ancoragens"). Cada zona e uma FRENTE da cortina,
 # identificada no plano pelas estacas e mapeada aos edificios/alvos que lhe
 # ficam em frente (confirmado com a foto aerea e a planta de estacas):
-#   poente_sul  = cortina poente, estacas E8_35–E8_96 + anel E6_C  -> Santa Casa
-#   norte       = cortina norte, alinhamentos IJ/JK/KL, E8_92–E6_11 -> Clinica
-#   nascente_sul= cortina nascente/sul, E8_2–E8_34 + E6_16–E6_21    -> Cimas
+#   poente_sul  = cortina poente, estacas E8_35–E8_96 + anel E6_C  -> Edifício 1
+#   norte       = cortina norte, alinhamentos IJ/JK/KL, E8_92–E6_11 -> Edifício 3
+#   nascente_sul= cortina nascente/sul, E8_2–E8_34 + E6_16–E6_21    -> Edifício 2
 # Datas REAIS (impactadas) transcritas do plano — nada inventado. Cada evento:
 #   (data_iso, tipo, cota_atingida_m|None, rotulo)
 #   tipo: "escavacao" (cota atingida) | "ancoragem" | "banda_laje"
@@ -564,7 +615,7 @@ ANC_PLANO = {
 # Ocorrências e medidas indicadas pela obra (ponto 4). Datas None = a confirmar.
 MEDIDAS_OBRA = [
     ("2025-06-02", "Ancoragens", "Injeção repetitiva (IR) em vez da IRS do projeto, com o acordo do projetista", "Confirmada"),
-    ("2026-01-19", "Santa Casa", "Fissurómetros em cinco fissuras do edifício (zeragem)", "Confirmada"),
+    ("2026-01-19", "Edifício 1", "Fissurómetros em cinco fissuras do edifício (zeragem)", "Confirmada"),
     ("2026-01-26", "Monitorização", "Leituras dos alvos duas vezes por semana", "Confirmada nos dados"),
     ("2026-02-13", "Alçado GH", "Água abundante numa ancoragem junto à célula da A26; recomendadas furação de drenagem entre estacas e tirante preventivo", "Confirmada"),
     ("2026-02-16", "Alçado GH / A26", "Avaliação da carga da A26 pelo projetista; estudado um escoramento «pé de galinha» entre AB e GH (não executado)", "Confirmada"),
@@ -572,9 +623,9 @@ MEDIDAS_OBRA = [
     (None, "Alçado GH", "Tirantes nos muros sobre as vigas de coroamento", "Data a confirmar"),
     (None, "Alçado GH", "Um nível de carotes Ø80 mm ao nível do piso 1, entre estacas, para aliviar a pressão da água", "Data a confirmar"),
     (None, "Alçado GH", "Dois perfis HEB300 contra a viga de distribuição, apoiados na sapata do Núcleo 1 (após o fundo)", "Data a confirmar"),
-    (None, "Santa Casa", "Leituras por cordas no edifício", "Data a confirmar"),
+    (None, "Edifício 1", "Leituras por cordas no edifício", "Data a confirmar"),
     (None, "Bandas de laje", "Escavação para as bandas dos pisos 2 e 1 até 4,0 m (previstos 2,5 m)", "Data a confirmar"),
-    (None, "Bandas de laje", "Banda do piso −2 contra o terreno só no alçado da Santa Casa; nas restantes, escavação e escoramento", "Alçado e data a confirmar"),
+    (None, "Bandas de laje", "Banda do piso −2 contra o terreno só no alçado do Edifício 1; nas restantes, escavação e escoramento", "Alçado e data a confirmar"),
     (None, "Anel (LM)", "Supressão de um dos perfis de ligação do anel de compressão às fundações", "Data a confirmar"),
 ]
 
@@ -629,14 +680,14 @@ def aplicar_registos_ancoragens(dados):
 
 
 ZONA_ESCAV_NOME = {
-    "poente_sul":   "Poente/Sul — cortina da Santa Casa",
-    "norte":        "Norte — cortina da Clinica",
-    "nascente_sul": "Nascente/Sul — cortina do Cimas",
+    "poente_sul":   "Poente/Sul — cortina do Edifício 1",
+    "norte":        "Norte — cortina do Edifício 3",
+    "nascente_sul": "Nascente/Sul — cortina do Edifício 2",
 }
 
 # Associacao INSTRUMENTACAO -> frente de escavacao (a mesma zona).
 #   Inclinometros: I1 canto SO (poente) / I2 topo N / I3 SE (nascente).
-#   Celulas: ambas na cortina da Santa Casa (poente).
+#   Celulas: ambas na cortina do Edifício 1 (poente).
 INC_ZONA = {"I1": "poente_sul", "I2": "norte", "I3": "nascente_sul"}
 CELULA_ZONA = {"CC 2501796": "poente_sul", "CC 200792": "poente_sul"}
 # alcados de contencao -> frente, pela alinhamento das vigas de distribuicao
@@ -667,15 +718,15 @@ IMPACTOS_PLANO = [
     ("Impacto 2 — cabos BT/MT", "2025-05-13", "2025-07-21", 50,
      "Estacas E6_13 a E6_15 e E8_113 a E8_116 (coincidentes ou encostadas aos cabos)",
      "Parcial (+32 d.u.): o plano permite iniciar as estacas seguintes 18 d.u. antes do fim da suspensão"),
-    ("Impacto 3 — Restaurante Cimas", "2025-05-13", "2025-08-21", 73,
-     "Frente junto ao Cimas; demolição do muro antigo (adjudicação 28/07, desmonte 29/07 a 21/08)",
+    ("Impacto 3 — Edifício 2", "2025-05-13", "2025-08-21", 73,
+     "Frente junto ao Edifício 2; demolição do muro antigo (adjudicação 28/07, desmonte 29/07 a 21/08)",
      "Nenhuma: no plano, a suspensão não precede outras tarefas"),
 ]
 # (fase, ini_contratual, fim_contratual, ini_impactado, fim_impactado)
 FASES_COMPARACAO = [
     ("Estacas Poente e Norte",        "2025-05-13", "2025-06-23", "2025-05-13", "2025-08-12"),
     ("Estacas Central e Nascente",    "2025-06-24", "2025-08-18", "2025-08-13", "2025-10-07"),
-    ("Estacas periféricas (Cimas)",   "2025-06-26", "2025-08-18", "2025-08-07", "2025-09-25"),
+    ("Estacas periféricas (Edifício 2)",   "2025-06-26", "2025-08-18", "2025-08-07", "2025-09-25"),
     ("Viga coroamento + muros",       "2025-07-08", "2025-09-24", "2025-07-08", "2025-11-13"),
     ("Nível piso 2",                  "2025-07-24", "2025-09-12", "2025-07-24", "2025-10-21"),
     ("Nível piso 1",                  "2025-08-12", "2025-10-06", "2025-09-15", "2025-11-25"),
@@ -687,18 +738,18 @@ FASES_COMPARACAO = [
 # Desfasamento por frente (dias uteis seg-sex; dias corridos) e impacto de origem,
 # seguindo as ligacoes de precedencia do plano.
 DESFASAMENTO_FRENTES = [
-    ("Poente/Sul", "Santa Casa da Misericórdia", "Impacto 1 — caneiro", "+36", "≈ +50",
+    ("Poente/Sul", "Edifício 1", "Impacto 1 — caneiro", "+36", "≈ +50",
      "20/01–02/02/2026", "10/03–23/03/2026"),
     ("Corpo central/nascente (estacas E8_2–E8_44, viga de coroamento)", "—",
      "Impacto 1 — caneiro", "+36", "≈ +50", "—", "—"),
-    ("Norte", "Clínica Abreu Loureiro", "Impacto 2 — cabos BT/MT", "+32", "≈ +44 a +46",
+    ("Norte", "Edifício 3", "Impacto 2 — cabos BT/MT", "+32", "≈ +44 a +46",
      "26/02–02/03/2026", "13/04–15/04/2026"),
-    ("Nascente/Sul (escavação)", "Restaurante Cimas", "Impacto 2 (via bandas de laje dos pisos 2 e 1)",
+    ("Nascente/Sul (escavação)", "Edifício 2", "Impacto 2 (via bandas de laje dos pisos 2 e 1)",
      "+32", "≈ +44 a +46", "16/02–27/02/2026", "01/04–14/04/2026"),
-    ("Junto ao Cimas (estacas periféricas, viga, muro M03, banda do piso 1)", "Restaurante Cimas",
+    ("Junto ao Edifício 2 (estacas periféricas, viga, muro M03, banda do piso 1)", "Edifício 2",
      "Impacto 2 (as estacas seguem as da frente norte)", "+28 a +30", "≈ +38 a +42", "—", "—"),
     ("Sem desfasamento: primeiras estacas poente e norte, viga de coroamento E8_77–E8_104 e "
-     "ancoragens, escoras F-G/G-H e H-I/I-J, VD do piso 1 em EF/FG/GH e ancoragens", "Santa Casa (pisos 2 e 1)",
+     "ancoragens, escoras F-G/G-H e H-I/I-J, VD do piso 1 em EF/FG/GH e ancoragens", "Edifício 1 (pisos 2 e 1)",
      "—", "0", "0", "—", "—"),
 ]
 
@@ -971,11 +1022,11 @@ def _datas_pt(fig):
                 vals = []
                 while t <= d1:
                     vals.append(t); t = t + pd.DateOffset(months=passo)
-                txt = [f"{_MESES_PT[v.month - 1]} {v.year}" for v in vals]
+                txt = [f"{_meses()[v.month - 1]} {v.year}" for v in vals]
             else:
                 step = 7 if (isinstance(dt, (int, float)) and dt <= 7 * 86400000 + 1) or (dt is None and dias <= 60) else 14
                 vals = list(pd.date_range(pd.Timestamp(d0.date()), d1, freq=f"{step}D"))
-                txt = [f"{v.day} {_MESES_PT[v.month - 1]}" + (f"<br>{v.year}" if (k == 0 or v.month == 1 and v.day <= step) else "")
+                txt = [f"{v.day} {_meses()[v.month - 1]}" + (f"<br>{v.year}" if (k == 0 or v.month == 1 and v.day <= step) else "")
                        for k, v in enumerate(vals)]
             if len(vals) >= 2:
                 ax.update(tickmode="array", tickvals=vals, ticktext=txt,
@@ -993,6 +1044,1259 @@ def _plotly_chart_pt(fig, *args, **kwargs):
 
 
 st.plotly_chart = _plotly_chart_pt
+
+
+# =========================================================================
+# IDIOMA DA INTERFACE (Português / English)
+# -------------------------------------------------------------------------
+# O idioma escolhe-se na barra lateral («Idioma / Language»). Em inglês, os
+# textos mostrados (títulos, legendas, rótulos dos controlos, separadores,
+# tabelas e gráficos) são traduzidos à saída, através do dicionário
+# _I18N_EN: primeiro procura-se a frase inteira e, se não existir, traduzem-
+# -se os fragmentos conhecidos (termos e partes fixas das f-strings). Os
+# VALORES devolvidos pelos controlos não mudam (só o que é mostrado), pelo
+# que a lógica da aplicação é a mesma nos dois idiomas. Textos que não
+# constem do dicionário ficam em português.
+# =========================================================================
+import re as _re_i18n
+from streamlit.delta_generator import DeltaGenerator as _DG_i18n
+
+_I18N_EN = {
+    " mais.": " more.",
+    " vs. previsto ": " vs. predicted ",
+    "(frente ": "(front ",
+    "poente": "west",
+    "nascente": "east",
+    "direta": "direct",
+    "ganhou carga": "gained load",
+    "perdeu carga": "lost load",
+    ", terminando a ": ", ending at ",
+    "Escavação e Contenção Periférica": "Excavation and retaining wall",
+    "viga de coroamento": "capping beam",
+    "viga de distribuição do piso": "distribution beam of level",
+    "troço poente": "western stretch",
+    "inferido": "inferred",
+    "  Regra da aplicação (v ≥ 0,5 ou acel. ≥ 1,8)": "  Rule of the application (v ≥ 0.5 or accel. ≥ 1.8)",
+    "  Só aceleração, ≥ 1,8×": "  Acceleration only, ≥ 1.8×",
+    "  Só velocidade, v ≥ 0,3": "  Velocity only, v ≥ 0.3",
+    "  Só velocidade, v ≥ 0,3, dois sinais seguidos": "  Velocity only, v ≥ 0.3, two consecutive signals",
+    "  Só velocidade, v ≥ 0,5": "  Velocity only, v ≥ 0.5",
+    "  Só velocidade, v ≥ 1,0": "  Velocity only, v ≥ 1.0",
+    " (17 m assumido — não consta dos relatórios)": " (17 m assumed — not in the reports)",
+    " (cor do projeto)": " (design colour)",
+    " (cota ": " (elev. ",
+    " (célula ": " (cell ",
+    " (no Edifício 1)": " (on Building 1)",
+    " (peças do projeto)": " (design drawings)",
+    " + VD da grua (2 ancoragens)": " + crane distribution beam (2 anchors)",
+    " No Edifício 1, a fachada frontal (losangos, média ": " At Building 1, the front façade (diamonds, mean ",
+    " O segundo é «": " The second is «",
+    " alvos, **": " targets, **",
+    " atingiram o alerta** e ": " reached the alert** and ",
+    " campanhas. Como a cota DESCE quando a escavação aprofunda, um r negativo significa que o deslocamento sobe a medida que a frente local desce. r mede a associação, não a causa.": " campaigns. As the level FALLS when the excavation deepens, a negative r means that the displacement rises as the local front goes down. r measures the association, not the cause.",
+    " campanhas. Uma correlação negativa significa que o deslocamento sobe a medida que a cota da água desce. r mede a associação estatística, não a causa.": " campaigns. A negative correlation means that the displacement rises as the water level falls. r measures the statistical association, not the cause.",
+    " carga: ": " load: ",
+    " começou ~": " started ~",
+    " desceu de **": " fell from **",
+    " dias depois da ": " days after ",
+    " dias úteis)<br>": " working days)<br>",
+    " dias**. A regra é sensível mas pouco seletiva: a maioria dos alvos que nunca alertaram também gerou sinais, e calcular a velocidade sobre ≥7 dias melhora a seletividade à custa de antecipar menos alertas.": " days**. The rule is sensitive but poorly selective: most targets that never reached the alert also gave signals, and computing the velocity over ≥7 days improves the selectivity at the cost of anticipating fewer alerts.",
+    " e o alvo já teria entrado em alerta (": " and the target would already have entered alert (",
+    " em várias campanhas (cor mais clara = mais antiga; mais escura = mais recente).": " in several campaigns (lighter colour = older; darker = more recent).",
+    " evoluiu de ": " evolved from ",
+    " fica em ": " is at ",
+    " instrumento(s) com leitura em atraso face à data de estado.": " instrument(s) with readings delayed relative to the status date.",
+    " layers**. Estão pre-selecionadas as estruturais (contorno, estacas, grelha). Ajusta se quiseres:": " layers**. The structural ones are preselected (outline, piles, grid). Adjust if you wish:",
+    " leitura(s) com aceleração acima dos critérios.": " reading(s) with acceleration above the criteria.",
+    " leituras (100%). As duas implementações dos critérios são coerentes; a comparação com o estado publicado nos relatórios 33GRADOS é feita à parte.": " readings (100%). The two implementations of the criteria are consistent; the comparison with the state published in the 33GRADOS reports is made separately.",
+    " leituras entre o estado recalculado e a coluna 'Estado' do Excel. Ver tabela de divergências abaixo.": " readings between the recalculated state and the 'Estado' column of the Excel file. See the discrepancies table below.",
+    " m (cor conforme legenda do projeto)": " m (colour according to the design legend)",
+    " m (projeto JETsj)<extra></extra>": " m (JETsj design)<extra></extra>",
+    " m abaixo da água atual e ~": " m below the current water and ~",
+    " m abaixo do coroamento<extra></extra>": " m below the capping beam<extra></extra>",
+    " m abaixo do nível freático de repouso de 2022 (~": " m below the 2022 rest water table (~",
+    " m de altura escavada no ponto mais alto. Fonte: levantamento topográfico (DXF). Notas: o exagero vertical é apenas visual; o filtro de fase mostra a escavação até a cota do piso do projeto (a progressão real e por fases). A coloração dos alçados por movimento, quando ativa, e ILUSTRATIVA e qualitativa — associa o estado dos alvos ao lado do recinto por orientação, não por coordenada exata, porque terreno e alvos usam referenciais distintos.": " m of excavated height at the highest point. Source: topographic survey (DXF). Notes: the vertical exaggeration is only visual; the stage filter shows the excavation down to the design floor elevation (the real progress is by stages). The colouring of the wall sections by movement, when enabled, is ILLUSTRATIVE and qualitative — it associates the state of the targets with the side of the site by orientation, not by exact coordinate, because terrain and targets use different reference systems.",
+    " m do coroamento)": " m from the capping beam)",
+    " m — aproximadamente ": " m — approximately ",
+    " m) no período monitorizado. O fundo de escavação (**": " m) over the monitored period. The excavation bottom (**",
+    " m) — as duas séries movem-se em sentido oposto ao longo do tempo.": " m) — the two series move in opposite directions over time.",
+    " m** enquanto o ": " m** while the ",
+    " m**) fica ": " m**) is ",
+    " m; fundo de escavação a ": " m; excavation bottom at ",
+    " mm) está drapejado sobre o relevo real. Vermelho = alarme, laranja = alerta, verde = regular. IMPORTANTE: a posição dos alvos sobre o terreno é aproximada (alinhamento por caixa-envolvente entre referenciais diferentes) — para leitura tendencial do movimento sobre o relevo, não métrica. A medição precisa está no separador Alvos (2D). Se algum alvo cair no lado errado, usa o 'Ajuste fino do alinhamento'.": " mm) is draped over the real relief. Red = alarm, orange = alert, green = regular. IMPORTANT: the position of the targets on the terrain is approximate (bounding-box alignment between different reference systems) — for a trend reading of the movement over the relief, not a metric one. The precise measurement is in the Targets (2D) tab. If a target falls on the wrong side, use 'Fine alignment adjustment'.",
+    " mm) move-se mais que a lateral (círculos, ": " mm) moves more than the side one (circles, ",
+    " mm) — coerente com a exposição direta a escavação.": " mm) — consistent with the direct exposure to the excavation.",
+    " mm) — o primeiro move-se ": " mm) — the first moves ",
+    " mm), no elemento «": " mm), in element «",
+    " mm** enquanto a cota da água desceu de ": " mm** while the water level fell from ",
+    " mm, média ": " mm, mean ",
+    " mm/dia; aceleração ≥ ": " mm/day; acceleration ≥ ",
+    " nunca o atingiram (contagens «de 38» e «de 66» na dissertação). Com a regra da aplicação, a antecedência mediana entre o primeiro sinal e o alerta é de **": " never reached it (counts «of 38» and «of 66» in the dissertation). With the rule of the application, the median lead time between the first signal and the alert is **",
+    " não tem frente de escavação mapeada. Escolhe um alvo de um edifício/alçado com zona associada (Edifícios 1, 2 e 3, ou um alçado de contenção).": " has no mapped excavation front. Choose a target of a building/wall section with an associated zone (Buildings 1, 2 and 3, or a retaining wall section).",
+    " para **": " to **",
+    " sobrepostos (SPT no eixo de cima). A leitura central do back-analysis: ve se o 'joelho' de maior deformação do perfil coincide com uma subida do SPT (grés a consolidar) ou com o nível freático. Onde o inclinómetro passa da base da sondagem, não há dado geológico.": " overlaid (SPT on the top axis). The central reading of the back-analysis: see whether the 'knee' of largest deformation of the profile coincides with a rise of the SPT (sandstone becoming consolidated) or with the water table. Where the inclinometer goes beyond the base of the borehole, there is no geological data.",
+    " — cota ": " — elev. ",
+    "#### 1. Deformação × Água × Escavação × Faseamento": "#### 1. Deformation × Water × Excavation × Construction phases",
+    "#### 1. Quanto — magnitude das movimentações": "#### 1. How much — magnitude of the movements",
+    "#### 2. Deformação × Carga na ancoragem": "#### 2. Deformation × Anchor load",
+    "#### 2. Onde — distribuição espacial": "#### 2. Where — spatial distribution",
+    "#### 3. Correlação direta — deslocamento vs. cota da água": "#### 3. Direct correlation — displacement vs. water level",
+    "#### 3. Quando e a que ritmo — velocidade de movimentação": "#### 3. When and at what rate — movement velocity",
+    "#### 4. A que profundidade — perfil inclinométrico": "#### 4. At what depth — inclinometer profile",
+    "#### 4. Deformação × Escavação da frente local": "#### 4. Deformation × Excavation of the local front",
+    "#### 5. Matriz de correlações entre instrumentos": "#### 5. Correlation matrix between instruments",
+    "#### 5. Observado vs. Previsto — comparação com o projeto": "#### 5. Observed vs. Predicted — comparison with the design",
+    "#### 6. Envelopes empíricos — δ_h,máx em função de H": "#### 6. Empirical envelopes — δ_h,max as a function of H",
+    "#### A. Leitura em tempo real simulada": "#### A. Simulated real-time reading",
+    "#### Ancoragens — plano impactado vs. registos de execução": "#### Anchors — impacted schedule vs. execution records",
+    "#### B. Sensibilidade e seletividade da regra (todos os alvos)": "#### B. Sensitivity and selectivity of the rule (all targets)",
+    "#### Cobertura das leituras — avisos de atraso": "#### Reading coverage — delay warnings",
+    "#### Cronologia de execução das ancoragens": "#### Anchor execution chronology",
+    "#### Direção e proporção do movimento (última campanha)": "#### Direction and proportion of the movement (last campaign)",
+    "#### Fissurómetros do Edifício 1 (F1–F5)": "#### Building 1 crack gauges (F1–F5)",
+    "#### Impactos e desfasamento por frente": "#### Impacts and delay by front",
+    "#### Instrumentação monitorizada": "#### Monitored instrumentation",
+    "#### O que podes explorar": "#### What you can explore",
+    "#### Obra": "#### Works",
+    "#### Ocorrências e medidas indicadas pela obra": "#### Events and measures reported by the site",
+    "#### Pressupostos e inferências da ferramenta": "#### Assumptions and inferences of the tool",
+    "#### Questões de qualidade dos dados (do relatório)": "#### Data quality issues (from the report)",
+    "#### Tratamento de dados (critérios aplicados)": "#### Data processing (criteria applied)",
+    "#### Zonamento geotécnico e parâmetros de projeto": "#### Geotechnical zoning and design parameters",
+    "##### Efeito térmico": "##### Thermal effect",
+    "% acima da estimativa de projeto.": "% above the design estimate.",
+    "% da blocagem (": "% of the lock-off load (",
+    "%{y} · furação %{x|%d/%m/%Y}<extra></extra>": "%{y} · drilling %{x|%d/%m/%Y}<extra></extra>",
+    "%{y} · tensionamento %{x|%d/%m/%Y}<br>%{customdata:.0f} dias após injeção<extra></extra>": "%{y} · stressing %{x|%d/%m/%Y}<br>%{customdata:.0f} days after grouting<extra></extra>",
+    "%{y} · tensionamento %{x|%d/%m/%Y}<extra></extra>": "%{y} · stressing %{x|%d/%m/%Y}<extra></extra>",
+    "' está vazia ou não foi encontrada.": "' is empty or was not found.",
+    "'. Poe o Excel na pasta do script ou usa 'Carregar manualmente'.": "'. Put the Excel file in the script folder or use 'Load manually'.",
+    ") está na **": ") is at the **",
+    ") não está confirmada. O cruzamento só tem significado físico se o alvo pertencer ao mesmo alçado da ancoragem.": ") is not confirmed. The crossing only has physical meaning if the target belongs to the same wall section as the anchor.",
+    ")** — recalculado dos deslocamentos ΔH/ΔV com os critérios oficiais:": ")** — recalculated from the ΔH/ΔV displacements with the official criteria:",
+    "). Eixo A+ orientado a ": "). A+ axis oriented to ",
+    "). Os maiores intervalos concentram-se no alçado GH (viga de distribuição do piso −2) e no troço poente do AB (piso −1), onde o tensionamento foi diferido.": "). The largest intervals are concentrated in section GH (level −2 distribution beam) and in the western stretch of AB (level −1), where stressing was deferred.",
+    "** (confiança ": "** (confidence ",
+    "** ancoragens ultrapassam a janela de 7–8 dias entre injeção e tensionamento e **": "** anchors exceed the 7–8 day window between grouting and stressing and **",
+    "** cota ": "** elev. ",
+    "** para **": "** to **",
+    "** ultrapassam 20 dias (até ": "** exceed 20 days (up to ",
+    "**, diferente da sugerida.": "**, different from the suggested one.",
+    "**, o primeiro sinal já teria sido lido a **": "**, the first signal would already have been read on **",
+    "**. As linhas tracejadas nos gráficos marcam os limiares de alerta e alarme.": "**. The dashed lines in the charts mark the alert and alarm thresholds.",
+    "**. O seletor de alvos abaixo está restrito a essa zona — o cruzamento é fisicamente válido.": "**. The target selector below is restricted to that zone — the crossing is physically valid.",
+    "**. Os marcos abaixo são as cotas atingidas nessa frente.": "**. The milestones below are the levels reached at that front.",
+    "**. Um instrumento é assinalado quando o intervalo desde a sua última leitura excede o dobro da sua cadência habitual.": "**. An instrument is flagged when the interval since its last reading exceeds twice its usual interval.",
+    "**Comparação entre células (ancoragens)**": "**Comparison between cells (anchors)**",
+    "**Correlação direta — deslocamento vs. cota escavada local**": "**Direct correlation — displacement vs. local excavated level**",
+    "**Correlação:** r = **": "**Correlation:** r = **",
+    "**Estado na última campanha (": "**State in the last campaign (",
+    "**Hotel Eden, Estoril**  \nReformulação — escavação e contenção periférica  \nMonte Estoril, Cascais  \n_Back-analysis de instrumentação_": "**Hotel Eden, Estoril**  \nRedevelopment — excavation and peripheral retaining structure  \nMonte Estoril, Cascais  \n_Instrumentation back-analysis_",
+    "**Leitura:** a água no ": "**Reading:** the water at ",
+    "**Leitura:** na frente da ": "**Reading:** at the front of ",
+    "**Leitura:** nenhuma atividade tem, no plano impactado, duração diferente da contratual — as 180 tarefas elementares de escavação e travamento mantêm a duração e foram deslocadas. Todo o atraso vem das suspensões de frentes durante as estacas: o impacto 1 (caneiro) desloca a frente poente, sob o Edifício 1, em 36 dias úteis; o impacto 2 (cabos BT/MT) desloca a frente norte e a escavação da frente nascente/sul em 32. A escavação termina a **15/04/2026** em vez de 02/03/2026 e a conclusão da 1.ª fase passa de 11/01/2027 para 01/03/2027.": "**Reading:** no activity has, in the impacted schedule, a duration different from the contractual one — the 180 elementary excavation and bracing tasks keep their duration and were shifted. All the delay comes from the suspensions of fronts during piling: impact 1 (culvert) shifts the west front, below Building 1, by 36 working days; impact 2 (LV/MV cables) shifts the north front and the excavation of the east/south front by 32. The excavation ends on **15/04/2026** instead of 02/03/2026 and the completion of phase 1 moves from 11/01/2027 to 01/03/2027.",
+    "**Leitura:** no período, a deformação evoluiu de ": "**Reading:** over the period, the deformation evolved from ",
+    "**Ponto de referência 1**": "**Reference point 1**",
+    "**Ponto de referência 2** (escolhe um bem afastado do 1)": "**Reference point 2** (choose one well away from point 1)",
+    "**Ranking dos 10 alvos mais deslocados** (última campanha, ": "**Ranking of the 10 most displaced targets** (last campaign, ",
+    "**Razão assentamento/horizontal (|ΔZ|/δh)**": "**Settlement/horizontal ratio (|ΔZ|/δh)**",
+    "**entre leituras consecutivas**. Ativa a opção ≥ 7 dias na barra lateral para reduzir o ruído.": "**between consecutive readings**. Enable the ≥ 7 days option in the sidebar to reduce the noise.",
+    "**≥ 7 dias** (regra melhorada).": "**≥ 7 days** (improved rule).",
+    "+15% alerta": "+15% alert",
+    "+25% alarme": "+25% alarm",
+    ", a escavação desceu de cota **": ", the excavation went down from elev. **",
+    ", antes de qualquer alerta.": ", before any alert.",
+    ", por isso perdeu a fase inicial de carregamento. A comparação das variações (%) entre períodos diferentes deve ser lida com esta ressalva.": ", so it missed the initial loading phase. The comparison of the variations (%) between different periods must be read with this caveat.",
+    ". Fonte: relatório de instrumentação (33GRADOS).": ". Source: instrumentation report (33GRADOS).",
+    ". Imagens das peças desenhadas do projeto de contenção (JETsj).": ". Images of the drawings of the retaining structure design (JETsj).",
+    ". Setas e contornos: vermelho = alarme, laranja = alerta, verde = regular (critérios oficiais recalculados). A caixa mostra a profundidade real de escavação (16,3 m, do projeto) como distância abaixo da cortina — os alvos e o projeto usam referenciais de cota diferentes, por isso e profundidade, não cota absoluta.": ". Arrows and outlines: red = alarm, orange = alert, green = regular (recalculated official criteria). The box shows the real excavation depth (16.3 m, from the design) as a distance below the wall — the targets and the design use different elevation references, so it is depth, not absolute elevation.",
+    ". Verifica o bloco CONFIGURAÇÃO (COLS) ou o Excel.": ". Check the CONFIGURATION block (COLS) or the Excel file.",
+    "09–16/12/2025 (VD, 2 lados)": "09–16/12/2025 (distribution beam, 2 sides)",
+    "09–16/12/2025 (VD, 2 lados)?": "09–16/12/2025 (distribution beam, 2 sides)?",
+    "1.º sinal": "1st signal",
+    "22–29/01/2026 (VD, 2 lados)": "22–29/01/2026 (distribution beam, 2 sides)",
+    "22–29/01/2026 (VD, 2 lados)?": "22–29/01/2026 (distribution beam, 2 sides)?",
+    "28/08–09/09/2025 (tarefa única)": "28/08–09/09/2025 (single task)",
+    "30/10–03/11/2025 (coroamento E8_51–E8_35)?": "30/10–03/11/2025 (capping beam E8_51–E8_35)?",
+    "9–20 dias": "9–20 days",
+    "; comparação ": "; comparison ",
+    "<br>Estado: ": "<br>State: ",
+    "<br>Propagação: ": "<br>Propagation: ",
+    "<div style='border-radius:12px; height:190px; margin-bottom:18px; background:linear-gradient(120deg, #0f2037 0%, #1f3a5f 55%, #2e5c8a 100%); display:flex; align-items:center; padding-left:36px;'><div style='color:white;'><div style='font-size:3.2em; font-weight:800; letter-spacing:3px; line-height:1;'>IMS</div><div style='font-size:1.2em; opacity:0.92; margin-top:8px;'>Instrumentation Monitoring System</div><div style='font-size:0.95em; opacity:0.8; margin-top:12px; max-width:560px;'>Análise e visualização de instrumentação geotécnica — deslocamentos, velocidades, sinais precursores, geologia e sequência de obra.</div></div></div>": "<div style='border-radius:12px; height:190px; margin-bottom:18px; background:linear-gradient(120deg, #0f2037 0%, #1f3a5f 55%, #2e5c8a 100%); display:flex; align-items:center; padding-left:36px;'><div style='color:white;'><div style='font-size:3.2em; font-weight:800; letter-spacing:3px; line-height:1;'>IMS</div><div style='font-size:1.2em; opacity:0.92; margin-top:8px;'>Instrumentation Monitoring System</div><div style='font-size:0.95em; opacity:0.8; margin-top:12px; max-width:560px;'>Analysis and visualisation of geotechnical instrumentation — displacements, velocities, precursor signals, geology and construction sequence.</div></div></div>",
+    "O Edifício 1 tem duas fachadas instrumentadas: **Frente a escavação** (A1–A4) e **Lateral, virada ao mar** (A5–A8). Os alvos A5–A8 foram tapados por um painel publicitário e substituídos por **A5b–A8b**, RE-ZERADOS em 20/10/2025 — por isso os acumulados dos 'b' não são comparáveis diretamente com A1–A4 (arrancam de zero mais tarde).": "Building 1 has two instrumented façades: **Facing the excavation** (A1–A4) and **Side, facing the sea** (A5–A8). Targets A5–A8 were covered by an advertising panel and replaced by **A5b–A8b**, RE-ZEROED on 20/10/2025 — so the cumulative values of the 'b' targets are not directly comparable with A1–A4 (they start from zero later).",
+    "A ancoragem ": "Anchor ",
+    "A caixa de escavação usa a PROFUNDIDADE real (16,3 m), não a cota absoluta — os sistemas de cota dos alvos (Z 42-63) e do projeto (4,5-24,6) não estão relacionados.": "The excavation box uses the real DEPTH (16.3 m), not the absolute elevation — the elevation systems of the targets (Z 42-63) and of the design (4.5-24.6) are not related.",
+    "A carregar o Excel...": "Loading the Excel file...",
+    "A coluna **Temperatura (°C)** existe no modelo mas está vazia, por isso a app não consegue separar o efeito térmico do estrutural. É a dúvida da Secção 5.2.8: as duas células subiram em simultâneo entre as leituras de final de junho e a de 06/07/2026 — a A26 +27,6 kN e a da ancoragem DE +24,2 kN. Com a deriva do sensor da A26 (0,75 kN/°C, certificado de calibração), seria preciso ≈ 37 °C de variação para explicar o salto só por temperatura. Este gráfico (carga × temperatura) aparece automaticamente quando carregares as temperaturas das células.": "The **Temperature (°C)** column exists in the model but is empty, so the app cannot separate the thermal effect from the structural one. This is the question of Section 5.2.8: both cells rose simultaneously between the readings of late June and that of 06/07/2026 — A26 by +27.6 kN and the cell of anchor DE by +24.2 kN. With the drift of the A26 sensor (0.75 kN/°C, calibration certificate), a variation of ≈ 37 °C would be needed to explain the jump by temperature alone. This chart (load × temperature) appears automatically when the cell temperatures are loaded.",
+    "A coluna colorida à esquerda de cada sondagem é a litologia; os pontos e a linha são o SPT (N pancadas), no mesmo eixo de profundidade. A cor do ponto SPT indica a zona geotécnica provável pelo valor de N (ver tabela em baixo). A linha azul tracejada é o nível freático.": "The coloured column to the left of each borehole is the lithology; the points and the line are the SPT (N blows), on the same depth axis. The colour of the SPT point indicates the probable geotechnical zone from the N value (see table below). The dashed blue line is the water table.",
+    "A confirmar (falta 1 par de cotas nos 2 sistemas)": "To be confirmed (1 pair of elevations in the 2 systems missing)",
+    "A confirmar com a equipa de instrumentação": "To be confirmed with the instrumentation team",
+    "A cor da zona (ZG) é a provável pelo valor de N; o relatório não define fronteiras de zona por profundidade.": "The zone colour (ZG) is the probable one from the N value; the report does not define zone boundaries by depth.",
+    "A escala calculada e invulgar. Confirma as coordenadas dos pontos no desenho — pode haver troca de X/Y ou de ponto.": "Unusual computed scale. Check the coordinates of the points in the drawing — X/Y or the points may have been swapped.",
+    "A extrair geometria do DXF...": "Extracting DXF geometry...",
+    "A folha de '": "The sheet '",
+    "A ler o desenho DXF...": "Reading the DXF drawing...",
+    "A regra e as suas variantes aplicadas ao deslocamento horizontal de todos os alvos e prismas. Contam-se os sinais anteriores ao primeiro alerta de cada alvo (todos, nos alvos sem alerta). Um alerta diz-se antecipado se teve um sinal nas 4 semanas anteriores; um sinal é acerto se o alerta do mesmo alvo se seguiu nesse prazo. Reproduz a Tabela 5.4.": "The rule and its variants applied to the horizontal displacement of all targets and prisms. Signals before the first alert of each target are counted (all signals, in targets without alert). An alert is anticipated if it had a signal in the 4 preceding weeks; a signal is a hit if the alert of the same target followed within that period. Reproduces Table 5.4.",
+    "Aceleração": "Acceleration",
+    "Acima do limite superior de Long (0,25 % de H): ": "Above the upper limit of Long (0.25% of H): ",
+    "Acumulados": "Cumulative",
+    "Ajuste fino do alinhamento": "Fine alignment adjustment",
+    "Alarme": "Alarm",
+    "Alarme ": "Alarm ",
+    "Alarme -": "Alarm -",
+    "Alarme 25%": "Alarm 25%",
+    "Alarme contenção (40)": "Wall alarm (40)",
+    "Alerta": "Alert",
+    "Alerta ": "Alert ",
+    "Alerta -": "Alert -",
+    "Alerta 15%": "Alert 15%",
+    "Alertas c/ sinal antes": "Alerts w/ earlier signal",
+    "Alertas c/ sinal ≤4 sem.": "Alerts w/ signal ≤4 wk",
+    "Alinhado": "Aligned",
+    "Alinhar a planta com os alvos (sobreposição)": "Align the plan with the targets (overlay)",
+    "Altura da cortina H (m)": "Wall height H (m)",
+    "Altura relativa (Z)": "Relative height (Z)",
+    "Alvo": "Target",
+    "Alvo %{text}<br>Desl. h: %{customdata:.1f} mm<extra></extra>": "Target %{text}<br>Hor. disp.: %{customdata:.1f} mm<extra></extra>",
+    "Alvo %{text}<br>Desl. h: %{customdata[0]:.1f} mm<br>Estado: %{customdata[1]}<br>%{customdata[2]}<extra>": "Target %{text}<br>Hor. disp.: %{customdata[0]:.1f} mm<br>State: %{customdata[1]}<br>%{customdata[2]}<extra>",
+    "Alvo 1": "Target 1",
+    "Alvo 2": "Target 2",
+    "Alvo a analisar (velocidade)": "Target to analyse (velocity)",
+    "Alvo a sobrepor (mesma zona da célula)": "Target to overlay (same zone as the cell)",
+    "Alvos": "Targets",
+    "Alvos (2D)": "Targets (2D)",
+    "Alvos A5-A8 -> A5b-A8b": "Targets A5-A8 -> A5b-A8b",
+    "Alvos a incluir na matriz": "Targets to include in the matrix",
+    "Alvos c/ sinal → alerta (%)": "Targets w/ signal → alert (%)",
+    "Alvos em alerta ou alarme na última campanha:": "Targets in alert or alarm in the last campaign:",
+    "Alvos monitorizados": "Monitored targets",
+    "Alvos na campanha": "Targets in the campaign",
+    "Alvos no espaço com a geometria da obra: contorno do recinto, edifícios vizinhos e vetores de deslocamento amplificados.": "Targets in space with the geometry of the works: site boundary, neighbouring buildings and amplified displacement vectors.",
+    "Alvos s/ alerta c/ sinal": "Targets w/o alert w/ signal",
+    "Alvos topogr.": "Survey targets",
+    "Alvos topográficos": "Survey targets",
+    "Alvos topográficos — evolução temporal": "Survey targets — evolution in time",
+    "Alçado": "Wall section",
+    "Alçado ": "Section ",
+    "Alçado %{text}<br>H = %{customdata[0]:.1f}–%{customdata[1]:.1f} m<br>δ_h = %{y:.1f} mm<br>δ_h/H = %{customdata[2]:.2f} %<extra></extra>": "Section %{text}<br>H = %{customdata[0]:.1f}–%{customdata[1]:.1f} m<br>δ_h = %{y:.1f} mm<br>δ_h/H = %{customdata[2]:.2f} %<extra></extra>",
+    "Alçado D-E — ancoragem DE (Piso -2, cota 12,45)": "Section D-E — anchor DE (Level -2, elev. 12.45)",
+    "Alçado GH": "Section GH",
+    "Alçado GH (A19–A42): segundo o alçado com a numeração das ancoragens (A26 no piso −1, cota 15,90). Troço poente do AB (A1–A18): nível inferido da cronologia e do comprimento livre.": "Section GH (A19–A42): according to the elevation drawing with the anchor numbering (A26 at level −1, elev. 15.90). Western stretch of AB (A1–A18): level inferred from the chronology and the free length.",
+    "Alçado GH / A26": "Section GH / A26",
+    "Alçado e data a confirmar": "Section and date to be confirmed",
+    "Alçado e nível": "Section and level",
+    "Alçado e nível de cada ancoragem": "Section and level of each anchor",
+    "Alçados (prismas)": "Wall sections (prisms)",
+    "Ambas": "Both",
+    "Amplia a escala vertical para realçar o relevo. 1.0 = escala real.": "Increases the vertical scale to highlight the relief. 1.0 = true scale.",
+    "Amplia só a escala vertical do relevo.": "Increases only the vertical scale of the relief.",
+    "Amplificação do deslocamento": "Displacement amplification",
+    "Ancoragem": "Anchor",
+    "Ancoragem DE": "Anchor DE",
+    "Ancoragens": "Anchors",
+    "Ancoragens ": "Anchors ",
+    "Ancoragens DE": "DE anchors",
+    "Ancoragens VD Piso -1 (2 lados)": "Anchors level -1 distribution beam (2 sides)",
+    "Ancoragens VD Piso -2 (2 lados)": "Anchors level -2 distribution beam (2 sides)",
+    "Ancoragens VD Piso 1 (E8_78-E8_87)": "Anchors level 1 distribution beam (E8_78-E8_87)",
+    "Ancoragens viga de coroamento Piso 1 (E8_51-E8_35)": "Capping beam anchors Level 1 (E8_51-E8_35)",
+    "Ancoragens viga de coroamento Piso 2 (E8_78-E8_90)": "Capping beam anchors Level 2 (E8_78-E8_90)",
+    "Anel (LM)": "Ring (LM)",
+    "Antecedência": "Lead time",
+    "Análise": "Analysis",
+    "Análise · Correlações": "Analysis · Correlations",
+    "Análise · Pressupostos": "Analysis · Assumptions",
+    "Análise · Resultados": "Analysis · Results",
+    "Análise · Terreno + Alvos 3D": "Analysis · Terrain + 3D targets",
+    "Análise — análise de resultados": "Analysis — analysis of results",
+    "As células de carga terminaram a 06/07/2026 (fim das leituras indicado pela obra, a confirmar o motivo); os restantes casos são instrumentos cuja série termina antes da data de estado.": "The load cells ended on 06/07/2026 (end of readings reported by the site, reason to be confirmed); the other cases are instruments whose series ends before the status date.",
+    "As medidas com data são assinaladas nos gráficos dos fissurómetros do Edifício 1 (separador «Alvos (2D)»).": "The dated measures are marked on the charts of the Building 1 crack gauges («Targets (2D)» tab).",
+    "As quatro (comparar)": "All four (compare)",
+    "Associação inclinómetro-sondagem": "Inclinometer-borehole association",
+    "Associação inclinómetro-sondagem inferida da sobreposição das plantas — a confirmar com a instrumentação.": "Inclinometer-borehole association inferred from overlaying the plans — to be confirmed with the instrumentation.",
+    "Aterro": "Fill",
+    "Aterro heterogéneo de origem não seletiva": "Heterogeneous fill of non-selective origin",
+    "Até ": "Until ",
+    "Até **": "Until **",
+    "Auditoria: divergência em ": "Audit: discrepancy in ",
+    "Auditoria: o estado recalculado pela app coincide com a coluna 'Estado' do Excel (calculada por fórmula) em ": "Audit: the state recalculated by the app coincides with the 'Estado' column of the Excel file (computed by formula) in ",
+    "Automático": "Automatic",
+    "Avaliação da carga da A26 pelo projetista; estudado um escoramento «pé de galinha» entre AB e GH (não executado)": "Assessment of the A26 load by the designer; a raking strut between AB and GH was studied (not built)",
+    "Banda Laje Piso -2 (F1)": "Slab strip Level -2 (F1)",
+    "Banda Laje Piso -2 (F2)": "Slab strip Level -2 (F2)",
+    "Banda Laje Piso 1 (Fase 1)": "Slab strip Level 1 (Phase 1)",
+    "Banda Laje Piso 1 (Fase 2)": "Slab strip Level 1 (Phase 2)",
+    "Banda de laje ": "Slab strip ",
+    "Banda do piso −2 contra o terreno só no alçado do Edifício 1; nas restantes, escavação e escoramento": "Level −2 slab strip against the ground only at the Building 1 section; elsewhere, excavation and bracing",
+    "Bandas de laje": "Slab strips",
+    "Blocagem": "Lock-off load",
+    "Blocagem (kN)": "Lock-off load (kN)",
+    "Blocagem indicada nos relatórios": "Lock-off load stated in the reports",
+    "CONTRATUAL: ": "CONTRACTUAL: ",
+    "Cada ponto é uma campanha: no eixo X a cota da água (interpolada à data de cada leitura do alvo), no eixo Y o deslocamento horizontal do alvo. Se os pontos alinham numa tendência, há correlação. O coeficiente r quantifica a forca da associação estatística — não prova a causa.": "Each point is a campaign: on the X axis the water level (interpolated to the date of each target reading), on the Y axis the horizontal displacement of the target. If the points line up in a trend, there is correlation. The coefficient r quantifies the strength of the statistical association — it does not prove the cause.",
+    "Cadência (d)": "Interval (d)",
+    "Caixa de escavação": "Excavation box",
+    "Calcário": "Limestone",
+    "Calcário (C1A)": "Limestone (C1A)",
+    "Campanha": "Campaign",
+    "Campanhas": "Campaigns",
+    "Carga": "Load",
+    "Carga ": "Load ",
+    "Carga (kN)": "Load (kN)",
+    "Carga (kN) — bloc. ": "Load (kN) — lock-off ",
+    "Carga atual": "Current load",
+    "Carga atual (kN)": "Current load (kN)",
+    "Carga da célula em função da temperatura; a deriva ajustada compara-se com a do certificado de calibração.": "Cell load as a function of temperature; the fitted drift is compared with that of the calibration certificate.",
+    "Carga fim (kN)": "Final load (kN)",
+    "Carga nas ancoragens vs. blocagem, com limiares de alerta (15%) e alarme (25%).": "Anchor loads vs. lock-off load, with alert (15%) and alarm (25%) thresholds.",
+    "Carrega o Excel na barra lateral para começar.": "Load the Excel file in the sidebar to start.",
+    "Carrega um DXF para ver a planta. Sugestão: a planta de escavação do piso -1, -2 ou -3 mostra bem o contorno do recinto de contenção.": "Load a DXF file to see the plan. Suggestion: the excavation plan of level -1, -2 or -3 shows the outline of the retained area well.",
+    "Carrega uma planta em DXF (por exemplo a planta de escavação e contenção de um piso). Podes ve-la sozinha, ou ALINHA-LA com os alvos topográficos indicando 2 pontos de referência — a app calcula a transformação e sobrepõe os alvos coloridos pelo deslocamento.": "Load a plan in DXF (for example the excavation and retaining structure plan of a level). You can view it alone, or ALIGN it with the survey targets by indicating 2 reference points — the app computes the transformation and overlays the targets coloured by displacement.",
+    "Carregar manualmente": "Load manually",
+    "Casas dos edifícios": "Building blocks",
+    "Casas dos edifícios (ilustrativo)": "Building blocks (illustrative)",
+    "Edifício 3": "Building 3",
+    "Clough & O'Rourke — média ≈ 0,2 %": "Clough & O'Rourke — average ≈ 0.2%",
+    "Edifício 3": "Building 3",
+    "Coeficiente de Pearson r entre as séries temporais da instrumentação, calculado sobre o período comum a cada par (interpolação linear nas datas da primeira série). À esquerda, os valores ACUMULADOS; à direita, os INCREMENTOS entre campanhas (variação período-a-período), que medem se os instrumentos se MOVEM ao mesmo tempo, não apenas se cresceram ambos. Reproduz a Tabela 5.3 da dissertação.": "Pearson coefficient r between the instrumentation time series, computed over the period common to each pair (linear interpolation at the dates of the first series). On the left, the CUMULATIVE values; on the right, the INCREMENTS between campaigns (period-to-period change), which measure whether the instruments MOVE at the same time, not just whether both grew. Reproduces Table 5.3 of the dissertation.",
+    "Colore os lados do recinto conforme o nível de movimento dos alvos próximos, por orientação. É QUALITATIVO e ilustrativo: o terreno e os alvos estão em referenciais diferentes, pelo que a associação e por lado, não por ponto exato.": "Colours the sides of the site according to the movement level of the nearby targets, by orientation. It is QUALITATIVE and illustrative: the terrain and the targets are in different reference systems, so the association is by side, not by exact point.",
+    "Colorir alçados por movimento (ilustrativo)": "Colour wall sections by movement (illustrative)",
+    "Colunas litológicas das sondagens, ensaios SPT em profundidade e zonamento geotécnico (ZG1-ZG6).": "Lithological columns of the boreholes, SPT tests with depth and geotechnical zoning (ZG1-ZG6).",
+    "Como ler: para cada sondagem, a barra colorida à esquerda é a litologia; a curva à direita é o SPT (escala 0–60, com a linha pontilhada na nega). Onde o SPT sobe, o grés está mais consolidado — e e ai que a rigidez do maciço aumenta. Profundidades de cada zona ZG NÃO estão definidas no relatório por ponto; a cor do SPT é a zona PROVÁVEL pelo valor de N.": "How to read: for each borehole, the coloured bar on the left is the lithology; the curve on the right is the SPT (scale 0–60, with the dotted line at refusal). Where the SPT rises, the sandstone is more consolidated — and that is where the stiffness of the rock mass increases. The depths of each ZG zone are NOT defined in the report for each point; the SPT colour is the PROBABLE zone from the N value.",
+    "Como obter o X,Y no desenho: abre o DXF no AutoCAD ou num visualizador, aponta o cursor ao sítio onde o alvo esta, e le as coordenadas. Quanto mais afastados os 2 alvos, melhor.": "How to get X,Y in the drawing: open the DXF in AutoCAD or a viewer, point the cursor at the place where the target is, and read the coordinates. The further apart the 2 targets, the better.",
+    "Comparação": "Comparison",
+    "Comparação impactado vs. contratual": "Impacted vs. contractual comparison",
+    "Componente": "Component",
+    "Confere": "Matches",
+    "Confirmada": "Confirmed",
+    "Confirmada nos dados": "Confirmed in the data",
+    "Contenção": "Retaining wall",
+    "Contenção 17 m — Alçado ": "Wall 17 m — Section ",
+    "Contenção 24 m — Alçado ": "Wall 24 m — Section ",
+    "Contenção periférica": "Peripheral retaining structure",
+    "Contenção — Alçado ": "Wall — Section ",
+    "Contorno do recinto": "Site boundary",
+    "Contorno do recinto (envolvente)": "Site boundary (envelope)",
+    "Contratual": "Contractual",
+    "Corpo central/nascente (estacas E8_2–E8_44, viga de coroamento)": "Central/east body (piles E8_2–E8_44, capping beam)",
+    "Correlação — ": "Correlation — ",
+    "Correlações": "Correlations",
+    "Correlações — interação entre instrumentos": "Correlations — interaction between instruments",
+    "Cortina sob o Edifício 1 — Piso -1 (cota 15,90), junto a A26": "Wall below Building 1 — Level -1 (elev. 15.90), next to A26",
+    "Cortina sob o Edifício 1 — Piso -2 (cota 12,45), perto da A26": "Wall below Building 1 — Level -2 (elev. 12.45), near A26",
+    "Cota": "Elevation",
+    "Cota (m)": "Elevation (m)",
+    "Cota da boca (m)": "Collar elevation (m)",
+    "Cota da água ": "Water level ",
+    "Cota da água (PZ)": "Water level (PZ)",
+    "Cota da água (m)": "Water level (m)",
+    "Cota da água calculada (m)": "Computed water level (m)",
+    "Cota escavada na frente (m)": "Excavated level at the front (m)",
+    "Cota: %{intensity:.1f} m<extra></extra>": "Elevation: %{intensity:.1f} m<extra></extra>",
+    "Cotas de projeto: escavação e contenção periférica (JETsj, PRO/2023/368). NF de repouso: piezómetros das sondagens (ENGGEO, Quadro III, 24/11/2022).": "Design elevations: excavation and peripheral retaining structure (JETsj, PRO/2023/368). Rest water table: borehole piezometers (ENGGEO, Table III, 24/11/2022).",
+    "Cotas dos pisos e fundo de escavação": "Floor levels and excavation bottom",
+    "Critério": "Criterion",
+    "Critério aplicado: **": "Criterion applied: **",
+    "Critério de alerta e alarme de cada alçado": "Alert and alarm criterion of each wall section",
+    "Cronograma a mostrar": "Schedule to display",
+    "Cronograma da obra — plano contratual e plano impactado": "Works schedule — contractual and impacted schedules",
+    "Cruza a CARGA medida numa célula de carga (ancoragem) com o MOVIMENTO de um alvo, no mesmo eixo de tempo. Só faz sentido cruzar célula e alvo do MESMO alçado/zona. Critério das células: +15% (alerta), +25% (alarme) sobre a blocagem.": "Crosses the LOAD measured in a load cell (anchor) with the MOVEMENT of a target, on the same time axis. It only makes sense to cross a cell and a target of the SAME wall section/zone. Cell criterion: +15% (alert), +25% (alarm) over the lock-off load.",
+    "Cruza o movimento de um alvo com a COTA a que a escavação chegou NA FRENTE desse alvo (plano de trabalhos impactado, por zona de estacas). A cota (castanho) desce em degraus a medida que a frente aprofunda; ve-se a deformação (vermelho) crescer com o aprofundamento local — e não com a escavação do lado oposto.": "Crosses the movement of a target with the LEVEL reached by the excavation AT THE FRONT of that target (impacted schedule, by pile zone). The level (brown) goes down in steps as the front deepens; the deformation (red) grows with the local deepening — and not with the excavation on the opposite side.",
+    "Curvas de nível": "Contour lines",
+    "Curvas de nível do levantamento, que dao a leitura do relevo (alçados).": "Contour lines of the survey, which give the reading of the relief (wall sections).",
+    "Célula": "Cell",
+    "Célula de carga": "Load cell",
+    "Células carga": "Load cells",
+    "Células de carga": "Load cells",
+    "Dados": "Data",
+    "Dados · Alvos (2D)": "Data · Targets (2D)",
+    "Dados · Células de carga": "Data · Load cells",
+    "Dados · Geologia": "Data · Geology",
+    "Dados · Inclinómetros": "Data · Inclinometers",
+    "Dados · Obra": "Data · Works",
+    "Dados · Piezómetros": "Data · Piezometers",
+    "Dados · Planta (DXF)": "Data · Plan (DXF)",
+    "Dados — instrumentação, geologia e planeamento": "Data — instrumentation, geology and planning",
+    "Dados: ilustração dos resultados (cada instrumento, a geologia e o planeamento), sem análise. Análise: leitura dos resultados e correlação entre os dados dos vários instrumentos.": "Data: illustration of the results (each instrument, the geology and the planning), without analysis. Analysis: reading of the results and correlation between the data of the various instruments.",
+    "Data": "Date",
+    "Data a confirmar": "Date to be confirmed",
+    "Data da análise (replay)": "Analysis date (replay)",
+    "Data de estado (última leitura global): **": "Status date (last overall reading): **",
+    "Datas do plano de trabalhos impactado (o plano contratual com três suspensões de frentes, mantendo as durações contratuais); não há registo diário de obra. As ancoragens usam as datas dos registos de execução (folha «Ancoragens»), que diferem do plano em semanas.": "Dates of the impacted schedule (the contractual schedule with three suspensions of fronts, keeping the contractual durations); there is no daily site record. The anchors use the dates of the execution records («Ancoragens» sheet), which differ from the schedule by weeks.",
+    "Deformada do ": "Deformed shape of ",
+    "Deriva ≈ ": "Drift ≈ ",
+    "Descrição": "Description",
+    "Desenha cada edifício vizinho como uma casa simples (bloco + telhado). Posição real dos alvos; forma esquemática — não representa a geometria real do edifício.": "Draws each neighbouring building as a simple house (block + roof). Real position of the targets; schematic shape — it does not represent the real geometry of the building.",
+    "Desenha o volume escavado abaixo do contorno, com a PROFUNDIDADE real de escavação do projeto (coroamento-fundo = 16,3 m). É uma distância, não uma cota absoluta — os alvos e o projeto usam referenciais de cota diferentes.": "Draws the excavated volume below the boundary, with the real excavation DEPTH of the design (capping beam to bottom = 16.3 m). It is a distance, not an absolute elevation — the targets and the design use different elevation references.",
+    "Desenha, de forma ESQUEMÁTICA e ILUSTRATIVA, a viga de coroamento, as bandas de laje (as cotas reais dos pisos) e os escoramentos de canto. A geometria de projeto destes elementos não consta dos dados — a forma é assumida, só as cotas das lajes/viga são reais. Os escoramentos são totalmente ilustrativos.": "Draws, in a SCHEMATIC and ILLUSTRATIVE way, the capping beam, the slab strips (the real floor elevations) and the corner struts. The design geometry of these elements is not in the data — the shape is assumed, only the slab/beam elevations are real. The struts are entirely illustrative.",
+    "Desl.": "Disp.",
+    "Desl. H ": "Hor. disp. ",
+    "Desl. H (mm)": "Hor. disp. (mm)",
+    "Desl. H máximo (mm)": "Max. hor. disp. (mm)",
+    "Desl. V ΔZ (mm)": "Vert. disp. ΔZ (mm)",
+    "Desl. acumulado total (mm)": "Total cumulative disp. (mm)",
+    "Desl. h (mm)": "Hor. disp. (mm)",
+    "Desl. horizontal ": "Horizontal disp. ",
+    "Desl. horizontal (mm)": "Horizontal disp. (mm)",
+    "Desl. horizontal máx. (mm)": "Max. horizontal disp. (mm)",
+    "Desl. máx (mm)": "Max. disp. (mm)",
+    "Desl. máx. ": "Max. disp. ",
+    "Desloc. horizontal acumulado (mm)": "Cumulative horizontal disp. (mm)",
+    "Deslocamento": "Displacement",
+    "Deslocamento (mm)": "Displacement (mm)",
+    "Deslocamento acumulado (mm)": "Cumulative displacement (mm)",
+    "Deslocamento acumulado ao longo da profundidade. Base fixa.": "Cumulative displacement along depth. Fixed base.",
+    "Deslocamento horizontal OBSERVADO vs. ESTIMATIVA DE PROJETO (memória descritiva JETsj: ~20 mm na cortina poente/norte, ~10 mm na nascente/sul — valor de CÁLCULO para a última fase de escavação), atribuida pela frente de escavação adjacente. Para os edifícios vizinhos a comparação e INDIRETA: a estimativa refere-se a cortina, não ao edifício.": "OBSERVED horizontal displacement vs. DESIGN ESTIMATE (JETsj design report: ~20 mm on the west/north wall, ~10 mm on the east/south wall — CALCULATION value for the last excavation stage), assigned by the adjacent excavation front. For the neighbouring buildings the comparison is INDIRECT: the estimate refers to the wall, not to the building.",
+    "Deslocamento horizontal máximo de cada alçado (máximo dos prismas em todas as campanhas) e de cada inclinómetro (máximo do perfil), em função da altura da cortina H (Tabela 3.7), face aos referenciais empíricos e às estimativas do projeto. As linhas a tracejado são δ_h = p%·H; a sombra marca as faixas de Long e de Yoo. Reproduz a Figura 5.3 da dissertação.": "Maximum horizontal displacement of each wall section (maximum of the prisms over all campaigns) and of each inclinometer (maximum of the profile), as a function of the wall height H (Table 3.7), against the empirical references and the design estimates. The dashed lines are δ_h = p%·H; the shading marks the ranges of Long and of Yoo. Reproduces Figure 5.3 of the dissertation.",
+    "Deslocamentos milimétricos sobre coordenadas em metros; amplia-se para se verem.": "Millimetric displacements on coordinates in metres; amplified to be visible.",
+    "Destacar alarmes/alertas": "Highlight alarms/alerts",
+    "Detalhe do eixo temporal": "Time axis detail",
+    "Deteção de precursores": "Precursor detection",
+    "Dias corridos": "Calendar days",
+    "Dias desde a última": "Days since the last",
+    "Dias entre o fim da injeção e o tensionamento": "Days between the end of grouting and stressing",
+    "Dias fim da injeção → tensionamento": "Days end of grouting → stressing",
+    "Dias úteis": "Working days",
+    "Dias úteis contados de segunda a sexta. O impacto 3 (Edifício 2) não está ligado a tarefas seguintes no plano, e as estacas E6_21–E6_27 aparecem executadas a partir de 07/08/2025, antes do fim dessa suspensão (21/08/2025) — incoerência a confirmar com o empreiteiro. Por manter as durações contratuais, o plano não mede o ritmo efetivo de cada atividade.": "Working days counted from Monday to Friday. Impact 3 (Building 2) is not linked to subsequent tasks in the schedule, and piles E6_21–E6_27 appear executed from 07/08/2025, before the end of that suspension (21/08/2025) — inconsistency to be confirmed with the contractor. As it keeps the contractual durations, the schedule does not measure the actual pace of each activity.",
+    "Diferença (mm)": "Difference (mm)",
+    "Distingue a fachada frontal (A1-A4, exposta a escavação) da lateral (A5-A8, ao mar).": "Distinguishes the front façade (A1-A4, exposed to the excavation) from the side one (A5-A8, facing the sea).",
+    "Distinguidas frontal (A1-A4) e lateral (A5-A8) pela posição em planta.": "Front (A1-A4) and side (A5-A8) distinguished by position in plan.",
+    "Documentado nos relatórios; motivo da classificação de MNO e OP a confirmar": "Documented in the reports; reason for the classification of MNO and OP to be confirmed",
+    "Dois perfis HEB300 contra a viga de distribuição, apoiados na sapata do Núcleo 1 (após o fundo)": "Two HEB300 sections against the distribution beam, bearing on the footing of Core 1 (after the bottom)",
+    "Dos ": "Of the ",
+    "Edifício": "Building",
+    "Edifício / elemento": "Building / element",
+    "Edifício 1": "Building 1",
+    "Edifício 1": "Building 1",
+    "Edifício adjacente (15/25 · 10/20)": "Adjacent building (15/25 · 10/20)",
+    "Edifício em frente": "Building opposite",
+    "Elemento com maior movimentação: «": "Element with the largest movement: «",
+    "Elementos de contenção (esquemático)": "Retaining elements (schematic)",
+    "Em ALARME": "In ALARM",
+    "Em ALERTA": "In ALERT",
+    "Em alarme": "In alarm",
+    "Em alerta": "In alert",
+    "Em cada fase: barra azul = plano impactado; barra cinzenta = plano contratual. Barras vermelhas = suspensões (impactos).": "In each phase: blue bar = impacted schedule; grey bar = contractual schedule. Red bars = suspensions (impacts).",
+    "Entrada em alerta": "Entry into alert",
+    "Escala desenho->alvos": "Scale drawing->targets",
+    "Escavação": "Excavation",
+    "Escavação + bandas de laje + ancoragens": "Excavation + slab strips + anchors",
+    "Escavação até cota ": "Excavation to elev. ",
+    "Escavação completa": "Complete excavation",
+    "Escavação completa (fundo ": "Complete excavation (bottom ",
+    "Escavação para as bandas dos pisos 2 e 1 até 4,0 m (previstos 2,5 m)": "Excavation for the level 2 and 1 strips to 4.0 m (2.5 m planned)",
+    "Escolhe dois alvos diferentes.": "Choose two different targets.",
+    "Escolhe pelo menos uma layer para desenhar.": "Choose at least one layer to draw.",
+    "Escora metálica provisória (horizontal)<br>posição esquemática<extra></extra>": "Temporary steel strut (horizontal)<br>schematic position<extra></extra>",
+    "Escoras metálicas F-G/G-H (viga de coroamento)": "Steel struts F-G/G-H (capping beam)",
+    "Escoras metálicas de canto (Piso -2)": "Corner steel struts (Level -2)",
+    "Escoras metálicas de canto (alinhamentos B/C/D/E)": "Corner steel struts (lines B/C/D/E)",
+    "Escoras metálicas na VD H-I/I-J": "Steel struts on distribution beam H-I/I-J",
+    "Escoras metálicas na banda de laje do Piso 2": "Steel struts on the Level 2 slab strip",
+    "Escoras metálicas provisórias (esquemático)": "Temporary steel struts (schematic)",
+    "Espelhar horizontal": "Mirror horizontally",
+    "Espelhar vertical": "Mirror vertically",
+    "Esquema a partir das coordenadas reais dos alvos (posições relativas fieis; escala esquemática). O alvo selecionado aparece em estrela. Para uma foto real, coloca a imagem em 'fotos_alvos/": "Sketch from the real coordinates of the targets (relative positions faithful; schematic scale). The selected target appears as a star. For a real photo, put the image in 'fotos_alvos/",
+    "Esta aplicação apoia a **análise inversa** (*back-analysis*) da contenção periférica da reformulação do **Hotel Eden**, no Monte Estoril. A obra compreende uma escavação profunda — fundo à cota 4,55 m, cerca de 16 m abaixo do piso 1 (cota 20,95 m) e mais nas zonas em que o terreno natural é mais alto — executada ao abrigo de uma cortina de estacas ancorada e travada por bandas de laje, num contexto exigente: confina com **edifícios sensíveis**, em particular três edifícios vizinhos instrumentados (Edifícios 1, 2 e 3), e desenvolve-se **abaixo do nível freático** de repouso. A instrumentação instalada — inclinómetros, alvos topográficos, células de carga e piezómetros — permite acompanhar, ao longo do tempo, os deslocamentos induzidos pela escavação, tanto na própria contenção como nos edifícios vizinhos.": "This application supports the **back-analysis** of the peripheral retaining structure of the redevelopment of **Hotel Eden**, in Monte Estoril. The works comprise a deep excavation — bottom at elevation 4.55 m, about 16 m below level 1 (elevation 20.95 m) and more where the natural ground is higher — carried out within a pile wall anchored and braced by slab strips, in a demanding setting: it adjoins **sensitive buildings**, in particular three instrumented neighbouring buildings (Buildings 1, 2 and 3), and extends **below the rest water table**. The installed instrumentation — inclinometers, survey targets, load cells and piezometers — makes it possible to follow, over time, the displacements induced by the excavation, both in the retaining structure itself and in the neighbouring buildings.",
+    "Estacas Central e Nascente": "Central and east piles",
+    "Estacas junto ao Edifício 2": "Piles next to Building 2",
+    "Estacas E6_C_17 a E6_C_2 e E8_51 (alinhamento coincidente com o caneiro)": "Piles E6_C_17 to E6_C_2 and E8_51 (alignment coinciding with the culvert)",
+    "Estacas Poente e Norte": "West and north piles",
+    "Estacas periféricas (Edifício 2)": "Perimeter piles (Building 2)",
+    "Estado": "State",
+    "Estado calculado": "Computed state",
+    "Estado de confirmação": "Confirmation status",
+    "Estado dos alvos": "Target states",
+    "Estas a ver **": "You are viewing **",
+    "Este alçado não consta da lista de critérios dos relatórios de alvos; o critério de 17 m é assumido.": "This section is not in the list of criteria of the target reports; the 17 m criterion is assumed.",
+    "Estimativa de projeto": "Design estimate",
+    "Estrutura pisos -3 a -1": "Structure levels -3 to -1",
+    "Estrutura pisos 1 e 2 (em curso)": "Structure levels 1 and 2 (in progress)",
+    "Etiqueta com o nome de cada edifício, flutuando sobre os seus alvos.": "Label with the name of each building, floating over its targets.",
+    "Evolução da cota da água subterrânea.": "Evolution of the groundwater level.",
+    "Evolução do deslocamento": "Displacement evolution",
+    "Exagero vertical": "Vertical exaggeration",
+    "Exagero vertical do terreno": "Vertical exaggeration of the terrain",
+    "Excel de instrumentação": "Instrumentation Excel file",
+    "Excesso (%)": "Excess (%)",
+    "Fachada": "Façade",
+    "Fachada": "Façade",
+    "Fachadas do Edifício 1": "Building 1 façades",
+    "Falta a biblioteca 'ezdxf'. Acrescenta 'ezdxf' ao requirements.txt (e 'pip install ezdxf' se correres localmente) para ativar a leitura de desenhos.": "The 'ezdxf' library is missing. Add 'ezdxf' to requirements.txt (and 'pip install ezdxf' if running locally) to enable reading drawings.",
+    "Fase de escavação a representar": "Excavation stage to display",
+    "Faseamento da obra": "Construction phases",
+    "Fases da obra": "Construction phases",
+    "Fases da obra (datas do plano de trabalhos impactado): ": "Construction phases (dates of the impacted schedule): ",
+    "Fases de escavação (pisos)": "Excavation stages (levels)",
+    "Fator de aceleração (x)": "Acceleration factor (x)",
+    "Ficheiro DXF": "DXF file",
+    "Ficheiro de dados": "Data file",
+    "Ficheiro fonte": "Source file",
+    "Fim da injeção": "End of grouting",
+    "Fissurometros": "Crack gauges",
+    "Fissurómetro": "Crack gauge",
+    "Fissurómetros": "Crack gauges",
+    "Fissurómetros do Edifício 1": "Building 1 crack gauges",
+    "Fissurómetros em cinco fissuras do edifício (zeragem)": "Crack gauges on five cracks of the building (zeroing)",
+    "Fonte": "Source",
+    "Foto real do relatório, se disponível; caso contrário um alçado esquemático a partir das coordenadas.": "Real photo from the report, if available; otherwise a schematic elevation from the coordinates.",
+    "Frente": "Front",
+    "Frente escavação": "Excavation front",
+    "Frente junto ao Edifício 2; demolição do muro antigo (adjudicação 28/07, desmonte 29/07 a 21/08)": "Front next to Building 2; demolition of the old wall (award 28/07, dismantling 29/07 to 21/08)",
+    "Fundação e laje de fundo": "Foundation and bottom slab",
+    "Funde o modelo real do terreno (levantamento topográfico, com curvas de nível e volume de escavação) com os alvos e o seu movimento. Os alvos estão num referencial diferente do terreno, por isso são POUSADOS sobre a superfície por alinhamento aproximado (caixa-envolvente) — a posição é ILUSTRATIVA, para ler a tendência do movimento sobre o relevo. A medição precisa está no separador Alvos (2D).": "Merges the real terrain model (topographic survey, with contour lines and excavation volume) with the targets and their movement. The targets are in a reference system different from the terrain, so they are PLACED on the surface by approximate alignment (bounding box) — the position is ILLUSTRATIVE, to read the trend of the movement over the relief. The precise measurement is in the Targets (2D) tab.",
+    "Fundo": "Bottom",
+    "Fundo de escavação": "Excavation bottom",
+    "Fundo de escavação (": "Excavation bottom (",
+    "Fundo de escavação (contratual)": "Excavation bottom (contractual)",
+    "Fundo de escavação (impactado)": "Excavation bottom (impacted)",
+    "Fundo de escavação (−": "Excavation bottom (−",
+    "Furação e selagem (adotada)": "Drilling and grouting (adopted)",
+    "Furação/selagem": "Drilling/grouting",
+    "GH confirmado; AB a confirmar": "GH confirmed; AB to be confirmed",
+    "Geologia": "Geology",
+    "Geologia do terreno (Relatório ENGGEO, proc. 220216)": "Ground geology (ENGGEO report, proc. 220216)",
+    "Grandeza medida e convenção de sinal a confirmar": "Measured quantity and sign convention to be confirmed",
+    "Granularidade do eixo temporal": "Time axis granularity",
+    "Grupo": "Group",
+    "Gráficos de interação entre instrumentos: deformação vs. água vs. escavação vs. faseamento; deformação vs. carga na ancoragem; e a correlação direta (XY) com coeficiente r.": "Charts of interaction between instruments: deformation vs. water vs. excavation vs. construction phases; deformation vs. anchor load; and the direct correlation (XY) with coefficient r.",
+    "Gráficos que cruzam várias séries da instrumentação para mostrar como os movimentos acentuados acompanham os outros dados (água, escavação, faseamento, carga nas ancoragens). Demonstram a correlação entre os dados; a interpretação das causas e do autor.": "Charts that cross several instrumentation series to show how sharp movements follow the other data (water, excavation, construction phases, anchor loads). They show the correlation between the data; the interpretation of the causes is the author’s.",
+    "Grés": "Sandstone",
+    "Grés (C1As)": "Sandstone (C1As)",
+    "Grés consolidado, SPT>=60, RQD 76-100%": "Consolidated sandstone, SPT>=60, RQD 76-100%",
+    "Grés irreg. consolidado a consolidado, SPT>=60, RQD 45-75%": "Irregularly consolidated to consolidated sandstone, SPT>=60, RQD 45-75%",
+    "Grés pouco consolidado, SPT 11-30, RQD 0%": "Poorly consolidated sandstone, SPT 11-30, RQD 0%",
+    "Grés pouco consolidado, SPT 31-56, RQD 0%": "Poorly consolidated sandstone, SPT 31-56, RQD 0%",
+    "Grés/calcário irreg. consolidado, SPT>=60, RQD 0-25%": "Irregularly consolidated sandstone/limestone, SPT>=60, RQD 0-25%",
+    "Há duas componentes, selecionáveis na barra lateral: **Dados** (ilustração dos resultados de cada instrumento, geologia e planeamento, sem análise) e **Análise** (leitura dos resultados e correlação entre instrumentos). Usa os separadores no topo para navegar dentro de cada componente.": "There are two components, selectable in the sidebar: **Data** (illustration of the results of each instrument, geology and planning, without analysis) and **Analysis** (reading of the results and correlation between instruments). Use the tabs at the top to navigate within each component.",
+    "I1<->SC6, I2<->SC9, I3<->SC6, inferido por sobreposição das plantas de prospeção e de instrumentação. A sobreposição gráfica é feita por PROFUNDIDADE, não por cota (cota da boca dos tubos desconhecida).": "I1<->SC6, I2<->SC9, I3<->SC6, inferred by overlaying the investigation and instrumentation plans. The graphic overlay is made by DEPTH, not by elevation (collar elevation of the tubes unknown).",
+    "IMPACTADO: ": "IMPACTED: ",
+    "Identificar edifícios": "Identify buildings",
+    "Imagens das peças desenhadas do projeto de contenção periférica (JETsj, pranchas EDN-JET-ZZ-ZZ-DR-U-0002 a 0005). São a representação AUTORITATIVA e rigorosa da solução — cortina de estacas, bandas de laje por cota, ancoragens, escoras metálicas e faseamento. O 3D interativo acima é uma leitura do movimento dos alvos; estas vistas são a geometria de projeto.": "Images of the drawings of the peripheral retaining structure design (JETsj, sheets EDN-JET-ZZ-ZZ-DR-U-0002 to 0005). They are the AUTHORITATIVE and rigorous representation of the solution — pile wall, slab strips by elevation, anchors, steel struts and phasing. The interactive 3D above is a reading of the movement of the targets; these views are the design geometry.",
+    "Imagens das vistas 3D do projeto não encontradas (pasta 'projeto_vistas/'). Verifica que foi publicada junto com a app.": "3D views of the design not found ('projeto_vistas/' folder). Check that it was published with the app.",
+    "Imagens de localização não encontradas (pasta 'fotos_celulas/'). Verifica que foram publicadas com a app.": "Location images not found ('fotos_celulas/' folder). Check that they were published with the app.",
+    "Impactado": "Impacted",
+    "Impacto": "Impact",
+    "Impacto 1 — caneiro": "Impact 1 — culvert",
+    "Impacto 2 (as estacas seguem as da frente norte)": "Impact 2 (the piles follow those of the north front)",
+    "Impacto 2 (via bandas de laje dos pisos 2 e 1)": "Impact 2 (via the level 2 and 1 slab strips)",
+    "Impacto 2 — cabos BT/MT": "Impact 2 — LV/MV cables",
+    "Impacto 3 — Edifício 2": "Impact 3 — Building 2",
+    "Inclinómetro": "Inclinometer",
+    "Inclinómetro (deformada no tempo)": "Inclinometer (deformed shape over time)",
+    "Inclinómetros": "Inclinometers",
+    "Inclinómetros / perfis": "Inclinometers / profiles",
+    "Inclinómetros / resumo": "Inclinometers / summary",
+    "Incrementos": "Increments",
+    "Injeção": "Grouting",
+    "Injeção repetitiva (IR) em vez da IRS do projeto, com o acordo do projetista": "Repeated grouting (IR) instead of the IRS of the design, with the agreement of the designer",
+    "Instala 'ezdxf' para ativar a leitura de plantas DXF.": "Install 'ezdxf' to enable reading DXF plans.",
+    "Instala 'scipy' para ativar a superfície 3D interpolada.": "Install 'scipy' to enable the interpolated 3D surface.",
+    "Instrumentação": "Instrumentation",
+    "Instrumento": "Instrument",
+    "Instrumentos": "Instruments",
+    "Integral (+36 d.u.), pela sequência das estacas da frente poente e do corpo central/nascente": "Full (+36 w.d.), through the sequence of the piles of the west front and of the central/east body",
+    "Início": "Home",
+    "Início da injeção": "Start of grouting",
+    "Janela de velocidade: ": "Velocity window: ",
+    "Janela temporal": "Time window",
+    "Junto ao Edifício 2 (estacas periféricas, viga, muro M03, banda do piso 1)": "Next to Building 2 (perimeter piles, beam, wall M03, level 1 strip)",
+    "Lado E": "Side E",
+    "Lado N": "Side N",
+    "Lado O": "Side W",
+    "Lado S": "Side S",
+    "Lateral (mar)": "Side (sea)",
+    "Layers a desenhar": "Layers to draw",
+    "Legenda": "Legend",
+    "Leitura / geologia": "Reading / geology",
+    "Leitura acumulada (mm)": "Cumulative reading (mm)",
+    "Leitura de plantas de escavação em DXF, com opção de alinhamento aos alvos por pontos de referência.": "Reading of excavation plans in DXF, with the option of aligning them with the targets by reference points.",
+    "Leitura integrada por sondagem: a coluna litológica, os ensaios SPT e o zonamento geotécnico partilham o eixo de profundidade, para se lerem em conjunto. Sob ~0,5 m de aterro, o terreno e essencialmente grés dos 'Grés Superiores' (C1As), com calcário (C1A) apenas no fundo do SC8. A resistência não é uniforme: há troços de menor N(SPT) intercalados com nega (por exemplo, N 19-47 no SC8 entre as cotas ~24 e ~18 e N 22-38 no SC6 entre as cotas ~14 e ~6,6) e o RQD é nulo em grande parte das sondagens. Compare sondagens por COTA, não por profundidade (as bocas estão a cotas diferentes).": "Integrated reading by borehole: the lithological column, the SPT tests and the geotechnical zoning share the depth axis, to be read together. Under ~0.5 m of fill, the ground is essentially sandstone of the 'Upper Sandstones' (C1As), with limestone (C1A) only at the bottom of SC8. The strength is not uniform: there are stretches of lower N(SPT) interbedded with refusal (for example, N 19-47 in SC8 between elevations ~24 and ~18 and N 22-38 in SC6 between elevations ~14 and ~6.6) and the RQD is zero in much of the boreholes. Compare boreholes by ELEVATION, not by depth (the collars are at different elevations).",
+    "Leitura qualitativa (não fronteiras reais)": "Qualitative reading (not real boundaries)",
+    "Leituras": "Readings",
+    "Leituras acumuladas em mm desde 19/01/2026, tal como recebidas.": "Cumulative readings in mm since 19/01/2026, as received.",
+    "Leituras das células de carga duas vezes por semana": "Load cell readings twice a week",
+    "Leituras dos alvos duas vezes por semana": "Target readings twice a week",
+    "Leituras nulas de A5-A8 após 20/10/2025": "Null readings of A5-A8 after 20/10/2025",
+    "Leituras por cordas no edifício": "Readings by chords on the building",
+    "Limiar": "Threshold",
+    "Limiar de velocidade (mm/dia)": "Velocity threshold (mm/day)",
+    "Linhas verticais nas datas do plano de trabalhos impactado em que a escavação atingiu cada cota NA FRENTE do instrumento escolhido (plano de trabalhos impactado, por zona de estacas).": "Vertical lines at the dates of the impacted schedule on which the excavation reached each level AT THE FRONT of the chosen instrument (impacted schedule, by pile zone).",
+    "Litologia, NF e SPT da sondagem ": "Lithology, water table and SPT of borehole ",
+    "Litologia: ": "Lithology: ",
+    "Localização": "Location",
+    "Localização dos alvos — ": "Location of the targets — ",
+    "Localização: ": "Location: ",
+    "Long (2001) — solos rijos (0,05–0,25 %)": "Long (2001) — stiff soils (0.05–0.25%)",
+    "Lote": "Lot",
+    "Magnitude, distribuição espacial, ritmo e profundidade das movimentações, e observado vs. previsto. Ilustração factual dos resultados, para a escrita da tese.": "Magnitude, spatial distribution, rate and depth of the movements, and observed vs. predicted. Factual illustration of the results, for writing the dissertation.",
+    "Maior deslocamento horizontal: alvo ": "Largest horizontal displacement: target ",
+    "Maior excedência: «": "Largest exceedance: «",
+    "Marca a vermelho os alvos e setas em alarme e a laranja os em alerta, segundo os critérios oficiais recalculados.": "Marks in red the targets and arrows in alarm and in orange those in alert, according to the recalculated official criteria.",
+    "Marca dentro da caixa os níveis dos pisos (-1 a -4) como planos, a partir das cotas de projeto. São distâncias abaixo do coroamento, invariantes ao referencial.": "Marks inside the box the floor levels (-1 to -4) as planes, from the design elevations. They are distances below the capping beam, independent of the reference system.",
+    "Marcas mais finas ajudam a ler as campanhas (~8 em 8 dias).": "Finer ticks help to read the campaigns (~every 8 days).",
+    "Marcos de escavação da zona (datas do planeamento)": "Excavation milestones of the zone (planning dates)",
+    "Medida": "Measure",
+    "Mensal": "Monthly",
+    "Modelo 3D do projeto — localização da célula A26; Edifício 1 assinalado": "3D design model — location of cell A26; Building 1 marked",
+    "Modelo de terreno não disponível (falta terreno_mdt.json).": "Terrain model not available (terreno_mdt.json missing).",
+    "Monitorização": "Monitoring",
+    "Mostra a escavação até a cota do piso correspondente. As cotas são as do projeto; a escavação real progride por fases.": "Shows the excavation down to the elevation of the corresponding level. The elevations are those of the design; the real excavation progresses by stages.",
+    "Mostra a litologia, o nível freático e o perfil SPT de uma sondagem no mesmo eixo de profundidade, para relacionar a deformação com a resistência do terreno.": "Shows the lithology, the water table and the SPT profile of a borehole on the same depth axis, to relate the deformation to the strength of the ground.",
+    "Mostrar localização dos alvos no edifício": "Show the location of the targets on the building",
+    "Mostrar volume de escavação": "Show excavation volume",
+    "Movimento dos alvos no espaço, com a geometria da obra": "Movement of the targets in space, with the geometry of the works",
+    "Máx vs bloc. (%)": "Max vs lock-off (%)",
+    "Máx.": "Max.",
+    "Máx. desloc. acumulado total (mm)": "Max. total cumulative disp. (mm)",
+    "Máximo": "Maximum",
+    "Máximo global": "Overall maximum",
+    "Máximo global vs. profundidade fixa.": "Overall maximum vs. fixed depth.",
+    "Média": "Mean",
+    "Mínimo": "Minimum",
+    "NF de repouso (2022)": "Rest water table (2022)",
+    "No Edifício 1, a tese obtém ≈ 0,2 em A1/A2 e 0,4–0,5 nos restantes alvos.": "At Building 1, the dissertation obtains ≈ 0.2 at A1/A2 and 0.4–0.5 at the other targets.",
+    "Nascente": "East",
+    "Nascente/Sul (escavação)": "East/South (excavation)",
+    "Nascente/Sul — cortina do Edifício 2": "East/South — Building 2 wall",
+    "Navegação": "Navigation",
+    "Nega (N=60)": "Refusal (N=60)",
+    "Nenhuma aceleração acima dos critérios.": "No acceleration above the criteria.",
+    "Nenhuma: no plano, a suspensão não precede outras tarefas": "None: in the schedule, the suspension does not precede other tasks",
+    "Norte": "North",
+    "Norte — cortina do Edifício 3": "North — Building 3 wall",
+    "Nos registos mostrados, **": "In the records shown, **",
+    "Nota metodológica: a integração dos perfis inclinométricos assume a base fixa. As datas da sequência de obra provem do plano de trabalhos impactado (o contratual com três suspensões de frentes), não de um registo diário de obra. A posição dos alvos no 3D é aproximada — apoio visual, não modelo do maciço.": "Methodological note: the integration of the inclinometer profiles assumes a fixed base. The dates of the construction sequence come from the impacted schedule (the contractual one with three suspensions of fronts), not from a daily site record. The position of the targets in 3D is approximate — a visual aid, not a model of the ground.",
+    "Nota metodológica: estas limitações não invalidam a análise — delimitam o seu alcance. A app apresenta medições e correlações; a interpretação das causas (escavação, furação das ancoragens, rebaixamento da água, rigidez do maciço) é feita pelo engenheiro e uma correlação temporal não demonstra, por si só, causalidade.": "Methodological note: these limitations do not invalidate the analysis — they define its scope. The app presents measurements and correlations; the interpretation of the causes (excavation, anchor drilling, drawdown of the water, stiffness of the ground) is made by the engineer, and a temporal correlation does not, on its own, demonstrate causation.",
+    "Notas": "Notes",
+    "Num só eixo de tempo: a deformação medida (esquerda), a cota da água subterrânea (direita), os marcos de escavação (plano impactado) DA ZONA do alvo/inclinómetro escolhido (E1-E..., no fundo) e as fases da obra (faixas de cor). Cada instrumento e cruzado com a escavação da frente que lhe fica em frente — não com a do lado oposto.": "On a single time axis: the measured deformation (left), the groundwater level (right), the excavation milestones (impacted schedule) OF THE ZONE of the chosen target/inclinometer (E1-E..., at the bottom) and the construction phases (colour bands). Each instrument is crossed with the excavation of the front facing it — not with that of the opposite side.",
+    "Não": "No",
+    "Não consegui calcular o alinhamento: ": "Could not compute the alignment: ",
+    "Não consegui extrair a geometria. Detalhe: ": "Could not extract the geometry. Detail: ",
+    "Não consegui ler as layers do DXF. Detalhe: ": "Could not read the DXF layers. Detail: ",
+    "Não consegui ler o Excel. Detalhe: ": "Could not read the Excel file. Detail: ",
+    "Não encontrei '": "Could not find '",
+    "Não encontrei geometria nas layers escolhidas. Tenta outras.": "No geometry found in the chosen layers. Try others.",
+    "Não foi possível alinhar alvos e terreno.": "Could not align targets and terrain.",
+    "Nível freático": "Water table",
+    "Nível freático de repouso (2022)": "Rest water table (2022)",
+    "Nível piso -1": "Level -1",
+    "Nível piso -2": "Level -2",
+    "Nível piso -3": "Level -3",
+    "Nível piso 1": "Level 1",
+    "Nível piso 2": "Level 2",
+    "Nível provável (inferido)": "Probable level (inferred)",
+    "O alvo ": "Target ",
+    "O alvo mais afetado (": "The most affected target (",
+    "O contorno castanho é a envolvente dos alvos da contenção (convex hull), que aproxima o limite do recinto de escavação. Os alvos dos edifícios vizinhos aparecem agrupados e identificados por cor. As setas mostram a direção e magnitude do deslocamento acumulado (amplificado). Todos os alvos são de periferia — na cortina de contenção ou nas fachadas vizinhas; não há instrumentos dentro da escavação. Tudo no sistema de coordenadas dos alvos, sem necessidade de DXF.": "The brown outline is the envelope of the wall targets (convex hull), which approximates the boundary of the excavation. The targets of the neighbouring buildings appear grouped and identified by colour. The arrows show the direction and magnitude of the cumulative displacement (amplified). All targets are on the perimeter — on the retaining wall or on the neighbouring façades; there are no instruments inside the excavation. Everything in the coordinate system of the targets, with no need for a DXF.",
+    "O desenho tem **": "The drawing has **",
+    "O eixo vertical é a COTA (m), partilhada com as cotas de projeto da escavação/contenção e com o nível freático de repouso. Assim ve-se a que profundidade anda a água face a cada piso e ao fundo de escavação.": "The vertical axis is the ELEVATION (m), shared with the design elevations of the excavation/retaining structure and with the rest water table. This shows at what depth the water is relative to each level and to the excavation bottom.",
+    "O plano IMPACTADO (22/04/2026; data de estado 21/08/2026) é o plano CONTRATUAL com três suspensões de frentes inseridas durante a execução das estacas, recalculado com as durações contratuais. As datas são as do plano — não um registo independente da execução. A janela de instrumentação está assinalada.": "The IMPACTED schedule (22/04/2026; status date 21/08/2026) is the CONTRACTUAL schedule with three suspensions of fronts inserted during the execution of the piles, recalculated with the contractual durations. The dates are those of the schedule — not an independent record of the execution. The instrumentation window is marked.",
+    "O propósito da ferramenta não se esgota na visualização das leituras: procura sobretudo **relacionar a deformação medida com os acontecimentos da obra** — o avanço da escavação, o rebaixamento do nível freático, a execução das ancoragens e a natureza do maciço. O separador **Correlações** cruza estas séries num eixo temporal comum; a interpretação das causas cabe ao engenheiro, e uma correlação temporal não demonstra, por si só, causalidade.": "The purpose of the tool is not limited to visualising the readings: above all it seeks to **relate the measured deformation to the events of the works** — the progress of the excavation, the drawdown of the water table, the execution of the anchors and the nature of the ground. The **Correlations** tab crosses these series on a common time axis; the interpretation of the causes belongs to the engineer, and a temporal correlation does not, on its own, demonstrate causation.",
+    "O que ficou suspenso": "What was suspended",
+    "O que se assume": "What is assumed",
+    "O que é medido vs. o que é assumido: inferências, limitações e qualidade dos dados.": "What is measured vs. what is assumed: inferences, limitations and data quality.",
+    "Obra": "Works",
+    "Observado (máx)": "Observed (max)",
+    "Observado máx (mm)": "Observed max (mm)",
+    "Observações": "Remarks",
+    "Ocorrência": "Event",
+    "Ocorrência ou medida": "Event or measure",
+    "Origem": "Origin",
+    "Origem do desfasamento": "Origin of the delay",
+    "Os alvos tapados tem leitura 0,0000 no relatório; a app trata-as como ausência de leitura (a série não cai a zero).": "The covered targets have a reading of 0.0000 in the report; the app treats them as missing readings (the series does not drop to zero).",
+    "Os alçados mais deslocados situam-se em torno de 0,2 % de H (Clough & O'Rourke), acima das estimativas de projeto; os troços curtos travados por escoras de canto (FG, BF) e o anel (LM) ficam abaixo de 0,1 %. Valores subestimados: excluem o movimento anterior à zeragem de cada instrumento.": "The most displaced wall sections are around 0.2% of H (Clough & O'Rourke), above the design estimates; the short stretches braced by corner struts (FG, BF) and the ring (LM) stay below 0.1%. Underestimated values: they exclude the movement before the zeroing of each instrument.",
+    "Os deslocamentos são milimétricos e as coordenadas em metros; amplifica-se para ver.": "The displacements are millimetric and the coordinates in metres; they are amplified to be visible.",
+    "Os dois pontos do desenho coincidem.": "The two drawing points coincide.",
+    "Os relatórios calculam a variação sobre a «blocagem». Na A26, esse valor (833,5 kN) é a leitura da célula no patamar de 1,0P do ensaio, e não a carga de cravação: a primeira leitura da monitorização é 957,4 kN.": "The reports compute the variation over the «lock-off load». At A26, that value (833.5 kN) is the cell reading at the 1.0P stage of the test, and not the lock-off load: the first monitoring reading is 957.4 kN.",
+    "Os relatórios calculam a variação sobre a «blocagem»; na A26 esse valor (833,5 kN) é a leitura no patamar de ensaio. A app permite usar a primeira leitura (957,4 kN).": "The reports compute the variation over the «lock-off load»; at A26 that value (833.5 kN) is the reading at the test stage. The app allows the first reading (957.4 kN) to be used.",
+    "Outros": "Others",
+    "Para cada ancoragem: furação/selagem (○), injeção (barra roxa, do início ao fim) e tensionamento/ensaio (◆). A cor do tensionamento indica o intervalo entre o FIM da injeção e o tensionamento — o procedimento prevê 7 a 8 dias. Datas adotadas (folha Qualidade_Dados corrige registos incoerentes).": "For each anchor: drilling/grouting (○), grouting (purple bar, from start to end) and stressing/test (◆). The colour of the stressing indicates the interval between the END of grouting and stressing — the procedure provides for 7 to 8 days. Adopted dates (the Qualidade_Dados sheet corrects inconsistent records).",
+    "Para um alvo, percorre-se o tempo usando apenas as leituras disponíveis até cada data. Marca-se o primeiro sinal, a entrada em alerta/alarme (critérios dos relatórios, ΔH ou ΔV) e a antecedência entre ambos.": "For one target, time is traversed using only the readings available up to each date. The first signal, the entry into alert/alarm (criteria of the reports, ΔH or ΔV) and the lead time between both are marked.",
+    "Parcial (+32 d.u.): o plano permite iniciar as estacas seguintes 18 d.u. antes do fim da suspensão": "Partial (+32 w.d.): the schedule allows the following piles to start 18 w.d. before the end of the suspension",
+    "Paredes de escavação": "Excavation walls",
+    "Parâmetro": "Parameter",
+    "Parâmetros propostos (Quadros V-VII do relatório) que alimentam a modelação numérica da contenção. A coluna 'SPT típico' é a ponte para o perfil acima: é por ela que se lê em que zona está cada troço de terreno.": "Proposed parameters (Tables V-VII of the report) feeding the numerical modelling of the retaining structure. The 'Typical SPT' column is the bridge to the profile above: it shows in which zone each stretch of ground lies.",
+    "Perfil deformado": "Deformed profile",
+    "Perfil deformado em profundidade, evolução no tempo, velocidade e sinais precursores. Sobreposição da geologia.": "Deformed profile with depth, evolution over time, velocity and precursor signals. Geology overlay.",
+    "Período": "Period",
+    "Piezometros": "Piezometers",
+    "Piezómetro": "Piezometer",
+    "Piezómetros": "Piezometers",
+    "Piezómetros — cota da água vs. escavação": "Piezometers — water level vs. excavation",
+    "Piso": "Level",
+    "Piso -1": "Level -1",
+    "Piso -2": "Level -2",
+    "Piso -3": "Level -3",
+    "Piso -4": "Level -4",
+    "Piso 1": "Level 1",
+    "Piso 2 (coroamento zona alta)": "Level 2 (capping beam, high zone)",
+    "Plano de trabalhos contratual e impactado, as suspensões de frentes (impactos) e o desfasamento de cada frente.": "Contractual and impacted schedules, the suspensions of fronts (impacts) and the delay of each front.",
+    "Plano impactado": "Impacted schedule",
+    "Plano: execução": "Schedule: execution",
+    "Plano: tensionamento": "Schedule: stressing",
+    "Planta (DXF)": "Plan (DXF)",
+    "Planta alinhada com os alvos. Verifica visualmente se o contorno bate certo com a nuvem de alvos; se não, ajusta os pontos de referência.": "Plan aligned with the targets. Check visually whether the outline matches the cloud of targets; if not, adjust the reference points.",
+    "Planta de localização das células — A26 (Piso -1, cota 15,90)": "Location plan of the cells — A26 (Level -1, elev. 15.90)",
+    "Planta de localização geral (recinto) — Edifício 1 assinalado": "General location plan (site) — Building 1 marked",
+    "Planta do projeto (DXF)": "Design plan (DXF)",
+    "Planta em coordenadas locais do desenho. Ativa o alinhamento acima para a sobrepor aos alvos.": "Plan in local drawing coordinates. Enable the alignment above to overlay it on the targets.",
+    "Poente": "West",
+    "Poente/Sul": "West/South",
+    "Poente/Sul — cortina do Edifício 1": "West/South — Building 1 wall",
+    "Pontos insuficientes na janela da escavação para o XY.": "Not enough points in the excavation window for the XY plot.",
+    "Posição ao longo da fachada (m, relativo)": "Position along the façade (m, relative)",
+    "Poucos pontos na janela comum ao piezómetro para calcular a correlação.": "Too few points in the window common to the piezometer to compute the correlation.",
+    "Precisas de indicar, para 2 alvos, onde eles estão no desenho. A coordenada no sistema dos alvos já vêm do Excel.": "You need to indicate, for 2 targets, where they are in the drawing. The coordinate in the target system already comes from the Excel file.",
+    "Precursores": "Precursors",
+    "Preenche as coordenadas dos 2 pontos no desenho para calcular o alinhamento.": "Fill in the coordinates of the 2 points in the drawing to compute the alignment.",
+    "Pressuposto": "Assumption",
+    "Pressuposto declarado": "Stated assumption",
+    "Pressupostos": "Assumptions",
+    "Pressupostos, inferências e qualidade dos dados": "Assumptions, inferences and data quality",
+    "Previsto (mm)": "Predicted (mm)",
+    "Previsto (projeto)": "Predicted (design)",
+    "Primeira": "First",
+    "Primeira leitura": "First reading",
+    "Primeira leitura (957,4 kN)": "First reading (957.4 kN)",
+    "Primeira leitura da monitorização": "First monitoring reading",
+    "Profundidade": "Depth",
+    "Profundidade (m)": "Depth (m)",
+    "Profundidade abaixo da boca (m)": "Depth below collar (m)",
+    "Profundidade do deslocamento máximo de cada inclinómetro e evolução da deformada ao longo do tempo.": "Depth of the maximum displacement of each inclinometer and evolution of the deformed shape over time.",
+    "Profundidade do máx (m)": "Depth of max (m)",
+    "Profundidade do máximo (m)": "Depth of the maximum (m)",
+    "Profundidade fixa (": "Fixed depth (",
+    "Profundidade fixa (m)": "Fixed depth (m)",
+    "Propagação no plano": "Propagation in the schedule",
+    "Página": "Page",
+    "Quantificação factual do que a instrumentação mediu: quanto, onde, a que ritmo e a que profundidade, e como se compara com a estimativa de projeto. Ilustração de resultados, sem interpretação de causas.": "Factual quantification of what the instrumentation measured: how much, where, at what rate and at what depth, and how it compares with the design estimate. Illustration of results, without interpretation of causes.",
+    "Quinzenal": "Fortnightly",
+    "Re-zeragem A5b–A8b": "Re-zeroing A5b–A8b",
+    "Realçar Edifício 1": "Highlight Building 1",
+    "Realçar fachadas do Edifício 1": "Highlight the Building 1 façades",
+    "Recalculado de ΔH/ΔV com os critérios do relatório; comparado com a coluna Estado do Excel (fórmula) — coerência entre implementações, não confirmação do estado publicado nos relatórios.": "Recalculated from ΔH/ΔV with the criteria of the report; compared with the State column of the Excel file (formula) — consistency between implementations, not confirmation of the state published in the reports.",
+    "Referencial de cota (3D)": "Elevation reference (3D)",
+    "Referência da variação de carga": "Reference of the load variation",
+    "Referência das células de carga": "Load cell reference",
+    "Registo: furação": "Record: drilling",
+    "Registo: tensionamento": "Record: stressing",
+    "Registos do empreiteiro (furação e selagem, multi-injeção e ensaios). Alçado GH segundo o alçado com a numeração das ancoragens; no troço poente do AB, o nível é inferido e a correspondência com o plano (?) está por confirmar. O plano trata as ancoragens dos dois lados de cada nível numa só tarefa. O procedimento de execução prevê o tensionamento 7 a 8 dias após o fim das injeções. Datas incoerentes nos registos foram estimadas (folha Qualidade_Dados).": "Contractor records (drilling and grouting, multi-grouting and tests). Section GH according to the elevation drawing with the anchor numbering; on the western stretch of AB, the level is inferred and the correspondence with the schedule (?) is to be confirmed. The schedule treats the anchors on both sides of each level as a single task. The execution procedure provides for stressing 7 to 8 days after the end of grouting. Inconsistent dates in the records were estimated (Qualidade_Dados sheet).",
+    "Regra": "Rule",
+    "Regra melhorada (Secção 5.3.5): compara cada leitura com a última feita há pelo menos 7 dias, em vez da leitura imediatamente anterior. Aplica-se à réplica em tempo real dos precursores.": "Improved rule (Section 5.3.5): compares each reading with the last one taken at least 7 days before, instead of the immediately preceding reading. Applies to the real-time replay of the precursors.",
+    "Regular": "Regular",
+    "Relatórios": "Reports",
+    "Relatórios (833,5 kN)": "Reports (833.5 kN)",
+    "Ressalvas identificadas no próprio modelo de dados, transcritas da folha Qualidade_Dados.": "Caveats identified in the data model itself, transcribed from the Qualidade_Dados sheet.",
+    "Edifício 2": "Building 2",
+    "Resultados": "Results",
+    "Resultados — movimentações observadas": "Results — observed movements",
+    "Rotação": "Rotation",
+    "SE/nascente": "SE/east",
+    "SPT típico (N)": "Typical SPT (N)",
+    "Edifício 1 (pisos 2 e 1)": "Building 1 (levels 2 and 1)",
+    "Edifício 1": "Building 1",
+    "Sem ancoragens para o alçado escolhido.": "No anchors for the chosen section.",
+    "Sem componentes ΔM/ΔP para desenhar a roseta destes alvos.": "No ΔM/ΔP components to draw the rose of these targets.",
+    "Sem coordenadas suficientes para esquematizar este edifício.": "Not enough coordinates to sketch this building.",
+    "Sem dados de alvos.": "No target data.",
+    "Sem dados de células de carga.": "No load cell data.",
+    "Sem dados de deformação para a série escolhida.": "No deformation data for the chosen series.",
+    "Sem dados de inclinómetros para o perfil de profundidade.": "No inclinometer data for the depth profile.",
+    "Sem dados suficientes para os envelopes empíricos.": "Not enough data for the empirical envelopes.",
+    "Sem desfasamento: primeiras estacas poente e norte, viga de coroamento E8_77–E8_104 e ancoragens, escoras F-G/G-H e H-I/I-J, VD do piso 1 em EF/FG/GH e ancoragens": "No delay: first west and north piles, capping beam E8_77–E8_104 and anchors, struts F-G/G-H and H-I/I-J, level 1 distribution beam at EF/FG/GH and anchors",
+    "Sem instrumentos em atraso face à data de estado.": "No instruments delayed relative to the status date.",
+    "Sem leitura": "No reading",
+    "Sem leituras com data válida.": "No readings with a valid date.",
+    "Semanal": "Weekly",
+    "Sim": "Yes",
+    "Sinais": "Signals",
+    "Sinais precursores — antecedência e seletividade": "Precursor signals — lead time and selectivity",
+    "Sinais seguidos de alerta (%)": "Signals followed by alert (%)",
+    "Sinal": "Signal",
+    "Sinal precursor": "Precursor signal",
+    "Sistema": "System",
+    "Sobrepor geologia + SPT da sondagem": "Overlay geology + SPT of the borehole",
+    "Sondagem": "Borehole",
+    "Sondagem de referência": "Reference borehole",
+    "Sugerida por proximidade: **": "Suggested by proximity: **",
+    "Sul": "South",
+    "Superfície do terreno entre as cotas ": "Terrain surface between elevations ",
+    "Superfície real do terreno (modelo digital triangulado) do levantamento topográfico, no referencial da obra e com COTAS REAIS. Mostra a topografia original e o volume a escavar até a cota de fundo (4,55 m). Complementa o 3D dos alvos — que usa um referencial local e cotas relativas — com geometria absoluta.": "Real terrain surface (triangulated digital model) from the topographic survey, in the site reference system and with REAL ELEVATIONS. Shows the original topography and the volume to be excavated down to the bottom elevation (4.55 m). Complements the 3D of the targets — which uses a local reference system and relative elevations — with absolute geometry.",
+    "Supressão de um dos perfis de ligação do anel de compressão às fundações": "Removal of one of the sections connecting the compression ring to the foundations",
+    "Suspensão": "Suspension",
+    "São precisas pelo menos duas séries para construir a matriz.": "At least two series are needed to build the matrix.",
+    "Série": "Series",
+    "Série curta de mais para a réplica.": "Series too short for the replay.",
+    "Série de base": "Base series",
+    "Série de deformação": "Deformation series",
+    "Série insuficiente (alvo ou piezómetro) para a correlação.": "Insufficient series (target or piezometer) for the correlation.",
+    "Séries temporais de deslocamento horizontal e assentamento vertical, por edifício e por alvo.": "Time series of horizontal displacement and vertical settlement, by building and by target.",
+    "Temperatura (°C)": "Temperature (°C)",
+    "Tendência": "Trend",
+    "Tensionamento (": "Stressing (",
+    "Tensionamento (sem registo do intervalo)": "Stressing (no record of the interval)",
+    "Tensionamento e ensaio (adotado)": "Stressing and test (adopted)",
+    "Terreno": "Terrain",
+    "Terreno + Alvos 3D": "Terrain + 3D targets",
+    "Terreno + Alvos 3D — movimento sobre o relevo real": "Terrain + 3D targets — movement over the real relief",
+    "Terreno 3D — modelo do levantamento topográfico": "3D terrain — topographic survey model",
+    "Terreno original": "Original terrain",
+    "Terreno original (sem escavar)": "Original terrain (not excavated)",
+    "The Eden - Instrumentação": "The Eden - Instrumentation",
+    "Tirantes nos muros sobre as vigas de coroamento": "Tie-backs in the walls above the capping beams",
+    "Todos": "All",
+    "Total": "Total",
+    "Transparência sobre o que é MEDIDO e o que é ASSUMIDO. Cada pressuposto tem a sua origem e o estado de confirmação. Esta secção reúne, num só sítio, as ressalvas assinaladas ao longo da aplicação.": "Transparency about what is MEASURED and what is ASSUMED. Each assumption has its origin and confirmation status. This section brings together, in one place, the caveats flagged throughout the application.",
+    "Tratados como séries separadas; os 'b' foram re-zerados em 20/10/2025 e os acumulados não são comparáveis diretamente com A1-A4.": "Treated as separate series; the 'b' targets were re-zeroed on 20/10/2025 and their cumulative values are not directly comparable with A1-A4.",
+    "Tratamento": "Processing",
+    "Travessa metálica (escoramento) na banda do Piso -2": "Steel cross-member (bracing) on the Level -2 strip",
+    "Um nível de carotes Ø80 mm ao nível do piso 1, entre estacas, para aliviar a pressão da água": "One row of Ø80 mm cored holes at level 1, between piles, to relieve the water pressure",
+    "Um sinal precursor ocorre quando a velocidade do deslocamento horizontal entre leituras atinge o limiar (velocidade) ou acelera para o fator definido (aceleração). Os limiares da barra lateral (v ≥ ": "A precursor signal occurs when the velocity of the horizontal displacement between readings reaches the threshold (velocity) or accelerates by the defined factor (acceleration). The sidebar thresholds (v ≥ ",
+    "Uma sondagem (detalhe)": "One borehole (detail)",
+    "Unidade": "Unit",
+    "Usar o ficheiro ao lado do script": "Use the file next to the script",
+    "VD Piso -1": "Level -1 distribution beam",
+    "VD Piso -2": "Level -2 distribution beam",
+    "VD Piso -2 + fundo Banda Laje": "Level -2 distribution beam + bottom of slab strip",
+    "VD Piso -3": "Level -3 distribution beam",
+    "VD Piso -3 + VD da grua (2 ancoragens)": "Level -3 distribution beam + crane distribution beam (2 anchors)",
+    "Valor": "Value",
+    "Valores da memória descritiva (17 m: 20/40 · 10/15 mm; 24 m: 30/40 · 10/15 mm), atribuídos a cada alçado segundo os relatórios de alvos: 17 m em AB, CD, DE, BF e PQ; 24 m em FG, GH, JK, KL, LM, MNO e OP (DE e LM a partir do R36, de 16/03/2026). MNO e OP têm 17 a 20 m de cortina, mas são tratados como 24 m.": "Values of the design report (17 m: 20/40 · 10/15 mm; 24 m: 30/40 · 10/15 mm), assigned to each wall section according to the target reports: 17 m at AB, CD, DE, BF and PQ; 24 m at FG, GH, JK, KL, LM, MNO and OP (DE and LM from R36, of 16/03/2026). MNO and OP have 17 to 20 m of wall, but are treated as 24 m.",
+    "Variação (%)": "Variation (%)",
+    "Variação calculada": "Computed variation",
+    "Variação calculada em relação à primeira leitura (": "Variation computed relative to the first reading (",
+    "Velocidade": "Velocity",
+    "Velocidade (mm/dia entre campanhas) do deslocamento horizontal de um alvo. Mostra quando o movimento acelerou.": "Velocity (mm/day between campaigns) of the horizontal displacement of a target. Shows when the movement accelerated.",
+    "Velocidade (mm/dia)": "Velocity (mm/day)",
+    "Velocidade e sinais precursores": "Velocity and precursor signals",
+    "Velocidade entre leituras consecutivas": "Velocity between consecutive readings",
+    "Velocidade máx. (mm/dia)": "Max. velocity (mm/day)",
+    "Velocidade máxima do alvo ": "Maximum velocity of target ",
+    "Velocidade sobre intervalo ≥ 7 dias": "Velocity over an interval ≥ 7 days",
+    "Velocidade sobre ≥ 7 dias (reduz ruído)": "Velocity over ≥ 7 days (reduces noise)",
+    "Ver divergências estado recalculado vs. relatório": "See discrepancies recalculated state vs. report",
+    "Vetores do deslocamento horizontal (componentes ΔM/ΔP) na última campanha. 0° = Norte (+P), 90° = Este (+M). O desvio do rumo face à direção do alçado é leitura do autor (a tese obtém ≤ 26°).": "Horizontal displacement vectors (ΔM/ΔP components) in the last campaign. 0° = North (+P), 90° = East (+M). The deviation of the bearing from the direction of the wall section is the author’s reading (the dissertation obtains ≤ 26°).",
+    "Viga coroamento + muros": "Capping beam + walls",
+    "Viga coroamento + muros contenção": "Capping beam + retaining walls",
+    "Viga da grua": "Crane beam",
+    "Viga de coroamento/distribuição (projeto: cota real)": "Capping/distribution beam (design: real elevation)",
+    "Viga de coroamento/distribuição<br>cota ": "Capping/distribution beam<br>elev. ",
+    "Vista": "View",
+    "Vista 3D (4/4)": "3D view (4/4)",
+    "Vistas 3D (1/4) — vista global": "3D views (1/4) — global view",
+    "Vistas 3D (2/4)": "3D views (2/4)",
+    "Vistas 3D (3/4)": "3D views (3/4)",
+    "Volume de escavação": "Excavation volume",
+    "X no desenho": "X in the drawing",
+    "X, Y local do desenho": "Local X, Y of the drawing",
+    "Y no desenho": "Y in the drawing",
+    "Yoo (2001) — terreno sobre rocha (0,05–0,15 %)": "Yoo (2001) — soil overlying rock (0.05–0.15%)",
+    "Zeragem a 19/01/2026. A grandeza medida e a convenção de sinal não constam do quadro de leituras (a confirmar); variações de 0,5 mm estão no limite da resolução. Linhas roxas: medidas com data indicadas pela obra (separador «Obra»).": "Zeroed on 19/01/2026. The measured quantity and the sign convention are not given in the readings table (to be confirmed); variations of 0.5 mm are at the limit of the resolution. Purple lines: dated measures reported by the site («Works» tab).",
+    "Zona": "Zone",
+    "Zona geotécnica no perfil SPT": "Geotechnical zone in the SPT profile",
+    "aceleração": "acceleration",
+    "alarme": "alarm",
+    "alerta": "alert",
+    "alvo": "target",
+    "ancoragem": "anchor",
+    "ancoragens": "anchors",
+    "até cota 19,80/19,00 (fundo VD Piso 1)": "to elev. 19.80/19.00 (bottom of level 1 beam)",
+    "até cota 21,45": "to elev. 21.45",
+    "até cota VD Piso -1": "to elev. of level -1 beam",
+    "até cota VD Piso -2": "to elev. of level -2 beam",
+    "até cota VD Piso -3": "to elev. of level -3 beam",
+    "blocagem": "lock-off load",
+    "campanha": "campaign",
+    "campanhas": "campaigns",
+    "canto SO (poente)": "SW corner (west)",
+    "clínica": "clinic",
+    "com a escavação de 10–25/02/2026": "with the excavation of 10–25/02/2026",
+    "com a escavação de 12–25/11/2025": "with the excavation of 12–25/11/2025",
+    "contenção": "wall",
+    "contratual": "contractual",
+    "cota": "elev.",
+    "cota 14,85 (-4,95 m) + VD da grua (2 ancoragens)": "elev. 14.85 (-4.95 m) + crane beam (2 anchors)",
+    "cota 22,55 -> 18,90": "elev. 22.55 -> 18.90",
+    "cota 22,55 → 18,90": "elev. 22.55 → 18.90",
+    "cota 26,50 -> 23,75": "elev. 26.50 -> 23.75",
+    "cota 26,50 → 23,75": "elev. 26.50 → 23.75",
+    "cota 29 -> 22,55": "elev. 29 -> 22.55",
+    "cota 29 → 22,55 (fundo Anel P2)": "elev. 29 → 22.55 (bottom of ring P2)",
+    "data": "date",
+    "de 4,95 m → cota 14,85": "from 4.95 m → elev. 14.85",
+    "deslocamento": "displacement",
+    "dias": "days",
+    "escavação": "excavation",
+    "frontal": "front",
+    "fundo": "bottom",
+    "fundo VD Piso 1 (19,80/19,00)": "bottom of level 1 beam (19.80/19.00)",
+    "fundo de escavação": "excavation bottom",
+    "gama (kN/m3)": "gamma (kN/m3)",
+    "gama: peso volúmico | c': coesão | fi': ângulo de atrito | E': módulo de deformabilidade. Zonas ZG3-ZG1 (rocha) com c' e E' em MPa/GPa; ZG6-ZG4 (solo/grés brando) em kPa/MPa. Nota: as três zonas de nega (ZG3-ZG1) distinguem-se pelo RQD, que o SPT sozinho não mede — por isso o perfil agrupa-as como 'nega'.": "gamma: unit weight | c': cohesion | phi': friction angle | E': deformation modulus. Zones ZG3-ZG1 (rock) with c' and E' in MPa/GPa; ZG6-ZG4 (soil/soft sandstone) in kPa/MPa. Note: the three refusal zones (ZG3-ZG1) are distinguished by the RQD, which the SPT alone does not measure — so the profile groups them as 'refusal'.",
+    "impactado": "impacted",
+    "indireta (edifício vizinho)": "indirect (neighbouring building)",
+    "lateral": "side",
+    "leitura": "reading",
+    "leituras": "readings",
+    "máx.": "max.",
+    "média": "mean",
+    "mín.": "min.",
+    "não discriminado": "not specified",
+    "piso": "level",
+    "r > 0: as séries sobem juntas; r < 0: uma sobe enquanto a outra desce (típico da água, cuja cota desce quando o rebaixamento acompanha a escavação). A matriz de incrementos é a mais exigente: só fica alta se os movimentos coincidirem no tempo. Correlação não é causa — a leitura das causas é do autor no texto.": "r > 0: the series rise together; r < 0: one rises while the other falls (typical of the water, whose level falls when the drawdown follows the excavation). The increments matrix is the most demanding: it is only high if the movements coincide in time. Correlation is not causation — the reading of the causes is the author’s, in the text.",
+    "relatório": "report",
+    "relatórios": "reports",
+    "sem": "none",
+    "semanas": "weeks",
+    "sinal": "signal",
+    "sinal após alerta": "signal after alert",
+    "sistema dos alvos (M, P)": "target system (M, P)",
+    "topo N (bolbo curvo)": "N top (curved bulb)",
+    "velocidade": "velocity",
+    "» (máx ": "» (max ",
+    "» — observado ": "» — observed ",
+    "Água": "Water",
+    "Água ": "Water ",
+    "Água abundante numa ancoragem junto à célula da A26; recomendadas furação de drenagem entre estacas e tirante preventivo": "Abundant water at an anchor next to the A26 cell; cored drainage holes between piles and a preventive tie-back recommended",
+    "×) aplicam-se à réplica em tempo real; a tabela de sensibilidade usa os valores da dissertação.": "×) apply to the real-time replay; the sensitivity table uses the values of the dissertation.",
+    "Últ. desloc. máx. (mm)": "Last max. disp. (mm)",
+    "Última leitura": "Last reading",
+    "água": "water",
+    "ΔM acumulado (mm)": "Cumulative ΔM (mm)",
+    "ΔP acumulado (mm)": "Cumulative ΔP (mm)",
+    "ΔZ acumulado (mm)": "Cumulative ΔZ (mm)",
+    "δ_h,máx (mm)": "δ_h,max (mm)",
+    "δh acumulado": "cumulative δh",
+    "δh acumulado (mm)": "cumulative δh (mm)",
+    "↔ Deslocamento horizontal (H)": "↔ Horizontal displacement (H)",
+    "↕ Assentamento vertical (ΔZ)": "↕ Vertical settlement (ΔZ)",
+    "↳ Frente de escavação associada a **": "↳ Excavation front associated with **",
+    "↳ Frente de escavação: **": "↳ Excavation front: **",
+    "↳ Sem zona de escavação associada a esta série — mostram-se os marcos globais de escavação.": "↳ No excavation zone associated with this series — the global excavation milestones are shown.",
+    "≤ 8 dias": "≤ 8 days",
+    "⚓ = ancoragens · ⟷ = escoras metálicas · ▭ = banda de laje (betonagem), nas datas do plano impactado para a frente. A cota desce em degraus (cada degrau = uma cota atingida).": "⚓ = anchors · ⟷ = steel struts · ▭ = slab strip (casting), at the dates of the impacted schedule for the front. The level goes down in steps (each step = one level reached).",
+    "⚠ A localização da célula ": "⚠ The location of cell ",
+    "⚠ As células NÃO começaram a medir na mesma data: a ": "⚠ The cells did NOT start measuring on the same date: ",
+    "⚠ Os elementos de contenção (viga de coroamento/distribuição, bandas de laje, escoras metálicas) são ESQUEMÁTICOS mas INFORMADOS PELO PROJETO: as cotas dos pisos e as cores das lajes seguem as peças desenhadas da JETsj (EDN-JET-ZZ-ZZ-DR-U-0021..0027), e as escoras são horizontais entre lados (como nos cortes tipo). A FORMA em planta (contorno curvo, geometria exata de cada banda) e aproximada — não foi extraída do projeto. Para a representação rigorosa, ver as Vistas 3D do projeto no fim deste separador.": "⚠ The retaining elements (capping/distribution beam, slab strips, steel struts) are SCHEMATIC but INFORMED BY THE DESIGN: the floor elevations and the colours of the slabs follow the JETsj drawings (EDN-JET-ZZ-ZZ-DR-U-0021..0027), and the struts are horizontal between sides (as in the typical sections). The SHAPE in plan (curved outline, exact geometry of each strip) is approximate — it was not extracted from the design. For the rigorous representation, see the 3D views of the design at the end of this tab.",
+    "⛏ Escavação na frente (cota atingida, data do planeamento): ": "⛏ Excavation at the front (level reached, planning date): ",
+    "✓ Localização confirmada: a célula ": "✓ Location confirmed: cell ",
+    "📈 Evolução do deslocamento": "📈 Displacement evolution",
+    "📍 Ver localização da célula ": "📍 See location of cell ",
+    "📍 Ver localização do alvo ": "📍 See location of target ",
+    "📐 Perfil deformado": "📐 Deformed profile",
+    "📐 Vistas 3D do projeto de contenção (JETsj) — referência": "📐 3D views of the retaining structure design (JETsj) — reference",
+    # --- Alvos (2D): sobreposicoes (V79) ---
+    "Faseamento no gráfico": "Phasing on the chart",
+    "Nenhum": "None",
+    "Períodos de escavação": "Excavation periods",
+    "Fases da obra (plano)": "Construction phases (schedule)",
+    "Assinalar o máximo": "Mark the maximum",
+    "Datas de referência": "Reference dates",
+    "Data de referência": "Reference date",
+    "Comparar com (intervalo mín.–máx.)": "Compare with (min.–max. range)",
+    "Períodos de escavação: seis períodos delimitados pelo início da escavação de cada nível e pelo fim da escavação, segundo o plano de trabalhos impactado (faixas alternadas). Fases da obra: barra de faseamento do plano no topo do gráfico. São uma referência comum: as frentes avançaram desfasadas.": "Excavation periods: six periods bounded by the start of the excavation of each level and by the end of the excavation, according to the impacted works schedule (alternating bands). Construction phases: phasing bar of the schedule at the top of the chart. They are a common reference: the fronts advanced out of step.",
+    "Assinala o maior deslocamento horizontal e o maior |ΔZ| dos alvos escolhidos, no período visível.": "Marks the largest horizontal displacement and the largest |ΔZ| of the selected targets, in the visible period.",
+    "Marca as campanhas escolhidas (linha vertical e valor de cada alvo) e lista, por baixo de cada gráfico, os valores nessas datas e os incrementos entre elas.": "Marks the selected campaigns (vertical line and value of each target) and lists, below each chart, the values on those dates and the increments between them.",
+    "Sobrepõe, em faixa, o intervalo entre o mínimo e o máximo dos alvos de outro grupo em cada campanha. Só entram os alvos com a zeragem inicial do grupo; os de substituição, zerados mais tarde, ficam de fora.": "Overlays, as a band, the range between the minimum and the maximum of the targets of another group in each campaign. Only the targets with the initial zeroing of the group are included; replacement targets, zeroed later, are left out.",
+    "Os pares de alvos à mesma posição em planta (a menos de 1 m) e a cotas diferentes partilham a cor: tom escuro no superior (sup.) e claro no inferior (inf.).": "Pairs of targets at the same plan position (less than 1 m apart) and at different elevations share the colour: dark shade for the upper one (upper) and light shade for the lower one (lower).",
+    "Faixas: intervalo entre o mínimo e o máximo, em cada campanha, dos alvos de cada grupo comparado (só os alvos com a zeragem inicial do grupo).": "Bands: range between the minimum and the maximum, in each campaign, of the targets of each compared group (only the targets with the initial zeroing of the group).",
+    "Valores nas datas de referência (mm; última leitura até cada data, no máximo 10 dias antes) e incrementos entre datas consecutivas:": "Values on the reference dates (mm; last reading up to each date, at most 10 days before) and increments between consecutive dates:",
+    "Períodos de escavação, segundo o plano de trabalhos impactado (referência comum; as frentes avançaram desfasadas): ": "Excavation periods, according to the impacted works schedule (common reference; the fronts advanced out of step): ",
+    "Antes da<br>escavação": "Before<br>excavation",
+    "Pisos 2 e 1": "Levels 2 and 1",
+    "Piso -3<br>e fundo": "Level -3<br>and bottom",
+    "Laje de fundo<br>e estrutura": "Bottom slab<br>and structure",
+    "antes da escavação geral": "before the general excavation",
+    "pisos 2 e 1": "levels 2 and 1",
+    "piso -1, com a escavação de 4,95 m da frente poente": "level -1, with the 4.95 m excavation of the west front",
+    "piso -2 e escavação até à viga do piso -3": "level -2 and excavation down to the level -3 beam",
+    "piso -3 e fundo": "level -3 and bottom",
+    "laje de fundo e estrutura": "bottom slab and structure",
+    "última leitura": "last reading",
+    "Máx.": "Max.",
+    "Outros grupos": "Other groups",
+    "Escolher campanhas": "Choose campaigns",
+    "Escolher grupos": "Choose groups",
+    "(mín.–máx.)": "(min.–max.)",
+    "mín.": "min.",
+    "(sup.)": "(upper)",
+    "(inf.)": "(lower)",
+    "Re-zeragem": "Re-zeroing",
+    # --- V81: estimativa do projeto ---
+    "Estimativa do projeto": "Design estimate",
+    "Estimativa do projeto: ": "Design estimate: ",
+    "ultrapassada a ": "exceeded on ",
+    "Estimativa do projeto ultrapassada a ": "Design estimate exceeded on ",
+    "Estimativa do projeto (memória descritiva)": "Design estimate (design report)",
+    "Desenha no gráfico horizontal a estimativa da memória descritiva para a última fase de escavação na zona deste alçado (20 mm a poente e norte; 10 mm a nascente e sul; atribuição inferida) e a data em que o máximo dos alvos escolhidos a ultrapassou.": "Draws on the horizontal chart the design-report estimate for the last excavation stage in the zone of this wall section (20 mm west and north; 10 mm east and south; inferred assignment) and the date on which the maximum of the selected targets exceeded it.",
+    "Deslocamento horizontal máximo OBSERVADO (todas as campanhas) vs. ESTIMATIVA DO PROJETO para a última fase de escavação (memória descritiva: ~20 mm na cortina poente/norte e ~10 mm na nascente/sul). Nos alçados, a estimativa é a da zona do projeto em que cada um se situa (atribuição inferida da posição; menos segura nos alçados BF, CD e DE, no canto sudoeste). Nos edifícios vizinhos, a comparação é INDIRETA: a estimativa refere-se à cortina adjacente, não ao edifício. A coluna «Ultrapassada a» indica a primeira campanha em que o máximo do grupo atingiu a estimativa.": "Maximum OBSERVED horizontal displacement (all campaigns) vs. DESIGN ESTIMATE for the last excavation stage (design report: ~20 mm on the west/north wall and ~10 mm on the east/south wall). For wall sections, the estimate is that of the design zone where each one lies (assignment inferred from the position; less certain for sections BF, CD and DE, in the south-west corner). For neighbouring buildings, the comparison is INDIRECT: the estimate refers to the adjacent wall, not to the building. The «Exceeded on» column gives the first campaign in which the maximum of the group reached the estimate.",
+    "Zona": "Zone",
+    "Observado/previsto": "Observed/predicted",
+    "Ultrapassada a": "Exceeded on",
+    "Maior excedência na contenção: ": "Largest exceedance on the retaining wall: ",
+    " vezes a estimativa de ": " times the estimate of ",
+    "poente/norte": "west/north",
+    "Deslocamento horizontal máximo de cada alçado (máximo dos prismas em todas as campanhas) e de cada inclinómetro (máximo do perfil), em função da profundidade escavada H (do topo das estacas ao fundo de escavação), face aos referenciais empíricos e às estimativas do projeto (memória descritiva, por zona do projeto). As linhas a tracejado são δ_h = p%·H; a sombra marca as faixas de Long e de Yoo.": "Maximum horizontal displacement of each wall section (maximum of the prisms over all campaigns) and of each inclinometer (maximum of the profile), as a function of the excavated depth H (from the top of the piles to the excavation bottom), against the empirical references and the design estimates (design report, by design zone). Dashed lines are δ_h = p%·H; shading marks the Long and Yoo bands.",
+    "Os alçados mais deslocados situam-se em torno de 0,2 % de H (Clough & O'Rourke), acima das estimativas do projeto; os troços curtos travados por escoras de canto (FG, BF) e os alçados DE e LM, com prismas zerados só em 22/12/2025 e 05/02/2026, ficam abaixo de 0,1 %. Valores subestimados: excluem o movimento anterior à zeragem de cada instrumento.": "The most displaced wall sections lie around 0.2 % of H (Clough & O'Rourke), above the design estimates; the short sections braced by corner struts (FG, BF) and sections DE and LM, with prisms zeroed only on 22/12/2025 and 05/02/2026, stay below 0.1 %. Underestimated values: they exclude the movement before each instrument was zeroed.",
+    "Profundidade escavada, H (m)": "Excavated depth, H (m)",
+    "nascente/sul": "east/south",
+    "indireta": "indirect",
+    "norte": "north",
+}
+
+_MESES_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
+             "Oct", "Nov", "Dec"]
+
+
+def _i18n_padrao(k):
+    a = r"(?<!\w)" if k[:1].isalnum() else ""
+    b = r"(?!\w)" if k[-1:].isalnum() else ""
+    return a + _re_i18n.escape(k) + b
+
+
+_I18N_RX = _re_i18n.compile("|".join(
+    _i18n_padrao(k) for k in sorted(_I18N_EN, key=len, reverse=True)
+    if len(k.strip()) >= 3))
+_I18N_DEC = _re_i18n.compile(r"(?<=\d),(?=\d)")
+
+
+def _lang_en():
+    try:
+        return st.session_state.get("ims_lang", "Português") == "English"
+    except Exception:
+        return False
+
+
+def _meses():
+    return _MESES_EN if _lang_en() else _MESES_PT
+
+
+def _tr(s):
+    """Traduz um texto mostrado ao utilizador (só em inglês)."""
+    if not isinstance(s, str) or not s or not _lang_en():
+        return s
+    t = _I18N_EN.get(s)
+    if t is None:
+        nu = s.strip()
+        t = s.replace(nu, _I18N_EN[nu]) if nu and nu in _I18N_EN else \
+            _I18N_RX.sub(lambda m: _I18N_EN.get(m.group(0), m.group(0)), s)
+    t = _re_i18n.sub(r"(\d\**) de (\d)", r"\1 of \2", t)
+    # separador decimal: 15,90 -> 15.90 (o HTML/CSS não tem números com vírgula)
+    if "<div" not in t:
+        t = _I18N_DEC.sub(".", t)
+    return t
+
+
+def _tr_exato(v):
+    if isinstance(v, str) and _lang_en():
+        return _I18N_EN.get(v, _I18N_EN.get(v.strip(), v))
+    return v
+
+
+def _tr_fig(fig):
+    """Traduz títulos, eixos, legendas, anotações e nomes das séries."""
+    if not _lang_en():
+        return fig
+    try:
+        lay = fig.layout
+        if lay.title and lay.title.text:
+            lay.title.text = _tr(lay.title.text)
+        for nome in list(lay):
+            if nome.startswith(("xaxis", "yaxis")):
+                ax = lay[nome]
+                if ax.title and ax.title.text:
+                    ax.title.text = _tr(ax.title.text)
+                if ax.ticktext is not None:
+                    ax.ticktext = [_tr(x) for x in ax.ticktext]
+            if nome.startswith("scene") and lay[nome] is not None:
+                for e in ("xaxis", "yaxis", "zaxis"):
+                    ax = lay[nome][e]
+                    if ax.title and ax.title.text:
+                        ax.title.text = _tr(ax.title.text)
+        if lay.legend and lay.legend.title and lay.legend.title.text:
+            lay.legend.title.text = _tr(lay.legend.title.text)
+        for an in (lay.annotations or ()):
+            if an.text:
+                an.text = _tr(an.text)
+        for tr in fig.data:
+            if getattr(tr, "name", None):
+                tr.name = _tr(tr.name)
+            lgt = getattr(tr, "legendgrouptitle", None)
+            if lgt is not None and lgt.text:
+                lgt.text = _tr(lgt.text)
+            ht = getattr(tr, "hovertemplate", None)
+            if isinstance(ht, str):
+                tr.hovertemplate = _tr(ht)
+            tx = getattr(tr, "text", None)
+            if isinstance(tx, str):
+                tr.text = _tr(tx)
+            elif tx is not None and not isinstance(tx, (int, float)):
+                try:
+                    if all(isinstance(x, str) for x in tx):
+                        tr.text = [_tr(x) for x in tx]
+                except TypeError:
+                    pass
+            for eixo in ("x", "y"):
+                v = getattr(tr, eixo, None)
+                if v is not None and tr.type in ("bar", "box", "heatmap"):
+                    try:
+                        if len(v) and all(isinstance(x, str) for x in v):
+                            setattr(tr, eixo, [_tr(x) for x in v])
+                    except TypeError:
+                        pass
+            cb = getattr(getattr(tr, "marker", None), "colorbar", None) or getattr(tr, "colorbar", None)
+            if cb is not None and cb.title and cb.title.text:
+                cb.title.text = _tr(cb.title.text)
+    except Exception:
+        pass
+    return fig
+
+
+def _col_texto(serie):
+    return (pd.api.types.is_object_dtype(serie) or pd.api.types.is_string_dtype(serie))
+
+
+def _tr_celula(v):
+    """Células: frase com espaços traduz-se como texto; códigos só por igualdade."""
+    if isinstance(v, str) and " " in v.strip():
+        return _tr(v)
+    return _tr_exato(v)
+
+
+def _tr_df(df):
+    if not _lang_en():
+        return df
+    try:
+        if isinstance(df, pd.io.formats.style.Styler):
+            dados_ = df.data
+            cols = [c for c in dados_.columns if _col_texto(dados_[c])]
+            df = df.format_index(lambda c: _tr(str(c)), axis=1)
+            df = df.format_index(lambda c: _tr_celula(c) if isinstance(c, str) else c, axis=0)
+            if cols:
+                df = df.format(_tr_celula, subset=cols)
+            return df
+        if isinstance(df, pd.DataFrame):
+            out = df.copy()
+            for c in out.columns:
+                if _col_texto(out[c]):
+                    out[c] = out[c].map(_tr_celula)
+            out.columns = [_tr(str(c)) if isinstance(c, str) else c for c in out.columns]
+            if _col_texto(out.index.to_series()):
+                out.index = out.index.map(_tr_celula)
+            if isinstance(out.index.name, str):
+                out.index.name = _tr(out.index.name)
+            return out
+    except Exception:
+        return df
+    return df
+
+
+_I18N_KW = ("help", "placeholder", "caption", "label", "value_label")
+
+
+def _i18n_texto(orig):
+    def w(self, *a, **k):
+        if _lang_en():
+            a = tuple(_tr(x) if (i == 0 or isinstance(x, str)) and isinstance(x, str) else x
+                      for i, x in enumerate(a))
+            for kk in _I18N_KW:
+                if isinstance(k.get(kk), str):
+                    k[kk] = _tr(k[kk])
+        return orig(self, *a, **k)
+    return w
+
+
+def _i18n_metric(orig):
+    def w(self, label, value=None, delta=None, *a, **k):
+        if _lang_en():
+            label = _tr(label)
+            value = _tr(value) if isinstance(value, str) else value
+            delta = _tr(delta) if isinstance(delta, str) else delta
+            if isinstance(k.get("help"), str):
+                k["help"] = _tr(k["help"])
+        return orig(self, label, value, delta, *a, **k)
+    return w
+
+
+def _i18n_opcoes(orig):
+    def w(self, label, *a, **k):
+        if _lang_en():
+            label = _tr(label)
+            if isinstance(k.get("help"), str):
+                k["help"] = _tr(k["help"])
+            ff = k.get("format_func") or str
+            k["format_func"] = lambda x, _ff=ff: _tr(_ff(x))
+        return orig(self, label, *a, **k)
+    return w
+
+
+def _i18n_tabs(orig):
+    def w(self, tabs, *a, **k):
+        if _lang_en():
+            tabs = [_tr(t) for t in tabs]
+        return orig(self, tabs, *a, **k)
+    return w
+
+
+def _i18n_tabela(orig):
+    def w(self, data=None, *a, **k):
+        return orig(self, _tr_df(data), *a, **k)
+    return w
+
+
+def _i18n_plotly(orig):
+    def w(self, fig, *a, **k):
+        return orig(self, _tr_fig(_datas_pt(fig)), *a, **k)
+    return w
+
+
+# Os métodos originais guardam-se UMA vez: o Streamlit volta a executar o
+# script em cada interação e, sem esta guarda, os invólucros acumulavam-se.
+if not hasattr(_DG_i18n, "_i18n_orig"):
+    _DG_i18n._i18n_orig = {_n: getattr(_DG_i18n, _n) for _n in (
+        "markdown", "caption", "subheader", "header", "title", "info",
+        "warning", "success", "error", "text", "expander", "button",
+        "checkbox", "toggle", "slider", "number_input", "text_input",
+        "file_uploader", "download_button", "popover", "radio", "selectbox",
+        "multiselect", "select_slider", "metric", "tabs", "dataframe",
+        "table", "plotly_chart", "write", "image") if hasattr(_DG_i18n, _n)}
+_O = _DG_i18n._i18n_orig
+for _n in ("markdown", "caption", "subheader", "header", "title", "info",
+           "warning", "success", "error", "text", "expander", "button",
+           "checkbox", "toggle", "slider", "number_input", "text_input",
+           "file_uploader", "download_button", "popover"):
+    if _n in _O:
+        setattr(_DG_i18n, _n, _i18n_texto(_O[_n]))
+for _n in ("radio", "selectbox", "multiselect", "select_slider"):
+    setattr(_DG_i18n, _n, _i18n_opcoes(_O[_n]))
+_DG_i18n.metric = _i18n_metric(_O["metric"])
+_DG_i18n.tabs = _i18n_tabs(_O["tabs"])
+_DG_i18n.dataframe = _i18n_tabela(_O["dataframe"])
+_DG_i18n.table = _i18n_tabela(_O["table"])
+_DG_i18n.plotly_chart = _i18n_plotly(_O["plotly_chart"])
+_DG_i18n.write = _i18n_texto(_O["write"])
+
+
+def _i18n_imagem(orig):
+    def w(self, image, *a, **k):
+        if _lang_en() and isinstance(k.get("caption"), str):
+            k["caption"] = _tr(k["caption"])
+        return orig(self, image, *a, **k)
+    return w
+
+
+_DG_i18n.image = _i18n_imagem(_O["image"])
+
+_st_main_dg = _plotly_chart_original.__self__
+for _n in ("markdown", "caption", "subheader", "header", "title", "info",
+           "warning", "success", "error", "text", "expander", "button",
+           "checkbox", "toggle", "slider", "number_input", "text_input",
+           "file_uploader", "download_button", "image", "popover", "radio",
+           "selectbox", "multiselect", "select_slider", "metric", "tabs",
+           "dataframe", "table", "plotly_chart", "write"):
+    if hasattr(_st_main_dg, _n):
+        setattr(st, _n, getattr(_st_main_dg, _n))
 
 
 st.set_page_config(page_title="IMS — Instrumentation Monitoring System",
@@ -1209,9 +2513,9 @@ def contorno_recinto(campanha):
 
 # cores fixas por edificio vizinho (as restantes recebem cor automatica)
 CORES_EDIFICIO = {
-    "Edifício Santa Casa da Misericórdia": "#d62728",
-    "Restaurante Cimas": "#2ca02c",
-    "Clínica Abreu Loureiro": "#1f77b4",
+    "Edifício 1": "#d62728",
+    "Edifício 2": "#2ca02c",
+    "Edifício 3": "#1f77b4",
 }
 
 
@@ -1311,7 +2615,7 @@ def separador_3d(dados):
             help="Marca a vermelho os alvos e setas em alarme e a laranja os "
                  "em alerta, segundo os critérios oficiais recalculados.")
         destacar_sc = st.checkbox(
-            "Realçar fachadas da Santa Casa", value=True,
+            "Realçar fachadas do Edifício 1", value=True,
             help="Distingue a fachada frontal (A1-A4, exposta a escavação) da "
                  "lateral (A5-A8, ao mar).")
         identificar_edif = st.checkbox(
@@ -1401,9 +2705,9 @@ def separador_3d(dados):
         dh = grp[COLS["desl_h"]].to_numpy()
         nomes = grp[COLS["alvo"]].astype(str).to_numpy()
         estados = grp["Estado calculado"].to_numpy()
-        fachadas = grp["Fachada SC"].to_numpy()
+        fachadas = grp["Fachada"].to_numpy()
 
-        e_santa_casa = isinstance(chave, str) and "Santa Casa" in chave
+        e_edificio1 = isinstance(chave, str) and "Edifício 1" in chave
         if tipo == "edificio":
             cor = CORES_EDIFICIO.get(chave, "#7f7f7f")
             nome_leg = chave
@@ -1411,8 +2715,8 @@ def separador_3d(dados):
             cor = "#ff7f0e"
             nome_leg = f"Contenção — Alçado {etiqueta}"
 
-        # simbolo por fachada da Santa Casa (frontal vs lateral)
-        if destacar_sc and e_santa_casa:
+        # simbolo por fachada do Edifício 1 (frontal vs lateral)
+        if destacar_sc and e_edificio1:
             simbolos = ["diamond" if f == "Frente escavação" else "circle"
                         for f in fachadas]
         else:
@@ -1503,14 +2807,14 @@ def separador_3d(dados):
     c3.metric("Em alarme", n_alarme)
     c4.metric("Em alerta", n_alerta)
     idx = int(np.nanargmax(desl_h_all))
-    # leitura frente vs lateral da Santa Casa, se houver dados
-    sc = campanha[campanha["Fachada SC"] != ""]
+    # leitura frente vs lateral do Edifício 1, se houver dados
+    sc = campanha[campanha["Fachada"] != ""]
     linha_sc = ""
     if len(sc):
-        frente = sc[sc["Fachada SC"] == "Frente escavação"][COLS["desl_h"]]
-        lateral = sc[sc["Fachada SC"] == "Lateral (mar)"][COLS["desl_h"]]
+        frente = sc[sc["Fachada"] == "Frente escavação"][COLS["desl_h"]]
+        lateral = sc[sc["Fachada"] == "Lateral (mar)"][COLS["desl_h"]]
         if len(frente) and len(lateral):
-            linha_sc = (f" Na Santa Casa, a fachada frontal (losangos, média "
+            linha_sc = (f" No Edifício 1, a fachada frontal (losangos, média "
                         f"{frente.mean():.0f} mm) move-se mais que a lateral "
                         f"(círculos, {lateral.mean():.0f} mm) — coerente com a "
                         f"exposição direta a escavação.")
@@ -1818,6 +3122,375 @@ def mostrar_localizacao_alvo(sub_edi, edi, selecionados, cores_estado):
         st.caption("Sem coordenadas suficientes para esquematizar este edifício.")
 
 
+# -------------------------------------------------------------------------
+# PERIODOS DE ESCAVACAO — os seis periodos da leitura global da obra,
+# delimitados pelo inicio da escavacao de cada nivel e pelo fim da escavacao
+# segundo o PLANO DE TRABALHOS IMPACTADO (ver FASES_COMPARACAO e
+# ESCAVACAO_COTAS). Sao uma referencia comum: as frentes avancaram
+# desfasadas (a do alcado GH adiantada face ao plano), pelo que nao
+# representam o estado de cada frente.
+# (rotulo curto no grafico, descricao, inicio ISO, fim ISO | None = ultima leitura)
+# -------------------------------------------------------------------------
+PERIODOS_ESCAVACAO = [
+    ("Antes da<br>escavação", "antes da escavação geral", "2025-05-12", "2025-07-24"),
+    ("Pisos 2 e 1", "pisos 2 e 1", "2025-07-24", "2025-11-12"),
+    ("Piso -1", "piso -1, com a escavação de 4,95 m da frente poente",
+     "2025-11-12", "2025-12-15"),
+    ("Piso -2", "piso -2 e escavação até à viga do piso -3", "2025-12-15", "2026-02-25"),
+    ("Piso -3<br>e fundo", "piso -3 e fundo", "2026-02-25", "2026-04-16"),
+    ("Laje de fundo<br>e estrutura", "laje de fundo e estrutura", "2026-04-16", None),
+]
+_PERIODOS_LINHAS = 3   # linhas do rotulo mais alto (numero + 2 linhas de texto)
+
+# cores dos alvos: cada grupo de alvos a mesma posicao em planta partilha a
+# cor (tom escuro no superior, claro no inferior); alvos isolados, tom escuro
+_PARES_CORES = [("#1f4e9c", "#86aee6"), ("#b2182b", "#f4a0a0"),
+                ("#1b7837", "#8fd18f"), ("#6a3d9a", "#c2a5e0"),
+                ("#d95f02", "#fdb46b"), ("#01665e", "#76cbbf"),
+                ("#8c510a", "#dcbc7c"), ("#404040", "#a6a6a6")]
+# faixas de comparacao com outros grupos (preenchimento, contorno)
+_COMP_CORES = [("rgba(120,120,120,0.20)", "rgba(95,95,95,0.75)"),
+               ("rgba(176,141,87,0.24)", "rgba(140,105,50,0.85)"),
+               ("rgba(90,150,170,0.20)", "rgba(50,110,130,0.80)"),
+               ("rgba(170,110,160,0.20)", "rgba(130,70,120,0.80)")]
+
+
+def _chave_natural(s):
+    import re as _re
+    return [(0, int(t), "") if t.isdigit() else (1, 0, t)
+            for t in _re.split(r"(\d+)", str(s)) if t != ""]
+
+
+def _num_pt(v, casas=1):
+    """Número com vírgula decimal (o tradutor passa-o a ponto em inglês)."""
+    return f"{v:.{casas}f}".replace("-", "−").replace(".", ",")
+
+
+def rotulos_posicao_alvos(sub_grupo, dist_max=1.0, dz_min=0.5):
+    """
+    Identifica os PARES de alvos instalados à mesma posição em planta (a
+    menos de `dist_max` m), a cotas diferentes (desnível > `dz_min` m) e com
+    leituras no mesmo período (um alvo de substituição não forma par com o
+    que substituiu). Devolve {alvo: (sufixo, cor)}: nos pares, o sufixo é
+    «(sup.)» ou «(inf.)» e a cor é a mesma, escura no superior e clara no
+    inferior; os restantes alvos (isolados ou em alinhamentos de três ou mais
+    prismas, como nos alçados) têm cor própria e não têm sufixo.
+    """
+    d = sub_grupo.dropna(subset=[COLS["M0"], COLS["P0"], COLS["Z0"]])
+    lido = d[d[COLS["desl_h"]].notna()]
+    info = {}
+    for a, g in d.groupby(COLS["alvo"]):
+        gl = lido[lido[COLS["alvo"]] == a][COLS["data"]]
+        r = g.iloc[0]
+        info[a] = (float(r[COLS["M0"]]), float(r[COLS["P0"]]), float(r[COLS["Z0"]]),
+                   gl.min() if len(gl) else pd.NaT, gl.max() if len(gl) else pd.NaT)
+    nomes = sorted(info, key=_chave_natural)
+    pai = {a: a for a in nomes}
+
+    def raiz(a):
+        while pai[a] != a:
+            a = pai[a]
+        return a
+    for i, a in enumerate(nomes):
+        ma, pa, za, a0, a1 = info[a]
+        for b in nomes[i + 1:]:
+            mb, pb, zb, b0, b1 = info[b]
+            if np.hypot(ma - mb, pa - pb) >= dist_max or abs(za - zb) <= dz_min:
+                continue
+            if pd.isna(a0) or pd.isna(b0) or a1 < b0 or b1 < a0:
+                continue
+            pai[raiz(b)] = raiz(a)
+    grupos = {}
+    for a in nomes:
+        grupos.setdefault(raiz(a), []).append(a)
+    out = {}
+    ordem = sorted(grupos.values(), key=lambda m: _chave_natural(m[0]))
+    k = 0
+    for membros in ordem:
+        if len(membros) == 2:
+            esc, cla = _PARES_CORES[k % len(_PARES_CORES)]
+            sup, inf = sorted(membros, key=lambda a: -info[a][2])
+            out[sup] = (" (sup.)", esc)
+            out[inf] = (" (inf.)", cla)
+            k += 1
+            continue
+        for a in membros:
+            out[a] = ("", _PARES_CORES[k % len(_PARES_CORES)][0])
+            k += 1
+    return out
+
+
+def adicionar_periodos_escavacao(fig, dt_min, dt_max):
+    """Faixas alternadas com os períodos de escavação e o rótulo de cada um
+    por cima da área de dados. Devolve [(n, descrição, início, fim|None)]."""
+    dt_min, dt_max = pd.to_datetime(dt_min), pd.to_datetime(dt_max)
+    vis = []
+    for i, (rot, desc, ini, fim) in enumerate(PERIODOS_ESCAVACAO):
+        t0 = pd.to_datetime(ini)
+        t1 = pd.to_datetime(fim) if fim else dt_max
+        a, b = max(t0, dt_min), min(t1, dt_max)
+        if b <= a:
+            continue
+        n = i + 1
+        if n % 2 == 1:
+            fig.add_shape(type="rect", xref="x", yref="y domain", x0=a, x1=b,
+                          y0=0, y1=1, fillcolor="rgba(110,110,110,0.10)",
+                          line_width=0, layer="below")
+        if t0 > dt_min:
+            fig.add_shape(type="line", xref="x", yref="y domain", x0=t0, x1=t0,
+                          y0=0, y1=1, line=dict(color="rgba(90,90,90,0.45)", width=1),
+                          layer="below")
+        # numero na 1.a linha e texto por baixo: todos os numeros ao mesmo
+        # nivel (ancorados pelo topo, acima da area de dados)
+        fs = 10
+        fig.add_annotation(x=a + (b - a) / 2, y=1.0, xref="x", yref="y domain",
+                           yanchor="top", xanchor="center", showarrow=False,
+                           yshift=int(_PERIODOS_LINHAS * 1.3 * fs) + 6,
+                           text=f"<b>{n}</b><br>{rot}", align="center",
+                           font=dict(size=fs, color="#4d4d4d"), hovertext=desc)
+        vis.append((n, desc, t0, pd.to_datetime(fim) if fim else None))
+    return vis
+
+
+def _fs_periodos():
+    return 10
+
+
+def legenda_periodos(vis):
+    if not vis:
+        return
+    itens = []
+    for n, desc, t0, t1 in vis:
+        fim = t1.strftime("%d/%m/%Y") if t1 is not None else "última leitura"
+        itens.append(f"**{n}.** {desc} ({t0.strftime('%d/%m/%Y')}–{fim})")
+    st.caption("Períodos de escavação, segundo o plano de trabalhos impactado "
+               "(referência comum; as frentes avançaram desfasadas): "
+               + " · ".join(itens))
+
+
+def _valor_na_data(s, col, d, tol_dias=10):
+    """Última leitura até à data `d` (no máximo `tol_dias` antes)."""
+    ss = s[(s[COLS["data"]] <= d) & s[col].notna()].sort_values(COLS["data"])
+    if ss.empty:
+        return None, None
+    t = pd.to_datetime(ss[COLS["data"]].iloc[-1])
+    if (d - t).days > tol_dias:
+        return None, None
+    return float(ss[col].iloc[-1]), t
+
+
+def faixa_grupo(alvos, grupo, col, j0, j1):
+    """Mínimo e máximo, em cada campanha, dos alvos de `grupo` zerados na
+    primeira campanha do grupo (os de substituição ficam de fora)."""
+    g = alvos[(alvos[COLS["edificio"]] == grupo) & alvos[col].notna()]
+    if g.empty:
+        return None, []
+    ini = g.groupby(COLS["alvo"])[COLS["data"]].min()
+    orig = ini[ini <= ini.min() + pd.Timedelta(days=3)].index
+    g = g[g[COLS["alvo"]].isin(orig)]
+    g = g[(g[COLS["data"]] >= j0) & (g[COLS["data"]] <= j1)]
+    if g.empty:
+        return None, []
+    agg = (g.groupby(COLS["data"])[col].agg(["min", "max"]).reset_index()
+           .sort_values(COLS["data"]))
+    return agg, sorted(orig, key=_chave_natural)
+
+
+def _texto_lista_alvos(nomes):
+    if not nomes:
+        return ""
+    if len(nomes) <= 2:
+        return " e ".join(nomes)
+    return f"{nomes[0]}–{nomes[-1]}"
+
+
+def grafico_alvos_tempo(sub, alvos_todos, sel, col, rotulos, *, titulo_y,
+                        limiares, fases, datas_ref, comp, marcar_max, modo_max,
+                        granul, j0, j1, rezer, altura=780, projeto=None):
+    """Série temporal de uma componente (δH ou ΔZ) dos alvos escolhidos, com
+    as sobreposições opcionais. Devolve (figura, fases visíveis, períodos)."""
+    fig = go.Figure()
+    # faixas dos outros grupos primeiro, para ficarem por baixo das séries
+    for k, grupo in enumerate(comp):
+        agg, nomes = faixa_grupo(alvos_todos, grupo, col, j0, j1)
+        if agg is None or agg.empty:
+            continue
+        cf, cl = _COMP_CORES[k % len(_COMP_CORES)]
+        nome_faixa = f"{_texto_lista_alvos(nomes)} (mín.–máx.)"
+        xs = [pd.to_datetime(v) for v in agg[COLS["data"]].tolist()]
+        fig.add_trace(go.Scatter(
+            x=xs, y=[float(v) for v in agg["min"].tolist()], mode="lines",
+            line=dict(color=cl, width=0.8), legendgroup=f"comp{k}",
+            showlegend=False, name=nome_faixa,
+            hovertemplate=f"{grupo}<br>mín.: %{{y:.1f}} mm<extra></extra>"))
+        fig.add_trace(go.Scatter(
+            x=xs, y=[float(v) for v in agg["max"].tolist()], mode="lines",
+            line=dict(color=cl, width=0.8), fill="tonexty", fillcolor=cf,
+            legendgroup=f"comp{k}", name=nome_faixa,
+            legendgrouptitle_text=("Outros grupos" if k == 0 else None),
+            hovertemplate=f"{grupo}<br>máx.: %{{y:.1f}} mm<extra></extra>"))
+    # series dos alvos escolhidos
+    for a in sel:
+        s = sub[sub[COLS["alvo"]] == a].sort_values(COLS["data"])
+        suf, cor = rotulos.get(a, ("", None))
+        fig.add_trace(go.Scatter(
+            x=s[COLS["data"]], y=s[col], mode="lines+markers", name=a + suf,
+            legendgroup="alvos",
+            line=dict(color=cor, width=2) if cor else None,
+            marker=dict(size=5, color=cor) if cor else None))
+    # limiares
+    (va, ta), (vm, tm) = limiares
+    # rotulos dentro da area de dados, a esquerda (a direita fica a legenda)
+    fig.add_hline(y=va, line_dash="dash", line_color="orange",
+                  annotation_text=ta, annotation_position="top left",
+                  annotation_font=dict(size=11, color="#b36b00"))
+    fig.add_hline(y=vm, line_dash="dash", line_color="red",
+                  annotation_text=tm, annotation_position="top left",
+                  annotation_font=dict(size=11, color="#b00000"))
+    # re-zeragem dos alvos de substituicao escolhidos (so quando existem)
+    for t, nomes in rezer:
+        fig.add_shape(type="line", xref="x", yref="y domain", x0=t, x1=t,
+                      y0=0, y1=1, line=dict(color="gray", width=1.5, dash="dot"))
+        fig.add_annotation(x=t, y=0, xref="x", yref="y domain", xanchor="left",
+                           yanchor="bottom", showarrow=False, xshift=3,
+                           text=f"Re-zeragem {_texto_lista_alvos(nomes)}",
+                           font=dict(size=10, color="#555"),
+                           bgcolor="rgba(255,255,255,0.7)")
+    # datas de referencia: linha, data e valor de cada alvo. O rotulo (na
+    # vertical, junto a linha) vai para cima ou para baixo, onde nao houver
+    # series nessa data.
+    _ys = []
+    for tr in fig.data:
+        try:
+            _ys += [float(v) for v in tr.y if v is not None and pd.notna(v)]
+        except TypeError:
+            pass
+    _ys += [limiares[0][0], limiares[1][0]]
+    _ylo, _yhi = min(_ys), max(_ys)
+    _amp = (_yhi - _ylo) or 1.0
+    for i_d, d in enumerate(datas_ref):
+        fig.add_shape(type="line", xref="x", yref="y domain", x0=d, x1=d,
+                      y0=0, y1=1, line=dict(color="#333333", width=1.2, dash="dash"))
+        # com a data seguinte muito proxima, este rotulo passa para a esquerda
+        _esq = (i_d + 1 < len(datas_ref)
+                and (datas_ref[i_d + 1] - d) < 0.05 * (j1 - j0))
+        _perto = []
+        for tr in fig.data:
+            try:
+                for xv, yv in zip(tr.x, tr.y):
+                    if (xv is not None and yv is not None and pd.notna(yv)
+                            and abs((pd.to_datetime(xv) - d).days) <= 20):
+                        _perto.append(float(yv))
+            except TypeError:
+                pass
+        _topo_ocup = any(v > _yhi - 0.25 * _amp for v in _perto)
+        _base_ocup = any(v < _ylo + 0.25 * _amp for v in _perto)
+        _em_baixo = _topo_ocup and not _base_ocup
+        fig.add_annotation(x=d, y=(0 if _em_baixo else 1), xref="x", yref="y domain",
+                           xanchor=("right" if _esq else "left"),
+                           yanchor=("bottom" if _em_baixo else "top"),
+                           showarrow=False, xshift=(-2 if _esq else 2), textangle=-90,
+                           text=d.strftime("%d/%m/%Y"),
+                           font=dict(size=10, color="#333333"),
+                           bgcolor="rgba(255,255,255,0.75)")
+        for a in sel:
+            s = sub[sub[COLS["alvo"]] == a]
+            v, t = _valor_na_data(s, col, d)
+            if v is None:
+                continue
+            suf, cor = rotulos.get(a, ("", None))
+            fig.add_trace(go.Scatter(
+                x=[t], y=[v], mode="markers", showlegend=False,
+                marker=dict(size=11, symbol="circle-open", color=cor or "#333333",
+                            line=dict(width=2)),
+                hovertemplate=(f"{a}{suf} — {t.strftime('%d/%m/%Y')}: "
+                               f"%{{y:.1f}} mm<extra>Data de referência</extra>")))
+    # estimativa do projeto (so no grafico horizontal dos alcados): linha e
+    # data em que o maximo dos alvos escolhidos a ultrapassou
+    if projeto is not None:
+        _sp = sub[sub[COLS["alvo"]].isin(sel)]
+        t_p, v_p = data_ultrapassagem(_sp[COLS["data"]], _sp[col], projeto)
+        _nm = f"Estimativa do projeto: {_num_pt(projeto, 0)} mm"
+        if t_p is not None:
+            _nm += f"<br>(ultrapassada a {t_p.strftime('%d/%m/%Y')})"
+        fig.add_trace(go.Scatter(
+            x=[j0, j1], y=[projeto, projeto], mode="lines", legendgroup="proj",
+            name=_nm, line=dict(color="#2e7d32", width=2, dash="dashdot"),
+            hoverinfo="skip"))
+        if t_p is not None:
+            fig.add_trace(go.Scatter(
+                x=[t_p], y=[v_p], mode="markers", legendgroup="proj",
+                showlegend=False,
+                marker=dict(symbol="diamond", size=13, color="#2e7d32",
+                            line=dict(color="white", width=1.5)),
+                hovertemplate=(f"Estimativa do projeto ultrapassada a "
+                               f"{t_p.strftime('%d/%m/%Y')}: %{{y:.1f}} mm"
+                               "<extra></extra>")))
+    # maximo dos alvos escolhidos no periodo visivel
+    if marcar_max and sel:
+        s = sub[sub[COLS["alvo"]].isin(sel) & sub[col].notna()]
+        if not s.empty:
+            idx = s[col].idxmax() if modo_max == "max" else s[col].abs().idxmax()
+            r = s.loc[idx]
+            v = float(r[col])
+            t = pd.to_datetime(r[COLS["data"]])
+            # estrela no ponto e valor na legenda (sem caixa sobre as séries)
+            pref = "Máx. δH" if modo_max == "max" else "Máx. |ΔZ|"
+            fig.add_trace(go.Scatter(
+                x=[t], y=[v], mode="markers", legendgroup="max",
+                name=(f"{pref} {r[COLS['alvo']]}: {_num_pt(v)} mm"
+                      f"<br>({t.strftime('%d/%m/%Y')})"),
+                marker=dict(symbol="star", size=16, color="#ffd400",
+                            line=dict(color="#222222", width=1.2)),
+                hovertemplate=(f"{r[COLS['alvo']]} — {t.strftime('%d/%m/%Y')}: "
+                               f"%{{y:.1f}} mm<extra>{pref}</extra>")))
+    # faseamento
+    fases_vis, periodos_vis = [], []
+    if fases == "Períodos de escavação":
+        periodos_vis = adicionar_periodos_escavacao(fig, j0, j1)
+    elif fases == "Fases da obra (plano)":
+        fases_vis = adicionar_fases_obra(fig, j0, j1)
+    fig.update_xaxes(title="Data", type="date")
+    fig.update_yaxes(title=titulo_y)
+    configurar_eixo_tempo(fig, granul)
+    _mt = 60
+    if periodos_vis:
+        _mt = max(60, int(_PERIODOS_LINHAS * 1.3 * _fs_periodos()) + 22)
+    fig.update_layout(
+        height=altura,
+        margin=dict(r=60, t=_mt, b=40),
+        legend=dict(orientation="v", yanchor="top", y=1, traceorder="grouped",
+                    xanchor="left", x=1.02, font=dict(size=11)))
+    return fig, fases_vis, periodos_vis
+
+
+def tabela_datas_referencia(sub, sel, datas_ref, col, rotulos):
+    """Valores dos alvos nas datas de referência e incrementos entre elas."""
+    if not datas_ref or not sel:
+        return
+    linhas = []
+    for a in sel:
+        s = sub[sub[COLS["alvo"]] == a].sort_values(COLS["data"])
+        lin = {"Alvo": a + rotulos.get(a, ("", None))[0]}
+        ant = None
+        for d in datas_ref:
+            v, _t = _valor_na_data(s, col, d)
+            lin[d.strftime("%d/%m/%Y")] = round(v, 1) if v is not None else None
+            if ant is not None:
+                d0, v0 = ant
+                lin[f"Δ {d0.strftime('%d/%m/%y')}→{d.strftime('%d/%m/%y')}"] = (
+                    round(v - v0, 1) if (v is not None and v0 is not None) else None)
+            ant = (d, v)
+        linhas.append(lin)
+    st.caption("Valores nas datas de referência (mm; última leitura até cada data, "
+               "no máximo 10 dias antes) e incrementos entre datas consecutivas:")
+    tab = pd.DataFrame(linhas)
+    st.dataframe(tab, use_container_width=True, hide_index=True,
+                 column_config={c: st.column_config.NumberColumn(format="%.1f")
+                                for c in tab.columns if c != "Alvo"})
+
+
+
 def separador_alvos_2d(dados):
     alvos = dados["alvos"]
     if not validar_colunas(alvos, [COLS["data"], COLS["alvo"], COLS["edificio"],
@@ -1873,7 +3546,7 @@ def separador_alvos_2d(dados):
         crit_now = crit_now.sort_values("Estado calculado")
         st.caption("Alvos em alerta ou alarme na última campanha:")
         st.dataframe(
-            crit_now[[COLS["alvo"], COLS["edificio"], "Fachada SC",
+            crit_now[[COLS["alvo"], COLS["edificio"], "Fachada",
                       COLS["desl_h"], COLS["dZ"], "Estado calculado", "Critério"]]
             .rename(columns={COLS["desl_h"]: "Desl. H (mm)", COLS["dZ"]: "ΔZ (mm)"}),
             use_container_width=True, hide_index=True)
@@ -1883,11 +3556,11 @@ def separador_alvos_2d(dados):
     edi = st.selectbox("Edifício / elemento", edificios)
     sub = alvos[alvos[COLS["edificio"]] == edi]
 
-    # se for a Santa Casa, permitir filtrar por fachada e avisar da substituicao
-    e_santa_casa = isinstance(edi, str) and "Santa Casa" in edi
-    if e_santa_casa:
+    # se for o Edifício 1, permitir filtrar por fachada e avisar da substituicao
+    e_edificio1 = isinstance(edi, str) and "Edifício 1" in edi
+    if e_edificio1:
         st.info(
-            "A Santa Casa tem duas fachadas instrumentadas: **Frente a escavação** "
+            "O Edifício 1 tem duas fachadas instrumentadas: **Frente a escavação** "
             "(A1–A4) e **Lateral, virada ao mar** (A5–A8). Os alvos A5–A8 foram "
             "tapados por um painel publicitário e substituídos por **A5b–A8b**, "
             "RE-ZERADOS em 20/10/2025 — por isso os acumulados dos 'b' não são "
@@ -1895,9 +3568,9 @@ def separador_alvos_2d(dados):
         fach = st.radio("Fachada", ["Ambas", "Frente escavação", "Lateral (mar)"],
                         horizontal=True)
         if fach != "Ambas":
-            sub = sub[sub["Fachada SC"] == fach]
+            sub = sub[sub["Fachada"] == fach]
 
-    lista = sorted(sub[COLS["alvo"]].dropna().unique())
+    lista = sorted(sub[COLS["alvo"]].dropna().unique(), key=_chave_natural)
     sel = st.multiselect("Alvos", lista, default=lista[:min(5, len(lista))])
 
     # localizacao fisica dos alvos (foto real ou esquema das coordenadas)
@@ -1916,7 +3589,9 @@ def separador_alvos_2d(dados):
     if ac_edi:
         st.warning("Este alçado não consta da lista de critérios dos relatórios "
                    "de alvos; o critério de 17 m é assumido.")
-    data_rezerag = pd.to_datetime("2025-10-20")
+    # rotulos de posicao (sup./inf.) e cores por par, a partir de TODOS os
+    # alvos do grupo (o rotulo nao depende dos alvos escolhidos)
+    rotulos = rotulos_posicao_alvos(alvos[alvos[COLS["edificio"]] == edi])
 
     # --- controlo de zoom temporal (util quando as fases da obra estao ligadas)
     cz1, cz2 = st.columns([1, 2])
@@ -1936,6 +3611,81 @@ def separador_alvos_2d(dados):
     j1 = pd.to_datetime(janela[1])
     sub = sub[(sub[COLS["data"]] >= j0) & (sub[COLS["data"]] <= j1)]
 
+    # --- sobreposicoes: faseamento, maximo, datas de referencia, comparacao
+    _datas_disp = [pd.to_datetime(d).strftime("%d/%m/%Y")
+                   for d in sorted(sub[COLS["data"]].dropna().unique())]
+    co1, co2, co3 = st.columns([1.2, 1, 1])
+    with co1:
+        fases = st.radio(
+            "Faseamento no gráfico",
+            ["Nenhum", "Períodos de escavação", "Fases da obra (plano)"],
+            index=1, horizontal=True, key="alvos_fases",
+            help="Períodos de escavação: seis períodos delimitados pelo início "
+                 "da escavação de cada nível e pelo fim da escavação, segundo o "
+                 "plano de trabalhos impactado (faixas alternadas). Fases da "
+                 "obra: barra de faseamento do plano no topo do gráfico. São "
+                 "uma referência comum: as frentes avançaram desfasadas.")
+        marcar_max = st.checkbox(
+            "Assinalar o máximo", value=True, key="alvos_max",
+            help="Assinala o maior deslocamento horizontal e o maior |ΔZ| dos "
+                 "alvos escolhidos, no período visível.")
+        _prev_edi = previsto_do_grupo(edi)
+        mostrar_proj = False
+        if _prev_edi[0] is not None and _prev_edi[2].startswith("direta"):
+            mostrar_proj = st.checkbox(
+                "Estimativa do projeto", value=False, key=f"alvos_proj_{edi}",
+                help="Desenha no gráfico horizontal a estimativa da memória "
+                     "descritiva para a última fase de escavação na zona deste "
+                     "alçado (20 mm a poente e norte; 10 mm a nascente e sul; "
+                     "atribuição inferida) e a data em que o máximo dos alvos "
+                     "escolhidos a ultrapassou.")
+    with co2:
+        _dref = st.multiselect(
+            "Datas de referência", _datas_disp, key=f"alvos_dref_{edi}",
+            placeholder="Escolher campanhas",
+            help="Marca as campanhas escolhidas (linha vertical e valor de "
+                 "cada alvo) e lista, por baixo de cada gráfico, os valores "
+                 "nessas datas e os incrementos entre elas.")
+        datas_ref = sorted(pd.to_datetime(x, format="%d/%m/%Y") for x in _dref)
+    with co3:
+        _outros = [e for e in edificios if e != edi]
+        comp = st.multiselect(
+            "Comparar com (intervalo mín.–máx.)",
+            _outros, key=f"alvos_comp_{edi}", placeholder="Escolher grupos",
+            help="Sobrepõe, em faixa, o intervalo entre o mínimo e o máximo "
+                 "dos alvos de outro grupo em cada campanha. Só entram os "
+                 "alvos com a zeragem inicial do grupo; os de substituição, "
+                 "zerados mais tarde, ficam de fora.")
+        # ordem estável das faixas: pela designação do primeiro alvo do grupo
+        comp = sorted(comp, key=lambda g: _chave_natural(min(
+            alvos.loc[alvos[COLS["edificio"]] == g, COLS["alvo"]].astype(str),
+            key=_chave_natural)))
+
+    # re-zeragem: alvos de substituicao escolhidos, zerados depois do grupo
+    _ini_grupo = alvos[(alvos[COLS["edificio"]] == edi)
+                       & alvos[COLS["desl_h"]].notna()][COLS["data"]].min()
+    _rz = {}
+    for a in sel:
+        sa = sub[(sub[COLS["alvo"]] == a) & sub[COLS["desl_h"]].notna()]
+        if sa.empty or not str(a).endswith("b"):
+            continue
+        t_a = pd.to_datetime(sa[COLS["data"]].min())
+        if t_a > _ini_grupo + pd.Timedelta(days=3) and t_a >= j0:
+            _rz.setdefault(t_a, []).append(a)
+    rezer = [(t, sorted(n, key=_chave_natural)) for t, n in sorted(_rz.items())]
+
+    def _notas_grafico(fases_vis, periodos_vis):
+        legenda_fases(fases_vis)
+        legenda_periodos(periodos_vis)
+        if any(rotulos.get(a, ("",))[0] for a in sel):
+            st.caption("Os pares de alvos à mesma posição em planta (a menos de "
+                       "1 m) e a cotas diferentes partilham a cor: tom escuro no "
+                       "superior (sup.) e claro no inferior (inf.).")
+        if comp:
+            st.caption("Faixas: intervalo entre o mínimo e o máximo, em cada "
+                       "campanha, dos alvos de cada grupo comparado (só os alvos "
+                       "com a zeragem inicial do grupo).")
+
     tab_h, tab_v = st.tabs(
         ["↔ Deslocamento horizontal (H)", "↕ Assentamento vertical (ΔZ)"])
     with tab_h:
@@ -1943,54 +3693,32 @@ def separador_alvos_2d(dados):
             "<h4 style='text-align:center; margin-bottom:0; color:#1f2a44;'>"
             "Deslocamento horizontal acumulado (mm)</h4>",
             unsafe_allow_html=True)
-        fig = go.Figure()
-        for a in sel:
-            s = sub[sub[COLS["alvo"]] == a].sort_values(COLS["data"])
-            fig.add_trace(go.Scatter(x=s[COLS["data"]], y=s[COLS["desl_h"]],
-                                     mode="lines+markers", name=a))
-        fig.add_hline(y=Ha, line_dash="dash", line_color="orange",
-                      annotation_text=f"Alerta {Ha}", annotation_position="right")
-        fig.add_hline(y=Hm, line_dash="dash", line_color="red",
-                      annotation_text=f"Alarme {Hm}", annotation_position="right")
-        if e_santa_casa:
-            fig.add_vline(x=data_rezerag, line=dict(color="gray", width=1.5, dash="dot"),
-                          annotation_text="Re-zeragem A5b–A8b", annotation_position="top")
-        fig.update_xaxes(title="Data")
-        fig.update_yaxes(title="Desl. horizontal (mm)")
-        configurar_eixo_tempo(fig, granul)
-        fig.update_layout(
-            height=780,
-            margin=dict(r=60, t=60, b=40),
-            legend=dict(orientation="v", yanchor="top", y=1,
-                        xanchor="left", x=1.02, font=dict(size=11)))
+        fig, _fv, _pv = grafico_alvos_tempo(
+            sub, alvos, sel, COLS["desl_h"], rotulos,
+            titulo_y="Desl. horizontal (mm)",
+            limiares=((Ha, f"Alerta {Ha}"), (Hm, f"Alarme {Hm}")),
+            fases=fases, datas_ref=datas_ref, comp=comp, marcar_max=marcar_max,
+            modo_max="max", granul=granul, j0=j0, j1=j1, rezer=rezer,
+            altura=780, projeto=(_prev_edi[0] if mostrar_proj else None))
         st.plotly_chart(fig, use_container_width=True)
+        _notas_grafico(_fv, _pv)
+        tabela_datas_referencia(sub, sel, datas_ref, COLS["desl_h"], rotulos)
     with tab_v:
         st.markdown(
             "<h4 style='text-align:center; margin-bottom:0; color:#1f2a44;'>"
             "Assentamento vertical acumulado, ΔZ (mm)</h4>",
             unsafe_allow_html=True)
-        fig2 = go.Figure()
-        for a in sel:
-            s = sub[sub[COLS["alvo"]] == a].sort_values(COLS["data"])
-            fig2.add_trace(go.Scatter(x=s[COLS["data"]], y=s[COLS["dZ"]],
-                                      mode="lines+markers", name=a))
         # limiares verticais: o assentamento e negativo -> desenhar em -Va e -Vm
-        fig2.add_hline(y=-Va, line_dash="dash", line_color="orange",
-                       annotation_text=f"Alerta -{Va}", annotation_position="right")
-        fig2.add_hline(y=-Vm, line_dash="dash", line_color="red",
-                       annotation_text=f"Alarme -{Vm}", annotation_position="right")
-        if e_santa_casa:
-            fig2.add_vline(x=data_rezerag, line=dict(color="gray", width=1.5, dash="dot"),
-                           annotation_text="Re-zeragem A5b–A8b", annotation_position="top")
-        fig2.update_xaxes(title="Data")
-        fig2.update_yaxes(title="ΔZ (mm)")
-        configurar_eixo_tempo(fig2, granul)
-        fig2.update_layout(
-            height=780,
-            margin=dict(r=60, t=60, b=40),
-            legend=dict(orientation="v", yanchor="top", y=1,
-                        xanchor="left", x=1.02, font=dict(size=11)))
+        fig2, _fv, _pv = grafico_alvos_tempo(
+            sub, alvos, sel, COLS["dZ"], rotulos,
+            titulo_y="ΔZ (mm)",
+            limiares=((-Va, f"Alerta -{Va}"), (-Vm, f"Alarme -{Vm}")),
+            fases=fases, datas_ref=datas_ref, comp=comp, marcar_max=marcar_max,
+            modo_max="abs", granul=granul, j0=j0, j1=j1, rezer=rezer,
+            altura=780)
         st.plotly_chart(fig2, use_container_width=True)
+        _notas_grafico(_fv, _pv)
+        tabela_datas_referencia(sub, sel, datas_ref, COLS["dZ"], rotulos)
 
     # ---- direção (roseta) e razão ΔZ/δh na última campanha --------------
     st.divider()
@@ -2013,8 +3741,12 @@ def separador_alvos_2d(dados):
             for a, dh, dz, dm, dp, dt in _ultv:
                 if pd.notna(dm) and pd.notna(dp) and dh > 0:
                     az = float(np.degrees(np.arctan2(dm, dp)) % 360)
+                    _suf, _cor = rotulos.get(a, ("", None))
                     figp.add_trace(go.Scatterpolar(
-                        r=[0, dh], theta=[az, az], mode="lines+markers", name=a))
+                        r=[0, dh], theta=[az, az], mode="lines+markers",
+                        name=a + _suf,
+                        line=dict(color=_cor) if _cor else None,
+                        marker=dict(color=_cor) if _cor else None))
                     _tem_dir = True
             if _tem_dir:
                 figp.update_layout(
@@ -2034,17 +3766,18 @@ def separador_alvos_2d(dados):
             _rows = []
             for a, dh, dz, dm, dp, dt in _ultv:
                 razao = (abs(float(dz)) / dh) if (pd.notna(dz) and dh > 0) else np.nan
-                _rows.append({"Alvo": a, "δh (mm)": round(dh, 1),
+                _rows.append({"Alvo": a + rotulos.get(a, ("", None))[0],
+                              "δh (mm)": round(dh, 1),
                               "ΔZ (mm)": (round(float(dz), 1) if pd.notna(dz) else None),
                               "|ΔZ|/δh": (round(razao, 2) if pd.notna(razao) else None)})
             st.dataframe(pd.DataFrame(_rows), use_container_width=True,
                          hide_index=True)
-            st.caption("Na Santa Casa, a tese obtém ≈ 0,2 em A1/A2 e 0,4–0,5 nos "
+            st.caption("No Edifício 1, a tese obtém ≈ 0,2 em A1/A2 e 0,4–0,5 nos "
                        "restantes alvos.")
 
     fis = dados.get("fissuro")
-    if e_santa_casa and fis is not None and not fis.empty and "Fissurómetro" in fis.columns:
-        st.markdown("#### Fissurómetros da Santa Casa (F1–F5)")
+    if e_edificio1 and fis is not None and not fis.empty and "Fissurómetro" in fis.columns:
+        st.markdown("#### Fissurómetros do Edifício 1 (F1–F5)")
         f_ = fis.copy(); f_["Data"] = pd.to_datetime(f_["Data"], errors="coerce")
         fig3 = go.Figure()
         for nome, g in f_.groupby("Fissurómetro"):
@@ -2776,7 +4509,7 @@ def separador_obra(dados):
         "da contratual — as 180 tarefas elementares de escavação e travamento "
         "mantêm a duração e foram deslocadas. Todo o atraso vem das suspensões de "
         "frentes durante as estacas: o impacto 1 (caneiro) desloca a frente poente, "
-        "sob a Santa Casa, em 36 dias úteis; o impacto 2 (cabos BT/MT) desloca a "
+        "sob o Edifício 1, em 36 dias úteis; o impacto 2 (cabos BT/MT) desloca a "
         "frente norte e a escavação da frente nascente/sul em 32. A escavação "
         "termina a **15/04/2026** em vez de 02/03/2026 e a conclusão da 1.ª fase "
         "passa de 11/01/2027 para 01/03/2027.")
@@ -2915,10 +4648,10 @@ def separador_obra(dados):
     med = pd.DataFrame([{"Data": (pd.to_datetime(d).strftime("%d/%m/%Y") if d else "—"), "Zona": z,
                          "Ocorrência ou medida": o, "Estado": e} for d, z, o, e in MEDIDAS_OBRA])
     st.table(med.set_index("Data"))
-    st.caption("As medidas com data são assinaladas nos gráficos dos fissurómetros da Santa Casa "
+    st.caption("As medidas com data são assinaladas nos gráficos dos fissurómetros do Edifício 1 "
                "(separador «Alvos (2D)»).")
-    st.caption("Dias úteis contados de segunda a sexta. O impacto 3 (Restaurante "
-               "Cimas) não está ligado a tarefas seguintes no plano, e as estacas "
+    st.caption("Dias úteis contados de segunda a sexta. O impacto 3 (Edifício 2) "
+               "não está ligado a tarefas seguintes no plano, e as estacas "
                "E6_21–E6_27 aparecem executadas a partir de 07/08/2025, antes do "
                "fim dessa suspensão (21/08/2025) — incoerência a confirmar com o "
                "empreiteiro. Por manter as durações contratuais, o plano não mede o "
@@ -2968,7 +4701,7 @@ def separador_pressupostos(dados):
                             "(A26 no piso −1, cota 15,90). Troço poente do AB (A1–A18): nível "
                             "inferido da cronologia e do comprimento livre.",
          "Estado": "GH confirmado; AB a confirmar"},
-        {"Item": "Fissurómetros da Santa Casa",
+        {"Item": "Fissurómetros do Edifício 1",
          "O que se assume": "Leituras acumuladas em mm desde 19/01/2026, tal como recebidas.",
          "Estado": "Grandeza medida e convenção de sinal a confirmar"},
         {"Item": "Referência das células de carga",
@@ -3006,7 +4739,7 @@ def separador_pressupostos(dados):
          "Tratamento": "Tratados como séries separadas; os 'b' foram re-zerados "
                        "em 20/10/2025 e os acumulados não são comparáveis "
                        "diretamente com A1-A4."},
-        {"Item": "Fachadas da Santa Casa",
+        {"Item": "Fachadas do Edifício 1",
          "Tratamento": "Distinguidas frontal (A1-A4) e lateral (A5-A8) pela "
                        "posição em planta."},
     ])
@@ -3511,7 +5244,7 @@ def separador_terreno_alvos_3d(dados):
     SEPARADOR FUNDIDO: terreno real (MDT) + alvos com movimento drapejados
     sobre a superfície. Junta o melhor dos dois 3D antigos — o relevo real com
     curvas de nível e volume de escavação, e os alvos coloridos por estado com
-    setas de deslocamento, casas dos edifícios e destaque da Santa Casa.
+    setas de deslocamento, casas dos edifícios e destaque do Edifício 1.
 
     Referenciais diferentes: os alvos são alinhados ao terreno por CAIXA-
     ENVOLVENTE (ilustrativo, ver _bbox_alinhamento) e assentes na cota do
@@ -3582,7 +5315,7 @@ def separador_terreno_alvos_3d(dados):
     with col_c:
         destacar_alarmes = st.checkbox("Destacar alarmes/alertas", value=True,
                                        key="fus_alarmes")
-        destacar_sc = st.checkbox("Realçar Santa Casa", value=True,
+        destacar_sc = st.checkbox("Realçar Edifício 1", value=True,
                                   key="fus_sc")
         # ajustes finos do alinhamento (o utilizador valida a olho)
         with st.expander("Ajuste fino do alinhamento"):
@@ -3695,15 +5428,15 @@ def separador_terreno_alvos_3d(dados):
         dh = grp[COLS["desl_h"]].to_numpy()
         nomes = grp[COLS["alvo"]].astype(str).to_numpy()
         estados = grp["Estado calculado"].to_numpy()
-        fachadas = grp["Fachada SC"].to_numpy()
-        e_santa_casa = isinstance(chave, str) and "Santa Casa" in chave
+        fachadas = grp["Fachada"].to_numpy()
+        e_edificio1 = isinstance(chave, str) and "Edifício 1" in chave
 
         if tipo == "edificio":
             cor = CORES_EDIFICIO.get(chave, "#7f7f7f"); nome_leg = chave
         else:
             cor = "#ff7f0e"; nome_leg = f"Contenção — Alçado {etiqueta}"
 
-        if destacar_sc and e_santa_casa:
+        if destacar_sc and e_edificio1:
             simbolos = ["diamond" if f == "Frente escavação" else "circle"
                         for f in fachadas]
         else:
@@ -4011,38 +5744,41 @@ def separador_resultados(dados):
     st.divider()
     st.markdown("#### 5. Observado vs. Previsto — comparação com o projeto")
     st.caption(
-        "Deslocamento horizontal OBSERVADO vs. ESTIMATIVA DE PROJETO (memória "
-        "descritiva JETsj: ~20 mm na cortina poente/norte, ~10 mm na "
-        "nascente/sul — valor de CÁLCULO para a última fase de escavação), "
-        "atribuida pela frente de escavação adjacente. Para os edifícios "
-        "vizinhos a comparação e INDIRETA: a estimativa refere-se a cortina, "
-        "não ao edifício.")
-    Mc = ult[COLS["M0"]].mean()
-    Pc = ult[COLS["P0"]].mean()
+        "Deslocamento horizontal máximo OBSERVADO (todas as campanhas) vs. "
+        "ESTIMATIVA DO PROJETO para a última fase de escavação (memória "
+        "descritiva: ~20 mm na cortina poente/norte e ~10 mm na nascente/sul). "
+        "Nos alçados, a estimativa é a da zona do projeto em que cada um se "
+        "situa (atribuição inferida da posição; menos segura nos alçados BF, "
+        "CD e DE, no canto sudoeste). Nos edifícios vizinhos, a comparação é "
+        "INDIRETA: a estimativa refere-se à cortina adjacente, não ao "
+        "edifício. A coluna «Ultrapassada a» indica a primeira campanha em que "
+        "o máximo do grupo atingiu a estimativa.")
     linhas = []
-    for chave, grp in ult.groupby(COLS["edificio"]):
-        frente = zona_escav_de_edificio(chave)
-        if frente in PREVISTO_POR_FRENTE:
-            prev = PREVISTO_POR_FRENTE[frente]
-            zona = NOME_FRENTE[frente]
-        else:
-            M = grp[COLS["M0"]].mean()
-            P = grp[COLS["P0"]].mean()
-            zona_key = "poente_norte" if (M < Mc or P > Pc) else "nascente_sul"
-            prev = DEFORM_PROJETO[zona_key]
-            zona = ("poente/norte" if zona_key == "poente_norte" else "nascente/sul") + " (inferida)"
-        tipo = ("direta (cortina)" if "contencao" in str(chave).lower()
-                or "contenção" in str(chave).lower() else "indireta (edifício vizinho)")
+    for chave, grp in alvos.groupby(COLS["edificio"]):
+        prev, zona, tipo = previsto_do_grupo(chave)
+        if prev is None:
+            continue
         obs = grp[COLS["desl_h"]].max()
-        dif = obs - prev
-        pct = (dif / prev * 100) if prev else float("nan")
+        if pd.isna(obs):
+            continue
+        t_ult, _v = data_ultrapassagem(grp[COLS["data"]], grp[COLS["desl_h"]], prev)
         linhas.append({
-            "Grupo": chave, "Frente": zona, "Comparação": tipo,
-            "Previsto (mm)": prev, "Observado máx (mm)": round(obs, 1),
-            "Diferença (mm)": round(dif, 1), "Excesso (%)": round(pct, 0),
+            "Grupo": nome_curto_grupo(chave), "Zona": zona, "Comparação": tipo,
+            "Previsto (mm)": prev, "Observado máx (mm)": round(float(obs), 1),
+            "Observado/previsto": round(float(obs) / prev, 1),
+            "Ultrapassada a": (t_ult.strftime("%d/%m/%Y") if t_ult is not None else "–"),
         })
     df5 = pd.DataFrame(linhas).sort_values("Observado máx (mm)", ascending=False)
-    st.dataframe(df5, use_container_width=True, hide_index=True)
+    st.dataframe(df5, use_container_width=True, hide_index=True,
+                 height=int(35 * (len(df5) + 1) + 3),
+                 column_config={
+                     _k: st.column_config.NumberColumn(format=_f)
+                     for _c, _f in (("Previsto (mm)", "%.0f"),
+                                    ("Observado máx (mm)", "%.1f"),
+                                    ("Observado/previsto", "%.1f"))
+                     for _k in {_c, _tr(_c)}} | {
+                     _k: st.column_config.TextColumn(width="medium")
+                     for _k in {"Grupo", _tr("Grupo")}})
     top5 = df5.head(12)
     fig5 = go.Figure()
     fig5.add_trace(go.Bar(
@@ -4061,13 +5797,14 @@ def separador_resultados(dados):
         margin=dict(l=10, r=10, t=40, b=40),
         legend=dict(orientation="h", yanchor="bottom", y=1.02))
     st.plotly_chart(fig5, use_container_width=True)
-    pior = df5.iloc[0]
-    st.caption(
-        f"Maior excedência: «{pior['Grupo']}» — observado "
-        f"{pior['Observado máx (mm)']:.1f} mm vs. previsto "
-        f"{pior['Previsto (mm)']:.0f} mm (frente {pior['Frente']}; comparação "
-        f"{pior['Comparação']}), ~{pior['Excesso (%)']:.0f}% acima da "
-        f"estimativa de projeto.")
+    _dir = df5[df5["Comparação"].str.startswith("direta")]
+    if not _dir.empty:
+        pior = _dir.iloc[0]
+        st.caption(
+            f"Maior excedência na contenção: {pior['Grupo']} — "
+            f"{pior['Observado máx (mm)']:.1f} mm, {pior['Observado/previsto']:.1f} "
+            f"vezes a estimativa de {pior['Previsto (mm)']:.0f} mm "
+            f"(zona {pior['Zona']}), ultrapassada a {pior['Ultrapassada a']}.")
 
     # ---- 6. ENVELOPES EMPIRICOS -----------------------------------------
     st.divider()
@@ -4075,10 +5812,10 @@ def separador_resultados(dados):
     st.caption(
         "Deslocamento horizontal máximo de cada alçado (máximo dos prismas em "
         "todas as campanhas) e de cada inclinómetro (máximo do perfil), em "
-        "função da altura da cortina H (Tabela 3.7), face aos referenciais "
-        "empíricos e às estimativas do projeto. As linhas a tracejado são "
-        "δ_h = p%·H; a sombra marca as faixas de Long e de Yoo. Reproduz a "
-        "Figura 5.3 da dissertação.")
+        "função da profundidade escavada H (do topo das estacas ao fundo de "
+        "escavação), face aos referenciais empíricos e às estimativas do "
+        "projeto (memória descritiva, por zona do projeto). As linhas a "
+        "tracejado são δ_h = p%·H; a sombra marca as faixas de Long e de Yoo.")
 
     import numpy as _np
     _pts_alc, _pts_inc = [], []
@@ -4091,8 +5828,7 @@ def separador_resultados(dados):
         if pd.isna(_dh):
             continue
         _hmin, _hmax = ALTURA_CORTINA[_alc]
-        _zona = zona_escav_de_edificio(f"Alçado {_alc}")
-        _proj = PREVISTO_POR_FRENTE.get(_zona)
+        _proj = previsto_do_grupo(f"Alçado {_alc}")[0]
         _pts_alc.append((_alc, (_hmin + _hmax) / 2, _hmin, _hmax, float(_dh), _proj))
     _res = dados.get("resumo")
     if _res is not None and not _res.empty:
@@ -4111,6 +5847,9 @@ def separador_resultados(dados):
         _Hs = [p[1] for p in _pts_alc] + [p[1] for p in _pts_inc]
         _xx = _np.linspace(min(_Hs) - 1.0, max(_Hs) + 1.0, 50)
         figE = go.Figure()
+        # posicao dos rotulos para nao se sobreporem (pontos proximos)
+        _POS_ROT = {"AB": "middle left", "CD": "middle right", "BF": "bottom center",
+                    "OP": "bottom center", "I2": "middle right"}
         for _rot, _pmin, _pmax, _rgb in REFERENCIAS_EMPIRICAS:
             if _pmin == _pmax:
                 figE.add_trace(go.Scatter(
@@ -4128,7 +5867,7 @@ def separador_resultados(dados):
             figE.add_trace(go.Scatter(
                 x=[p[1] for p in _pts_alc], y=[p[4] for p in _pts_alc],
                 mode="markers+text", text=[p[0] for p in _pts_alc],
-                textposition="top center", textfont=dict(size=9),
+                textposition=[_POS_ROT.get(p[0], "top center") for p in _pts_alc], textfont=dict(size=10),
                 marker=dict(size=11, color="#b45309", symbol="circle",
                             line=dict(width=1, color="white")),
                 name="Alçados (prismas)",
@@ -4140,7 +5879,7 @@ def separador_resultados(dados):
             figE.add_trace(go.Scatter(
                 x=[p[1] for p in _pts_inc], y=[p[4] for p in _pts_inc],
                 mode="markers+text", text=[p[0] for p in _pts_inc],
-                textposition="top center", textfont=dict(size=9),
+                textposition=[_POS_ROT.get(p[0], "top center") for p in _pts_inc], textfont=dict(size=10),
                 marker=dict(size=12, color="#1f2a44", symbol="diamond",
                             line=dict(width=1, color="white")),
                 name="Inclinómetros",
@@ -4151,11 +5890,12 @@ def separador_resultados(dados):
         _projy = [p[5] for p in _pts_alc if p[5] is not None]
         if _projx:
             figE.add_trace(go.Scatter(
-                x=_projx, y=_projy, mode="markers", name="Estimativa de projeto",
+                x=_projx, y=_projy, mode="markers",
+                name="Estimativa do projeto (memória descritiva)",
                 marker=dict(size=9, color="#888", symbol="x",
                             line=dict(width=1, color="#888"))))
         figE.update_layout(
-            height=520, xaxis=dict(title="Altura da cortina H (m)"),
+            height=520, xaxis=dict(title="Profundidade escavada, H (m)"),
             yaxis=dict(title="δ_h,máx (mm)", rangemode="tozero"),
             margin=dict(l=10, r=10, t=30, b=40),
             legend=dict(orientation="h", yanchor="bottom", y=1.02))
@@ -4166,10 +5906,11 @@ def separador_resultados(dados):
                 + ", ".join(_acima) + ". ") if _acima else ""
         st.caption(
             _txt + "Os alçados mais deslocados situam-se em torno de 0,2 % de H "
-            "(Clough & O'Rourke), acima das estimativas de projeto; os troços "
-            "curtos travados por escoras de canto (FG, BF) e o anel (LM) ficam "
-            "abaixo de 0,1 %. Valores subestimados: excluem o movimento "
-            "anterior à zeragem de cada instrumento.")
+            "(Clough & O'Rourke), acima das estimativas do projeto; os troços "
+            "curtos travados por escoras de canto (FG, BF) e os alçados DE e LM, "
+            "com prismas zerados só em 22/12/2025 e 05/02/2026, ficam abaixo de "
+            "0,1 %. Valores subestimados: excluem o movimento anterior à "
+            "zeragem de cada instrumento.")
 
 
 def zona_escav_de_edificio(edif):
@@ -4180,11 +5921,11 @@ def zona_escav_de_edificio(edif):
     if not isinstance(edif, str):
         return None
     e = edif.lower()
-    if "santa casa" in e:
+    if "edifício 1" in e:
         return "poente_sul"
-    if "cimas" in e:
+    if "edifício 2" in e:
         return "nascente_sul"
-    if "clinica" in e or "clínica" in e or "abreu" in e:
+    if "edifício 3" in e:
         return "norte"
     alc = _extrair_alcado(edif)
     if alc:
@@ -4440,11 +6181,11 @@ def separador_correlacoes(dados):
 
         alvos_edi = alvos_c[(alvos_c[COLS["data"]] == ult_data_c) &
                             (alvos_c[COLS["edificio"]].astype(str)
-                             .str.contains("Santa Casa", case=False, na=False))]
+                             .str.contains("Edifício 1", case=False, na=False))]
         if not alvos_edi.empty:
             edi_nome = alvos_edi[COLS["edificio"]].iloc[0]
             with st.expander(f"📍 Ver localização do alvo {alvo7} "
-                             f"(no edifício Santa Casa)"):
+                             f"(no Edifício 1)"):
                 COR_ESTADO_LOC = {"Alarme": "#c0140f", "Alerta": "#e67e00",
                                   "Regular": "#1f9e55"}
                 mostrar_localizacao_alvo(alvos_edi, edi_nome, [alvo7],
@@ -4627,8 +6368,8 @@ def separador_correlacoes(dados):
 
     if not zona4 or zona4 not in ESCAVACAO_ZONAS:
         st.info(f"O alvo {alvo4} não tem frente de escavação mapeada. Escolhe um "
-                f"alvo de um edifício/alçado com zona associada (Santa Casa, "
-                f"Cimas, Clinica, ou um alçado de contenção).")
+                f"alvo de um edifício/alçado com zona associada (Edifícios 1, "
+                f"2 e 3, ou um alçado de contenção).")
     else:
         st.caption(f"↳ Frente de escavação: **{ZONA_ESCAV_NOME[zona4]}**")
         # eventos de escavacao (cota) da zona -> frente monotona descendente
@@ -5147,8 +6888,8 @@ def separador_home(dados):
         "4,55 m, cerca de 16 m abaixo do piso 1 (cota 20,95 m) e mais nas zonas "
         "em que o terreno natural é mais alto — executada ao abrigo de uma "
         "cortina de estacas ancorada e travada por bandas de laje, num contexto "
-        "exigente: confina com **edifícios sensíveis**, em particular a Santa "
-        "Casa da Misericórdia, o Restaurante Cimas e a Clínica Abreu Loureiro, "
+        "exigente: confina com **edifícios sensíveis**, em particular três "
+        "edifícios vizinhos instrumentados (Edifícios 1, 2 e 3), "
         "e desenvolve-se **abaixo do nível freático** de repouso. A "
         "instrumentação instalada — inclinómetros, alvos topográficos, células "
         "de carga e piezómetros — permite acompanhar, ao longo do tempo, os "
@@ -5305,6 +7046,8 @@ def separador_home(dados):
 # =========================================================================
 def main():
     st.sidebar.title("The Eden - Instrumentação")
+    st.sidebar.radio("Idioma / Language", ["Português", "English"],
+                     horizontal=True, key="ims_lang")
     fonte_op = st.sidebar.radio("Ficheiro de dados",
                                 ["Usar o ficheiro ao lado do script", "Carregar manualmente"])
     if fonte_op == "Carregar manualmente":
