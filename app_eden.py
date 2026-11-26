@@ -1036,7 +1036,8 @@ def _datas_pt(fig):
     return fig
 
 
-_plotly_chart_original = st.plotly_chart
+_plotly_chart_original = (st.plotly_chart if hasattr(st.plotly_chart, "__self__")
+                          else st._main.plotly_chart)
 
 
 def _plotly_chart_pt(fig, *args, **kwargs):
@@ -1062,6 +1063,37 @@ import re as _re_i18n
 from streamlit.delta_generator import DeltaGenerator as _DG_i18n
 
 _I18N_EN = {
+    '#### 7. Elementos adjacentes — cada um com o seu critério': '#### 7. Adjacent elements — each with its own criterion',
+    'Compara dois alvos de elementos diferentes, por exemplo um edifício vizinho e o alçado da contenção que lhe fica em frente. Cada série é lida com os limiares do critério do seu elemento, e a faixa inferior mostra o estado de cada alvo segundo esse critério. Opcionalmente, o primeiro alvo é também representado a partir da data de zeragem do segundo, para comparar movimentos com a mesma origem.': 'Compares two targets of different elements, for example a neighbouring building and the wall section facing it. Each series is read with the thresholds of the criterion of its element, and the lower band shows the state of each target under that criterion. Optionally, the first target is also plotted from the zeroing date of the second, to compare movements with the same origin.',
+    'São precisos pelo menos dois alvos.': 'At least two targets are needed.',
+    'Alvo 1': 'Target 1',
+    'Alvo 2': 'Target 2',
+    'Representar também o alvo 1 a partir da zeragem do alvo 2': 'Also plot target 1 from the zeroing of target 2',
+    'Os dois alvos não têm leituras num período comum.': 'The two targets have no readings in a common period.',
+    'Período': 'Period',
+    'Deslocamento horizontal (mm)': 'Horizontal displacement (mm)',
+    '#### C. Sinal generalizado por elemento': '#### C. Generalised signal by element',
+    'Persistência no espaço: numa campanha, um elemento (edifício vizinho ou alçado) dá sinal generalizado quando pelo menos a fração escolhida dos seus alvos ou prismas lidos nessa campanha (mínimo de 3) dá sinal pela regra da barra lateral, com a velocidade calculada sobre pelo menos 7 dias. Reduz o número de sinais a analisar face aos sinais por alvo.': 'Persistence in space: in a campaign, an element (neighbouring building or wall section) gives a generalised signal when at least the chosen fraction of its targets or prisms read in that campaign (minimum of 3) gives a signal by the rule of the sidebar, with the velocity computed over at least 7 days. It reduces the number of signals to analyse compared with the signals per target.',
+    'Fração mínima de alvos com sinal': 'Minimum fraction of targets with a signal',
+    'Sem elementos com pelo menos 3 leituras na mesma campanha.': 'No elements with at least 3 readings in the same campaign.',
+    'Fração com sinal': 'Fraction with signal',
+    'Campanha (fração com sinal)': 'Campaign (fraction with signal)',
+    'Sinal generalizado': 'Generalised signal',
+    'Primeiro alerta': 'First alert',
+    'Sinais generalizados': 'Generalised signals',
+    'Primeiro sinal generalizado': 'First generalised signal',
+    'Antecedência (dias)': 'Lead time (days)',
+    'Elemento': 'Element',
+    ' sinais generalizados** em ': ' generalised signals** in ',
+    ' pares de elemento e campanha com pelo menos 3 leituras, em ': ' element–campaign pairs with at least 3 readings, in ',
+    ' elementos. Em **': ' elements. In **',
+    ' elementos** que atingiram o alerta, o primeiro sinal generalizado precedeu-o': ' elements** that reached the alert, the first generalised signal preceded it',
+    ' Como quase todos os elementos atingiram o alerta, a seletividade deste indicador não pode ser avaliada neste caso.': ' As almost all elements reached the alert, the selectivity of this indicator cannot be assessed in this case.',
+    ' (data da análise do bloco A), sinal generalizado em: ': ' (analysis date of block A), generalised signal at: ',
+    ' (data da análise do bloco A), nenhum elemento tinha dado sinal generalizado.': ' (analysis date of block A), no element had given a generalised signal.',
+    'Primeiro alerta: ': 'First alert: ',
+    ': sinal generalizado': ': generalised signal',
+    ' alvos com sinal': ' targets with a signal',
     " mais.": " more.",
     " vs. previsto ": " vs. predicted ",
     "(frente ": "(front ",
@@ -1236,7 +1268,7 @@ _I18N_EN = {
     "A extrair geometria do DXF...": "Extracting DXF geometry...",
     "A folha de '": "The sheet '",
     "A ler o desenho DXF...": "Reading the DXF drawing...",
-    "A regra e as suas variantes aplicadas ao deslocamento horizontal de todos os alvos e prismas. Contam-se os sinais anteriores ao primeiro alerta de cada alvo (todos, nos alvos sem alerta). Um alerta diz-se antecipado se teve um sinal nas 4 semanas anteriores; um sinal é acerto se o alerta do mesmo alvo se seguiu nesse prazo. Reproduz a Tabela 5.4.": "The rule and its variants applied to the horizontal displacement of all targets and prisms. Signals before the first alert of each target are counted (all signals, in targets without alert). An alert is anticipated if it had a signal in the 4 preceding weeks; a signal is a hit if the alert of the same target followed within that period. Reproduces Table 5.4.",
+    "A regra e as suas variantes aplicadas ao deslocamento horizontal de todos os alvos e prismas. Contam-se os sinais anteriores ao primeiro alerta de cada alvo (todos, nos alvos sem alerta). Um alerta diz-se antecipado se teve um sinal nas 4 semanas anteriores; um sinal é acerto se o alerta do mesmo alvo se seguiu nesse prazo. Reproduz a Tabela 5.5.": "The rule and its variants applied to the horizontal displacement of all targets and prisms. Signals before the first alert of each target are counted (all signals, in targets without alert). An alert is anticipated if it had a signal in the 4 preceding weeks; a signal is a hit if the alert of the same target followed within that period. Reproduces Table 5.5.",
     "Aceleração": "Acceleration",
     "Acima do limite superior de Long (0,25 % de H): ": "Above the upper limit of Long (0.25% of H): ",
     "Acumulados": "Cumulative",
@@ -2288,7 +2320,7 @@ def _i18n_imagem(orig):
 
 _DG_i18n.image = _i18n_imagem(_O["image"])
 
-_st_main_dg = _plotly_chart_original.__self__
+_st_main_dg = getattr(_plotly_chart_original, "__self__", None) or st._main
 for _n in ("markdown", "caption", "subheader", "header", "title", "info",
            "warning", "success", "error", "text", "expander", "button",
            "checkbox", "toggle", "slider", "number_input", "text_input",
@@ -5912,6 +5944,572 @@ def separador_resultados(dados):
             "0,1 %. Valores subestimados: excluem o movimento anterior à "
             "zeragem de cada instrumento.")
 
+    # ---- 7. ELEMENTOS ADJACENTES ----
+    st.divider()
+    _bloco_elementos_adjacentes(alvos)
+
+    # ---- 8 e 9. DEFORMADA DA CONTENÇÃO ----
+    st.divider()
+    _G = _geometria_contencao()
+    if _G is None:
+        st.markdown("#### 8. Deformada da contenção")
+        st.info(f"Falta o ficheiro de geometria da contenção ({GEOMETRIA_CONTENCAO}) ao lado da aplicação.")
+    else:
+        _E = _estagios_deformada(alvos, float(_G.get("desvio_cota_relatorios_projeto", 0.0)))
+        _bloco_deformada_planta(_E, _G)
+        st.divider()
+        _bloco_deformada_desenvolvimento(_E, dados.get("perfis"), _G)
+
+
+# =========================================================================
+# DEFORMADA DA CONTENÇÃO (blocos 8 e 9 de «Resultados»)
+# -------------------------------------------------------------------------
+# A geometria da contenção (contorno, vértices, estacas, inclinómetros e
+# topo das estacas por troço) vem da planta do projeto, num ficheiro
+# auxiliar ao lado da aplicação. As posições dos prismas passam do
+# referencial dos alvos para o dos desenhos por uma transformação de
+# semelhança guardada no mesmo ficheiro.
+# =========================================================================
+GEOMETRIA_CONTENCAO = "geometria_contencao.json"
+# fim de cada etapa de escavação, segundo o plano impactado (PERIODOS_ESCAVACAO)
+ETAPAS_DEFORMADA = [
+    (PERIODOS_ESCAVACAO[1][3], "fim dos pisos 2 e 1", "end of levels 2 and 1"),
+    (PERIODOS_ESCAVACAO[2][3], "fim do piso -1", "end of level -1"),
+    (PERIODOS_ESCAVACAO[3][3], "fim do piso -2", "end of level -2"),
+    (PERIODOS_ESCAVACAO[4][3], "fim da escavação", "end of excavation"),
+]
+CORES_ETAPAS = ["#b9d6ec", "#7cb0d8", "#3f86c0", "#1b5ea8", "#0a2f63"]
+
+
+@st.cache_data(show_spinner=False)
+def _geometria_contencao():
+    import json
+    for fp in (Path(__file__).resolve().parent / GEOMETRIA_CONTENCAO, Path(GEOMETRIA_CONTENCAO)):
+        if fp.exists():
+            G = json.loads(fp.read_text(encoding="utf-8"))
+            poly = np.asarray(G["contorno"], float)
+            seg = np.diff(poly, axis=0)
+            sl = np.hypot(seg[:, 0], seg[:, 1])
+            ch = np.r_[0, np.cumsum(sl)]
+            vch = {k: float(ch[int(np.argmin(np.hypot(*(poly - np.asarray(v)).T)))])
+                   for k, v in G["vertices"].items()}
+            vch[G["desenvolvimento"]["inicio"] + "2"] = float(ch[-1])
+            G["_poly"] = poly
+            G["_vch"] = vch
+            return G
+    return None
+
+
+def _alvos_para_desenho(G, MP, vetor=False):
+    """Coordenadas (M, P) dos alvos, em m, no referencial dos desenhos; com
+    vetor=True, transforma um deslocamento (só escala e rotação)."""
+    T = G["transformacao_alvos_para_desenho"]
+    R = np.asarray(T["R"], float)
+    MP = np.atleast_2d(np.asarray(MP, float))
+    if vetor:
+        return float(T["s"]) * MP @ R.T
+    return (float(T["s"]) * (MP - np.asarray(T["origem_alvos"], float)) @ R.T
+            + np.asarray(T["origem_desenho"], float))
+
+
+def _desenvolvimento_contorno(G, xy):
+    """Distância ao longo do contorno, a partir do canto inicial, da projeção
+    de cada ponto (referencial dos desenhos) no contorno."""
+    poly = G["_poly"]
+    seg = np.diff(poly, axis=0)
+    sl = np.hypot(seg[:, 0], seg[:, 1])
+    ch = np.r_[0, np.cumsum(sl)]
+    sl2 = np.where(sl > 0, sl ** 2, 1.0)
+    out = []
+    for p in np.atleast_2d(xy):
+        t = np.clip(((p - poly[:-1]) * seg).sum(1) / sl2, 0, 1)
+        q = poly[:-1] + t[:, None] * seg
+        i = int(np.argmin(np.hypot(*(p - q).T)))
+        out.append(ch[i] + t[i] * sl[i])
+    return np.array(out)
+
+
+def _estagios_deformada(alvos, desvio_cota):
+    """Deslocamento de cada prisma da contenção no fim de cada etapa de
+    escavação (interpolado entre campanhas) e na última leitura, se esta for
+    posterior ao fim da escavação. Um prisma só entra nas etapas posteriores
+    à sua zeragem."""
+    import re as _re
+    a = alvos[alvos[COLS["edificio"]].astype(str).str.contains("Alçado", na=False)]
+    a = a.dropna(subset=[COLS["desl_h"]]).sort_values(COLS["data"])
+    t0 = pd.Timestamp("2025-01-01")
+    fim = pd.Timestamp(ETAPAS_DEFORMADA[-1][0])
+    linhas = []
+    for alvo, g in a.groupby(COLS["alvo"]):
+        t = (g[COLS["data"]] - t0).dt.days.values.astype(float)
+        h = g[COLS["desl_h"]].values.astype(float)
+        dm = g[COLS["dM"]].values.astype(float)
+        dp = g[COLS["dP"]].values.astype(float)
+        base = dict(alvo=str(alvo), alc=_nome_elemento(g[COLS["edificio"]].iloc[0]).replace("Alçado ", ""),
+                    rep=bool(_re.search(r"\d[b-d]$", str(alvo))),
+                    m0=float(g[COLS["M0"]].iloc[0]), p0=float(g[COLS["P0"]].iloc[0]),
+                    cota=float(g[COLS["Z0"]].iloc[0]) - desvio_cota)
+        for k, et in enumerate(ETAPAS_DEFORMADA + [None]):
+            if et is None:
+                if g[COLS["data"]].iloc[-1] <= fim:
+                    continue
+                v, vm, vp, dd = h[-1], dm[-1], dp[-1], g[COLS["data"]].iloc[-1]
+            else:
+                dd = pd.Timestamp(et[0])
+                x = float((dd - t0).days)
+                if x < t[0] or x > t[-1]:
+                    continue
+                v, vm, vp = np.interp(x, t, h), np.interp(x, t, dm), np.interp(x, t, dp)
+            linhas.append(dict(base, k=k, h=float(v), dm=float(vm), dp=float(vp), data=dd))
+    return pd.DataFrame(linhas)
+
+
+def _rotulos_etapas(E, en):
+    rot = [f"{pd.Timestamp(d):%d/%m/%Y} – {e if en else p}" for d, p, e in ETAPAS_DEFORMADA]
+    ult = E[E["k"] == len(ETAPAS_DEFORMADA)]["data"]
+    fim = f" ({'to' if en else 'até'} {ult.max():%d/%m/%Y})" if len(ult) else ""
+    rot.append(("last reading, after the end of excavation" if en
+                else "última leitura, após o fim da escavação") + fim)
+    return rot
+
+
+def _bloco_deformada_planta(E, G):
+    """Bloco 8 (Figura 5.9): trajetória em planta do topo de cada coluna de
+    prismas no fim de cada etapa, com o deslocamento amplificado."""
+    en = _lang_en()
+    st.markdown("#### 8. Deformed shape of the retaining wall in plan" if en
+                else "#### 8. Deformada da contenção em planta")
+    st.caption(
+        "Position of the top of each column of prisms (the highest original prism at each "
+        "position) at the end of each excavation stage, according to the impacted works "
+        "schedule, and at the last reading after the end of excavation, with the horizontal "
+        "displacement magnified. Values at the stage dates are interpolated between campaigns; "
+        "a prism only enters the stages after its zeroing. The geometry (outline, piles, "
+        "corners and inclinometers) comes from the design plan, in an auxiliary file." if en else
+        "Posição do topo de cada coluna de prismas (o prisma original mais alto em cada "
+        "posição) no fim de cada etapa de escavação, segundo o plano impactado, e na última "
+        "leitura após o fim da escavação, com o deslocamento horizontal amplificado. Os "
+        "valores nas datas das etapas são interpolados entre campanhas; um prisma só entra "
+        "nas etapas posteriores à sua zeragem. A geometria (contorno, estacas, vértices e "
+        "inclinómetros) vem da planta do projeto, num ficheiro auxiliar.")
+    amp = st.slider("Displacement magnification" if en else "Amplificação do deslocamento",
+                    min_value=50, max_value=500, value=200, step=50, key="def_amp")
+    S = E[~E["rep"]] if len(E) else E
+    if S.empty:
+        st.info("No wall prism readings." if en else "Sem leituras de prismas da contenção.")
+        return
+    # topo de cada coluna: prisma original de maior cota em cada posição (a menos de 1,5 m)
+    u = S.drop_duplicates("alvo")[["alvo", "alc", "m0", "p0", "cota"]]
+    topos = []
+    for _, g in u.groupby("alc"):
+        usados = []
+        for _, r in g.sort_values("cota", ascending=False).iterrows():
+            if any(np.hypot(r.m0 - q.m0, r.p0 - q.p0) < 1.5 for q in usados):
+                continue
+            usados.append(r)
+            topos.append(r.alvo)
+    T = S[S["alvo"].isin(topos)].copy()
+    xy = _alvos_para_desenho(G, T[["m0", "p0"]].values)
+    vec = _alvos_para_desenho(G, T[["dm", "dp"]].values / 1000.0, vetor=True)
+    T["x"], T["y"] = xy[:, 0], xy[:, 1]
+    T["xd"], T["yd"] = T["x"] + amp * vec[:, 0], T["y"] + amp * vec[:, 1]
+    rot = _rotulos_etapas(E, en)
+
+    fig = go.Figure()
+    pl = np.asarray(G["estacas"], float)
+    fig.add_trace(go.Scatter(x=pl[:, 0], y=pl[:, 1], mode="markers", hoverinfo="skip",
+                             marker=dict(size=4, symbol="circle-open", color="#c4c4c4",
+                                         line=dict(width=0.7)), showlegend=False))
+    V = G["vertices"]
+    vk = [k for k in "ABCDEFGHIJKLMNOPQ" if k in V]
+    fig.add_trace(go.Scatter(x=[V[k][0] for k in vk], y=[V[k][1] for k in vk], mode="markers+text",
+                             text=vk, textposition="middle center",
+                             textfont=dict(size=10, color="#b03a2e"), hoverinfo="skip",
+                             marker=dict(size=17, color="white", line=dict(color="#b03a2e", width=1)),
+                             showlegend=False))
+    xs, ys = [], []
+    for _, g in T.groupby("alvo"):
+        g = g.sort_values("k")
+        xs += [g["x"].iloc[0]] + list(g["xd"]) + [None]
+        ys += [g["y"].iloc[0]] + list(g["yd"]) + [None]
+    fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", line=dict(color="#9aa7b4", width=1),
+                             hoverinfo="skip", showlegend=False))
+    for k in range(len(rot)):
+        g = T[T["k"] == k]
+        if g.empty:
+            continue
+        fig.add_trace(go.Scatter(
+            x=g["xd"], y=g["yd"], mode="markers", name=rot[k],
+            marker=dict(size=10 if k < len(rot) - 1 else 12, color=CORES_ETAPAS[k % 5],
+                        line=dict(color="#333333", width=0.6)),
+            customdata=np.c_[g["alvo"], g["h"].round(1)],
+            hovertemplate="%{customdata[0]}<br>%{customdata[1]} mm<extra>" + rot[k] + "</extra>"))
+    g0 = T.drop_duplicates("alvo")
+    fig.add_trace(go.Scatter(x=g0["x"], y=g0["y"], mode="markers", marker=dict(size=6, color="#555555"),
+                             name="initial position of the prism" if en else "posição inicial do prisma",
+                             text=g0["alvo"], hovertemplate="%{text}<extra></extra>"))
+    inc = G["inclinometros"]
+    fig.add_trace(go.Scatter(x=[v["xy"][0] for v in inc.values()], y=[v["xy"][1] for v in inc.values()],
+                             mode="markers+text", text=list(inc),
+                             textposition=[v.get("rotulo_planta", "bottom right") for v in inc.values()],
+                             textfont=dict(size=13, color="#2166ac"), hoverinfo="skip",
+                             marker=dict(size=11, symbol="square", color="#2166ac",
+                                         line=dict(color="white", width=0.6)),
+                             name="inclinometer" if en else "inclinómetro"))
+    for a, (lx, ly) in G["rotulos_alcados"].items():
+        fig.add_annotation(x=lx, y=ly, text=f"<b>{a}</b>", showarrow=False,
+                           font=dict(size=13, color="#1f4e79"), bgcolor="rgba(255,255,255,0.85)")
+    x0, x1, y0, y1 = G["janela_planta"]
+    # escala gráfica (0-20 m) e escala do deslocamento amplificado
+    bx, by = x0 + 6, y1 - 4.8
+    for i_ in range(4):
+        fig.add_shape(type="rect", x0=bx + 5 * i_, x1=bx + 5 * (i_ + 1), y0=by, y1=by + 0.8,
+                      fillcolor="black" if i_ % 2 == 0 else "white", line=dict(color="black", width=0.8))
+    fig.add_annotation(x=bx, y=by - 0.4, text="0", showarrow=False, yanchor="top", font=dict(size=13, color="black"))
+    fig.add_annotation(x=bx + 20, y=by - 0.4, text="20 m", showarrow=False, yanchor="top", font=dict(size=13, color="black"))
+    fig.add_shape(type="line", x0=bx, x1=bx + amp * 0.020, y0=by - 5.6, y1=by - 5.6,
+                  line=dict(color="#0a2f63", width=3))
+    fig.add_annotation(x=bx, y=by - 7.4, xanchor="left", showarrow=False, font=dict(size=13, color="black"),
+                       text=(f"20 mm of displacement (magnification {amp}×)" if en
+                             else f"20 mm de deslocamento (amplificação de {amp}×)"))
+    b = float(G["norte_rad"])
+    nx, ny = x1 - 6, y1 - 12
+    fig.add_annotation(x=nx + 2.6 * np.sin(b), y=ny + 4.4 * np.cos(b), ax=nx, ay=ny, axref="x", ayref="y",
+                       xref="x", yref="y", text="", showarrow=True, arrowhead=2, arrowsize=1.3,
+                       arrowwidth=2, arrowcolor="black")
+    fig.add_annotation(x=nx + 3.2 * np.sin(b), y=ny + 6.6, text="<b>N</b>", showarrow=False,
+                       font=dict(size=15, color="black"))
+    fig.update_xaxes(range=[x0, x1], visible=False, constrain="domain", autorange=False)
+    fig.update_yaxes(range=[y0, y1], visible=False, scaleanchor="x", scaleratio=1,
+                     constrain="domain", autorange=False)
+    fig.update_layout(
+        height=820, margin=dict(l=5, r=5, t=5, b=5), plot_bgcolor="white",
+        legend=dict(x=0.995, y=0.005, xanchor="right", yanchor="bottom", font=dict(size=13),
+                    bgcolor="rgba(255,255,255,0.95)", bordercolor="#bbbbbb", borderwidth=1,
+                    title=dict(text=("Magnified position of the top of each column of prisms" if en
+                                     else "Posição amplificada do topo de cada coluna de prismas"),
+                               font=dict(size=13))))
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _bloco_deformada_desenvolvimento(E, perfis, G):
+    """Bloco 9 (Figura 5.10): deslocamento de cada prisma à sua cota e perfil
+    dos inclinómetros, ao longo do contorno da escavação, por etapa."""
+    from plotly.subplots import make_subplots
+    en = _lang_en()
+    st.markdown("#### 9. Deformed shape of the retaining wall along its outline" if en
+                else "#### 9. Deformada da contenção em desenvolvimento")
+    st.caption(
+        "Cumulative horizontal displacement of each prism with a reading, at the elevation at "
+        "which it is installed, and profile of the inclinometers, along the excavation outline "
+        "from corner B, clockwise, at the end of each excavation stage and at the last reading. "
+        "Each prism is shown from its zeroing; elevations in the design datum (report datum "
+        "minus the offset in the geometry file); inclinometer collars assumed at the top of the "
+        "piles. The profile of each inclinometer is the last valid reading up to the stage date." if en else
+        "Deslocamento horizontal acumulado de cada prisma com leitura, à cota a que está "
+        "instalado, e perfil dos inclinómetros, ao longo do contorno da escavação a partir do "
+        "canto B, no sentido dos ponteiros do relógio, no fim de cada etapa de escavação e na "
+        "última leitura. Cada prisma é representado desde a sua zeragem; cotas no referencial "
+        "do projeto (referencial dos relatórios menos o desvio indicado no ficheiro de "
+        "geometria); boca dos inclinómetros admitida no topo das estacas. O perfil de cada "
+        "inclinómetro é a última leitura válida até à data da etapa.")
+    if E.empty:
+        st.info("No wall prism readings." if en else "Sem leituras de prismas da contenção.")
+        return
+    D = G["desenvolvimento"]
+    vch = G["_vch"]
+    fim = D["inicio"] + "2"
+    L = vch[fim]
+    u = E.drop_duplicates("alvo")[["alvo", "m0", "p0"]].copy()
+    u["s"] = _desenvolvimento_contorno(G, _alvos_para_desenho(G, u[["m0", "p0"]].values))
+    S = E.merge(u[["alvo", "s"]], on="alvo")
+    # inclinómetros: leituras válidas
+    I = perfis.copy() if perfis is not None and not perfis.empty else pd.DataFrame()
+    if not I.empty:
+        I[COLS["data"]] = pd.to_datetime(I[COLS["data"]], errors="coerce")
+        if "Validade / observação" in I.columns:
+            I = I[~I["Validade / observação"].fillna("").astype(str).str.startswith("Excluir")]
+    incl = G["inclinometros"]
+    ipos = {nm: float(_desenvolvimento_contorno(G, [v["xy"]])[0]) for nm, v in incl.items()}
+    rot = _rotulos_etapas(E, en)
+    n = len(rot)
+    VMAX = 60
+    fig = make_subplots(rows=n, cols=1, shared_xaxes=True, vertical_spacing=0.05)
+    niv = D["niveis"]
+    cf = float(D["cota_fundo"])
+    for k in range(n):
+        r = k + 1
+        ax = "" if r == 1 else str(r)
+        # parede: troços até ao topo das estacas (formas por baixo dos traços, porque os perfis dos
+        # inclinómetros são heatmaps, que ficam sempre por baixo dos scatter) e, a tracejado, muros e
+        # consolas acima do topo das estacas, interrompidos onde passa a coluna de um inclinómetro
+        xr, yr = f"x{ax}", f"y{ax}"
+        hx, hy = [], []
+        for a, b_, t, tm in D["topo_estacas"]:
+            s0, s1 = vch[a], vch[b_]
+            fig.add_shape(type="rect", x0=s0, x1=s1, y0=cf, y1=t, xref=xr, yref=yr, layer="below",
+                          fillcolor="#f1eee8", line=dict(width=0))
+            fig.add_shape(type="line", x0=s0, x1=s1, y0=t, y1=t, xref=xr, yref=yr, layer="below",
+                          line=dict(color="#b9b2a6", width=1))
+            if tm > t:
+                tro = [(s0, s1)]
+                for nm_, v_ in incl.items():
+                    c0 = ipos[nm_] + float(v_.get("desvio_desenvolvimento", 0.0)) - 1.6
+                    c1 = c0 + 3.2
+                    tro = [p for q0, q1 in tro for p in ((q0, min(q1, c0)), (max(q0, c1), q1)) if p[1] - p[0] > 0.05]
+                for q0, q1 in tro:
+                    hx += [q0, q1, q1, q0, q0, None]; hy += [t, t, tm, tm, t, None]
+        if hx:
+            fig.add_trace(go.Scatter(x=hx, y=hy, fill="toself", mode="lines", line=dict(width=0),
+                                     fillpattern=dict(shape="/", fgcolor="#cfc8bb", bgcolor="rgba(0,0,0,0)",
+                                                      size=6, solidity=0.15),
+                                     hoverinfo="skip", showlegend=False), row=r, col=1)
+        for z, _ in niv:
+            fig.add_shape(type="line", x0=-3, x1=L + 3, y0=z, y1=z, xref=xr, yref=yr, layer="below",
+                          line=dict(color="#d4d0c8", width=0.8, dash="dash"))
+        for v in D["vertices_eixo"]:
+            fig.add_shape(type="line", x0=vch[v], x1=vch[v], y0=2.5, y1=29.5, xref=xr, yref=yr, layer="below",
+                          line=dict(color="#c9c3b8", width=0.8))
+        # inclinómetros: última leitura válida até à data da etapa
+        if not I.empty:
+            for nm, v in incl.items():
+                gi = I[I[COLS["inclinometro"]] == nm]
+                if gi.empty:
+                    continue
+                datas = gi[COLS["data"]].dropna()
+                if k < len(ETAPAS_DEFORMADA):
+                    datas = datas[datas <= pd.Timestamp(ETAPAS_DEFORMADA[k][0])]
+                if datas.empty:
+                    continue
+                g = gi[gi[COLS["data"]] == datas.max()].sort_values(COLS["profundidade"])
+                z = float(v["cota_boca"]) - g[COLS["profundidade"]].values.astype(float)
+                val = g[COLS["desl_total"]].values.astype(float)
+                o = np.argsort(z); z, val = z[o], val[o]
+                if len(z) > 1:
+                    mid = (z[:-1] + z[1:]) / 2
+                    ed = np.r_[z[0] - (mid[0] - z[0]), mid, z[-1] + (z[-1] - mid[-1])]
+                else:
+                    ed = np.r_[z[0] - 0.25, z[0] + 0.25]
+                sx = ipos[nm] + float(v.get("desvio_desenvolvimento", 0.0))
+                fig.add_trace(go.Heatmap(x=[sx - 1.3, sx + 1.3], y=ed, z=val[:, None], coloraxis="coloraxis",
+                                         hovertemplate=f"{nm} ({datas.max():%d/%m/%Y})<br>%{{z:.1f}} mm<extra></extra>"),
+                              row=r, col=1)
+                fig.add_trace(go.Scatter(x=[sx - 1.3, sx + 1.3, sx + 1.3, sx - 1.3, sx - 1.3],
+                                         y=[ed[0], ed[0], ed[-1], ed[-1], ed[0]], mode="lines",
+                                         line=dict(color="#555555", width=0.8), hoverinfo="skip",
+                                         showlegend=False), row=r, col=1)
+                cb = float(v["cota_boca"])
+                fig.add_trace(go.Scatter(x=[ipos[nm], sx], y=[cb + 1.0, cb + 1.0], mode="lines",
+                                         line=dict(color="#555555", width=0.8), hoverinfo="skip",
+                                         showlegend=False), row=r, col=1)
+                fig.add_annotation(x=sx, y=cb + 1.3, text=nm, showarrow=False, yanchor="bottom",
+                                   font=dict(size=12, color="#333333"), row=r, col=1)
+        # prismas: substitutos por baixo, originais por cima
+        g = S[S["k"] == k].sort_values("rep", ascending=False)
+        if len(g):
+            fig.add_trace(go.Scatter(x=g["s"], y=g["cota"], mode="markers", showlegend=False,
+                                     marker=dict(size=10, color=g["h"], coloraxis="coloraxis",
+                                                 line=dict(color="#333333", width=0.6)),
+                                     customdata=np.c_[g["alvo"], g["h"].round(1)],
+                                     hovertemplate="%{customdata[0]}<br>%{customdata[1]} mm<extra></extra>"),
+                          row=r, col=1)
+            mx = g.loc[g["h"].idxmax()]
+            info = (f"{len(g)} prisms with a reading · maximum {_num_pt(mx['h'])} mm ({mx['alvo']})" if en
+                    else f"{len(g)} prismas com leitura · máximo {_num_pt(mx['h'])} mm ({mx['alvo']})")
+            fig.add_annotation(x=0.997, y=1.02, xref=f"x{ax} domain", yref=f"y{ax} domain", text=info,
+                               showarrow=False, xanchor="right", yanchor="bottom",
+                               font=dict(size=13, color="#333333"))
+        fig.add_annotation(x=0.003, y=1.02, xref=f"x{ax} domain", yref=f"y{ax} domain",
+                           text=f"<b>({'abcdefgh'[k]}) {rot[k]}</b>", showarrow=False,
+                           xanchor="left", yanchor="bottom", font=dict(size=14))
+        fig.update_yaxes(range=[2.5, 29.5], tickvals=[z for z, _ in niv],
+                         ticktext=[(nv.replace("piso", "level").replace("fundo", "bottom") if en else nv)
+                                   for _, nv in niv],
+                         showgrid=False, zeroline=False, ticks="", tickfont=dict(size=13), row=r, col=1)
+    eixo = D["vertices_eixo"]
+    fig.update_xaxes(range=[-3, L + 3], tickvals=[vch[v] for v in eixo] + [L],
+                     ticktext=list(eixo) + [D["inicio"]], showgrid=False, zeroline=False,
+                     ticks="outside", ticklen=3, tickfont=dict(size=13))
+    fig.update_xaxes(title_text=("Development of the excavation outline from corner B, clockwise (m)" if en
+                                 else "Desenvolvimento do contorno da escavação, a partir do canto B, "
+                                      "no sentido dos ponteiros do relógio (m)"),
+                     title_font=dict(size=14), row=n, col=1)
+    # faixas das frentes e nomes dos alçados por cima do primeiro painel
+    CF = ["#efe6d4", "#e3ebe0", "#e2e7f0"]
+    for i_, (nm, a, b_) in enumerate(D["frentes"]):
+        if en:
+            nm = (nm.replace("frente ", "").replace("poente", "west").replace("nascente", "east")
+                  .replace("norte", "north").replace("sul", "south") + " front")
+        fig.add_shape(type="rect", x0=vch[a], x1=vch[b_], y0=1.43, y1=1.60, xref="x", yref="y domain",
+                      fillcolor=CF[i_ % 3], line=dict(color="white", width=1.5))
+        fig.add_annotation(x=(vch[a] + vch[b_]) / 2, y=1.515, xref="x", yref="y domain", text=nm,
+                           showarrow=False, font=dict(size=13, color="#444444"))
+    for nm, a, b_ in D["alcados"]:
+        fig.add_annotation(x=(vch[a] + vch[b_]) / 2, y=1.33, xref="x", yref="y domain",
+                           text=nm.replace("anel", "ring") if en else nm, showarrow=False,
+                           font=dict(size=12, color="#555555"))
+    fig.update_layout(
+        height=1100, margin=dict(l=100, r=10, t=105, b=125), plot_bgcolor="white", font=dict(size=13),
+        coloraxis=dict(colorscale=[[0, "#d6e6f4"], [0.25, "#9ecae1"], [0.5, "#4292c6"],
+                                   [0.75, "#2171b5"], [1, "#08306b"]], cmin=0, cmax=VMAX,
+                       colorbar=dict(orientation="h", x=0.5, xanchor="center", y=-0.075, yanchor="top",
+                                     len=0.5, thickness=10, tickvals=list(range(0, VMAX + 1, 10)),
+                                     title=dict(text=("Cumulative horizontal displacement, resultant (mm)" if en
+                                                      else "Deslocamento horizontal acumulado, resultante (mm)"),
+                                                side="top", font=dict(size=14)))))
+    fig.add_annotation(x=-0.105, y=0.5, xref="paper", yref="paper", textangle=-90, showarrow=False,
+                       text=("Level (design elevation)" if en else "Nível (cota de projeto)"),
+                       font=dict(size=14))
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _bloco_elementos_adjacentes(alvos):
+    """Bloco 7 de «Resultados» (Figura 5.8 da dissertação): dois alvos de
+    elementos diferentes (p. ex. um edifício vizinho e o alçado que lhe fica em
+    frente), cada um com os limiares do SEU critério, e o estado de cada um no
+    tempo. Mostra se os critérios dos dois elementos são coerentes."""
+    st.markdown("#### 7. Elementos adjacentes — cada um com o seu critério")
+    st.caption(
+        "Compara dois alvos de elementos diferentes, por exemplo um edifício "
+        "vizinho e o alçado da contenção que lhe fica em frente. Cada série é "
+        "lida com os limiares do critério do seu elemento, e a faixa inferior "
+        "mostra o estado de cada alvo segundo esse critério. Opcionalmente, o "
+        "primeiro alvo é também representado a partir da data de zeragem do "
+        "segundo, para comparar movimentos com a mesma origem.")
+    a = alvos.dropna(subset=[COLS["desl_h"]]).copy()
+    a = a.sort_values(COLS["data"]).drop_duplicates(
+        subset=[COLS["alvo"], COLS["data"]], keep="last")
+    nomes = sorted(a[COLS["alvo"]].unique(), key=_chave_natural)
+    if len(nomes) < 2:
+        st.info("São precisos pelo menos dois alvos.")
+        return
+    i1 = nomes.index("A3") if "A3" in nomes else 0
+    i2 = nomes.index("GH3") if "GH3" in nomes else 1
+    c1, c2, c3 = st.columns([1, 1, 2])
+    t1 = c1.selectbox("Alvo 1", nomes, index=i1, key="adj_t1")
+    t2 = c2.selectbox("Alvo 2", nomes, index=i2, key="adj_t2")
+    rebase = c3.checkbox("Representar também o alvo 1 a partir da zeragem do alvo 2",
+                         value=True, key="adj_reb")
+    g1 = a[a[COLS["alvo"]] == t1]; g2 = a[a[COLS["alvo"]] == t2]
+    d0 = max(g1[COLS["data"]].min(), g2[COLS["data"]].min())
+    d1 = min(g1[COLS["data"]].max(), g2[COLS["data"]].max())
+    if d0 >= d1:
+        st.info("Os dois alvos não têm leituras num período comum.")
+        return
+    per = st.slider("Período", min_value=d0.date(), max_value=d1.date(),
+                    value=(d0.date(), d1.date()), format="DD/MM/YYYY", key="adj_per")
+    p0, p1 = pd.Timestamp(per[0]), pd.Timestamp(per[1])
+    el1 = g1[COLS["edificio"]].iloc[0]; el2 = g2[COLS["edificio"]].iloc[0]
+    cr1, _r1, _ = criterios_do_alvo(el1); cr2, _r2, _ = criterios_do_alvo(el2)
+    n1 = _nome_elemento(el1); n2 = _nome_elemento(el2)
+    z1 = g1[COLS["data"]].min(); z2 = g2[COLS["data"]].min()
+    en = _lang_en()
+    _EST_EN = {"Regular": "regular", "Alerta": "alert", "Alarme": "alarm"}
+    _zer = "zeroed on" if en else "zerado a"
+    _ale, _ala = ("alert", "alarm") if en else ("alerta", "alarme")
+
+    def _estados(g, cr):
+        return [estado_calculado(h, v, cr) for h, v in zip(g[COLS["desl_h"]], g[COLS["dZ"]])]
+    g1 = g1.assign(_e=_estados(g1, cr1)); g2 = g2.assign(_e=_estados(g2, cr2))
+    w1 = g1[(g1[COLS["data"]] >= p0) & (g1[COLS["data"]] <= p1)]
+    w2 = g2[(g2[COLS["data"]] >= p0) & (g2[COLS["data"]] <= p1)]
+
+    from plotly.subplots import make_subplots
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.78, 0.22],
+                        vertical_spacing=0.06)
+    fig.add_trace(go.Scatter(x=w1[COLS["data"]], y=w1[COLS["desl_h"]], mode="lines+markers",
+                             line=dict(color="#1f5fa8", width=2.2), marker=dict(size=5),
+                             name=f"{t1}, {n1} ({_zer} {z1:%d/%m/%Y})"), row=1, col=1)
+    if rebase and z2 > z1:
+        _t0 = g1[COLS["data"]].min()
+        base = float(np.interp((z2 - _t0).days, (g1[COLS["data"]] - _t0).dt.days.values,
+                               g1[COLS["desl_h"]].values))
+        wr = w1[w1[COLS["data"]] >= z2]
+        fig.add_trace(go.Scatter(x=wr[COLS["data"]], y=wr[COLS["desl_h"]] - base, mode="lines",
+                                 line=dict(color="#5b8fd0", width=1.5, dash="dash"),
+                                 name=(f"{t1}, from {z2:%d/%m/%Y} (origin of {t2})" if en
+                                       else f"{t1}, desde {z2:%d/%m/%Y} (origem do {t2})")), row=1, col=1)
+    fig.add_trace(go.Scatter(x=w2[COLS["data"]], y=w2[COLS["desl_h"]], mode="lines+markers",
+                             line=dict(color="#2b2b2b", width=2.2),
+                             marker=dict(size=6, symbol="square"),
+                             name=f"{t2}, {n2} ({_zer} {z2:%d/%m/%Y})"), row=1, col=1)
+    lim = [(cr1[0], "#e67e00", "dash", f"{n1}: {_ale} {cr1[0]:g} mm"),
+           (cr1[1], "#c0140f", "dash", f"{n1}: {_ala} {cr1[1]:g} mm"),
+           (cr2[0], "#e67e00", "dot", f"{n2}: {_ale} {cr2[0]:g} mm"),
+           (cr2[1], "#c0140f", "dot", f"{n2}: {_ala} {cr2[1]:g} mm")]
+    _ys = sorted(set(round(v, 3) for v in (cr1[0], cr1[1], cr2[0], cr2[1])))
+    for y, cor, dash, txt in lim:
+        _pos = "top right" if y == max(_ys) or (y > min(_ys) and _ys.index(round(y, 3)) % 2 == 1
+                                                 and y != cr1[1]) else "bottom right"
+        fig.add_hline(y=y, line=dict(color=cor, width=1.3, dash=dash), row=1, col=1,
+                      annotation_text=txt, annotation_position=_pos,
+                      annotation_font=dict(size=11, color=cor))
+
+    def _primeira(g, est):
+        x = g[g["_e"].isin(est)]
+        return (x[COLS["data"]].iloc[0], x[COLS["desl_h"]].iloc[0]) if len(x) else (None, None)
+    da1, ha1 = _primeira(g1, ["Alarme"]); dl2, hl2 = _primeira(g2, ["Alerta", "Alarme"])
+    for dd, hh, cor, txt in ((da1, ha1, "#c0140f", (f"{t1} alarm" if en else f"alarme do {t1}")), (dl2, hl2, "#e67e00", (f"{t2} alert" if en else f"alerta do {t2}"))):
+        if dd is not None and p0 <= dd <= p1:
+            fig.add_vline(x=dd, line=dict(color="#7a7a7a", width=1.2))
+            fig.add_annotation(x=dd, y=1.0, xref="x", yref="y domain", text=f"{dd:%d/%m/%Y}<br>{txt}<br>({_num_pt(hh)} mm)",
+                               showarrow=False, xanchor="left", yanchor="top", xshift=4,
+                               font=dict(size=11, color=cor), bgcolor="rgba(255,255,255,0.8)")
+    # faixa de estados
+    CE = {"Regular": "#1f9e55", "Alerta": "#e67e00", "Alarme": "#c0140f"}
+    for yy, g, nome in ((1, w1, t1), (0, w2, t2)):
+        g = g.reset_index(drop=True)
+        for k in range(len(g)):
+            xa = g[COLS["data"]].iloc[k]
+            xb = g[COLS["data"]].iloc[k + 1] if k + 1 < len(g) else p1
+            fig.add_shape(type="rect", x0=xa, x1=xb, y0=yy - 0.38, y1=yy + 0.38,
+                          fillcolor=CE.get(g["_e"].iloc[k], "#cccccc"), line=dict(width=0),
+                          row=2, col=1)
+    # traço invisível com datas no eixo inferior, para as datas em português
+    fig.add_trace(go.Scatter(x=[p0, p1], y=[-5, -5], mode="markers", marker=dict(opacity=0),
+                             hoverinfo="skip", showlegend=False), row=2, col=1)
+    for est, cor in CE.items():
+        fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers",
+                                 marker=dict(size=10, symbol="square", color=cor),
+                                 name=est, showlegend=True), row=2, col=1)
+    fig.update_yaxes(title_text="Deslocamento horizontal (mm)", rangemode="tozero", row=1, col=1)
+    fig.update_yaxes(tickvals=[1, 0], ticktext=[f"{t1} ({cr1[0]:g}/{cr1[1]:g} mm)",
+                                                f"{t2} ({cr2[0]:g}/{cr2[1]:g} mm)"],
+                     range=[-0.6, 1.6], row=2, col=1)
+    fig.update_xaxes(type="date", range=[p0 - pd.Timedelta(days=2), p1 + pd.Timedelta(days=2)])
+    fig.update_layout(height=600, margin=dict(l=10, r=10, t=30, b=10),
+                      legend=dict(orientation="h", yanchor="bottom", y=1.01, x=0))
+    st.plotly_chart(fig, use_container_width=True)
+
+    # frase de leitura (texto em inglês escrito à parte, por ter números e nomes variáveis)
+    partes = []
+    if da1 is not None:
+        x2 = g2[g2[COLS["data"]] <= da1]
+        if len(x2):
+            h2 = x2[COLS["desl_h"]].iloc[-1]; e2 = x2["_e"].iloc[-1]
+            partes.append(
+                f"When {t1} entered alarm ({da1:%d/%m/%Y}, {_num_pt(ha1)} mm), {t2} read "
+                f"{_num_pt(h2)} mm, in {_EST_EN.get(e2, e2.lower())} state." if en else
+                f"Quando o {t1} entrou em alarme ({da1:%d/%m/%Y}, {_num_pt(ha1)} mm), "
+                f"o {t2} registava {_num_pt(h2)} mm, em estado {e2.lower()}.")
+        if dl2 is not None and dl2 > da1:
+            partes.append(
+                f"{t2} reached the alert on {dl2:%d/%m/%Y} ({_num_pt(hl2)} mm), "
+                f"{(dl2 - da1).days // 7} weeks later." if en else
+                f"O {t2} atingiu o alerta a {dl2:%d/%m/%Y} ({_num_pt(hl2)} mm), "
+                f"{(dl2 - da1).days // 7} semanas depois.")
+    for (na, ca), (nb, cb) in (((n2, cr2), (n1, cr1)), ((n1, cr1), (n2, cr2))):
+        if ca[0] > cb[1]:
+            partes.append(
+                f"The alert threshold of {na} ({ca[0]:g} mm) is higher than the alarm "
+                f"threshold of {nb} ({cb[1]:g} mm)." if en else
+                f"O limiar de alerta do {na} ({ca[0]:g} mm) é superior ao limiar "
+                f"de alarme do {nb} ({cb[1]:g} mm).")
+            break
+    if partes:
+        st.caption(" ".join(partes))
+    # (traduções das frases: ver _I18N_EN)
+
 
 def zona_escav_de_edificio(edif):
     """Frente de escavação (poente_sul / norte / nascente_sul) do edifício ou
@@ -6620,11 +7218,45 @@ def _sinais_serie(vel, limv, usar_vel, usar_acel, fator, dois_seguidos):
     return base
 
 
+def _nome_elemento(el):
+    """Nome curto do elemento (sem o prefixo «Escavação e Contenção Periférica - »)."""
+    return str(el).replace("Escavação e Contenção Periférica - ", "")
+
+
+def sinal_generalizado(alvos_est, limv, fator, frac=2 / 3, n_min=3):
+    """Sinal generalizado por elemento (Secção 5.4.1): em cada campanha, fração
+    dos alvos ou prismas lidos de um elemento que dão sinal pela regra
+    (velocidade ou aceleração), com a velocidade sobre >= 7 dias.
+    Cada alvo conta uma vez por data (as leituras de zeragem repetidas na
+    mesma data não contam a dobrar). Devolve um DataFrame com el, data, n, k,
+    frac e gen (bool)."""
+    linhas = []
+    for a, g in alvos_est.groupby(COLS["alvo"]):
+        g = g[g[COLS["desl_h"]].notna()].sort_values(COLS["data"])
+        g = g.drop_duplicates(subset=[COLS["data"]], keep="last")
+        if g.empty:
+            continue
+        ds, vel = _velocidades_serie(g[COLS["data"]], g[COLS["desl_h"]], True)
+        sig = _sinais_serie(vel, limv, True, True, fator, False)
+        el = _nome_elemento(g[COLS["edificio"]].iloc[0])
+        linhas += [(el, a, d, bool(x)) for d, x in zip(ds, sig)]
+    if not linhas:
+        return pd.DataFrame(columns=["el", "data", "n", "k", "frac", "gen"])
+    df = pd.DataFrame(linhas, columns=["el", "alvo", "data", "sig"])
+    agg = (df.groupby(["el", "data"]).agg(n=("sig", "size"), k=("sig", "sum"))
+           .reset_index())
+    agg = agg[agg["n"] >= n_min].copy()
+    agg["k"] = agg["k"].astype(int)
+    agg["frac"] = agg["k"] / agg["n"]
+    agg["gen"] = agg["k"] >= frac * agg["n"] - 1e-9
+    return agg.sort_values(["el", "data"]).reset_index(drop=True)
+
+
 def separador_precursores(dados, limiar_vel, fator_acel, usar_janela7=False):
     """
     PRECURSORES — leitura em tempo real simulada (antecedência face aos
     critérios) e análise de sensibilidade/seletividade da regra nos alvos.
-    Reproduz as Secções 5.1.5 e 5.3.5 e a Tabela 5.4 da dissertação.
+    Reproduz as Secções 5.4 e 5.4.1 e a Tabela 5.5 da dissertação.
     """
     st.subheader("Sinais precursores — antecedência e seletividade")
     st.caption(
@@ -6636,6 +7268,7 @@ def separador_precursores(dados, limiar_vel, fator_acel, usar_janela7=False):
         "dissertação.")
 
     alvos_est = anexar_estado_calculado(dados["alvos"])
+    dc = None   # data da análise do bloco A (usada também no bloco C)
 
     # =====================================================================
     # A. RÉPLICA EM TEMPO REAL — antecedência por alvo (Secção 5.1.5)
@@ -6738,7 +7371,7 @@ def separador_precursores(dados, limiar_vel, fator_acel, usar_janela7=False):
             st.caption(f"Até {d_corte:%d/%m/%Y}, nenhum sinal precursor teria sido lido.")
 
     # =====================================================================
-    # B. SENSIBILIDADE E SELETIVIDADE — Tabela 5.4 (Secção 5.3.5)
+    # B. SENSIBILIDADE E SELETIVIDADE — Tabela 5.5 (Secção 5.4.1)
     # =====================================================================
     st.divider()
     st.markdown("#### B. Sensibilidade e seletividade da regra (todos os alvos)")
@@ -6748,7 +7381,7 @@ def separador_precursores(dados, limiar_vel, fator_acel, usar_janela7=False):
         "alerta de cada alvo (todos, nos alvos sem alerta). Um alerta diz-se "
         "antecipado se teve um sinal nas 4 semanas anteriores; um sinal é "
         "acerto se o alerta do mesmo alvo se seguiu nesse prazo. Reproduz a "
-        "Tabela 5.4.")
+        "Tabela 5.5.")
 
     # pré-computar, por alvo: datas, δh e data do 1.º alerta (ΔH ou ΔV)
     por_alvo = {}
@@ -6859,6 +7492,109 @@ def separador_precursores(dados, limiar_vel, fator_acel, usar_janela7=False):
             f"sensível mas pouco seletiva: a maioria dos alvos que nunca "
             f"alertaram também gerou sinais, e calcular a velocidade sobre ≥7 "
             f"dias melhora a seletividade à custa de antecipar menos alertas.")
+
+    # =====================================================================
+    # C. SINAL GENERALIZADO POR ELEMENTO (Secção 5.4.1)
+    # =====================================================================
+    st.divider()
+    st.markdown("#### C. Sinal generalizado por elemento")
+    st.caption(
+        "Persistência no espaço: numa campanha, um elemento (edifício vizinho ou "
+        "alçado) dá sinal generalizado quando pelo menos a fração escolhida dos "
+        "seus alvos ou prismas lidos nessa campanha (mínimo de 3) dá sinal pela "
+        "regra da barra lateral, com a velocidade calculada sobre pelo menos 7 "
+        "dias. Reduz o número de sinais a analisar face aos sinais por alvo.")
+    frac_txt = st.radio("Fração mínima de alvos com sinal", ["2/3", "1/2"],
+                        horizontal=True, key="gen_frac")
+    frac = 2 / 3 if frac_txt == "2/3" else 0.5
+    df_g = sinal_generalizado(alvos_est, limiar_vel, fator_acel, frac)
+    if df_g.empty:
+        st.info("Sem elementos com pelo menos 3 leituras na mesma campanha.")
+        return
+    gen = df_g[df_g["gen"]]
+    # primeiro alerta (ΔH ou ΔV) de cada elemento
+    _al = alvos_est[alvos_est["Estado calculado"].isin(["Alerta", "Alarme"])]
+    prim_alerta = (_al.groupby(COLS["edificio"])[COLS["data"]].min()
+                   .rename(index=_nome_elemento))
+    ordem = sorted(df_g["el"].unique(),
+                   key=lambda e: (not e.startswith("Edifício"), e))
+
+    figG = go.Figure()
+    figG.add_trace(go.Scatter(
+        x=df_g["data"], y=df_g["el"], mode="markers",
+        marker=dict(size=9, color=df_g["frac"], cmin=0, cmax=1,
+                    colorscale=[[0, "#f2f2f2"], [0.5, "#f4b183"], [1, "#c0140f"]],
+                    colorbar=dict(title="Fração com sinal", thickness=10, len=0.6),
+                    line=dict(width=0.5, color="#9a9a9a")),
+        customdata=np.stack([df_g["k"], df_g["n"]], axis=-1),
+        hovertemplate="%{y}<br>%{x|%d/%m/%Y}: %{customdata[0]} de "
+                      "%{customdata[1]} alvos com sinal<extra></extra>",
+        name="Campanha (fração com sinal)"))
+    figG.add_trace(go.Scatter(
+        x=gen["data"], y=gen["el"], mode="markers",
+        marker=dict(symbol="star", size=15, color="#7f0000",
+                    line=dict(width=1, color="white")),
+        hovertemplate="%{y}<br>%{x|%d/%m/%Y}: sinal generalizado<extra></extra>",
+        name="Sinal generalizado"))
+    pa = prim_alerta[prim_alerta.index.isin(ordem)]
+    figG.add_trace(go.Scatter(
+        x=pa.values, y=pa.index, mode="markers",
+        marker=dict(symbol="diamond-open", size=13, color="#e67e00",
+                    line=dict(width=2.5)),
+        hovertemplate="%{y}<br>Primeiro alerta: %{x|%d/%m/%Y}<extra></extra>",
+        name="Primeiro alerta"))
+    if dc is not None:
+        figG.add_vline(x=dc, line=dict(color="#1f3a5f", width=1, dash="dot"),
+                       annotation_text="Análise", annotation_position="bottom right")
+    figG.update_layout(
+        height=110 + 30 * len(ordem), margin=dict(l=10, r=10, t=30, b=40),
+        yaxis=dict(categoryorder="array", categoryarray=ordem[::-1], title=""),
+        xaxis=dict(title="Data"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02))
+    st.plotly_chart(figG, use_container_width=True)
+
+    # quadro por elemento
+    lin = []
+    for el in ordem:
+        g_el = gen[gen["el"] == el]
+        d1 = g_el["data"].min() if len(g_el) else None
+        da = prim_alerta.get(el)
+        ant = (da - d1).days if (d1 is not None and da is not None and pd.notna(da)) else None
+        lin.append({"Elemento": el, "Sinais generalizados": len(g_el),
+                    "Primeiro sinal generalizado": d1.strftime("%d/%m/%Y") if d1 is not None else "—",
+                    "Primeiro alerta": da.strftime("%d/%m/%Y") if da is not None and pd.notna(da) else "—",
+                    "Antecedência (dias)": str(ant) if ant is not None and ant > 0 else "—"})
+    st.table(pd.DataFrame(lin).set_index("Elemento"))
+    n_el_al = sum(1 for r in lin if r["Primeiro alerta"] != "—")
+    ants = [int(r["Antecedência (dias)"]) for r in lin if r["Antecedência (dias)"] != "—"]
+    if _lang_en():
+        st.caption(
+            f"**{len(gen)} generalised signals** in {len(df_g)} element–campaign "
+            f"pairs with at least 3 readings, in {gen['el'].nunique()} of "
+            f"{len(ordem)} elements. In **{len(ants)} of the {n_el_al} elements** "
+            f"that reached the alert, the first generalised signal preceded it"
+            + (f" ({min(ants)} to {max(ants)} days)." if ants else ".")
+            + " As almost all elements reached the alert, the selectivity of this "
+            "indicator cannot be assessed in this case.")
+    else:
+        st.caption(
+            f"**{len(gen)} sinais generalizados** em {len(df_g)} pares de elemento e "
+            f"campanha com pelo menos 3 leituras, em {gen['el'].nunique()} de "
+            f"{len(ordem)} elementos. Em **{len(ants)} dos {n_el_al} elementos** que "
+            f"atingiram o alerta, o primeiro sinal generalizado precedeu-o"
+            + (f" ({min(ants)} a {max(ants)} dias)." if ants else ".")
+            + " Como quase todos os elementos atingiram o alerta, a seletividade "
+            "deste indicador não pode ser avaliada neste caso.")
+    if dc is not None:
+        ate = gen[gen["data"] <= dc]
+        if len(ate):
+            partes = [f"{el} ({', '.join(d.strftime('%d/%m/%Y') for d in g['data'])})"
+                      for el, g in ate.groupby("el", sort=False)]
+            st.caption(f"Até **{dc:%d/%m/%Y}** (data da análise do bloco A), sinal "
+                       f"generalizado em: " + "; ".join(partes) + ".")
+        else:
+            st.caption(f"Até {dc:%d/%m/%Y} (data da análise do bloco A), nenhum "
+                       f"elemento tinha dado sinal generalizado.")
 
 
 def separador_home(dados):
